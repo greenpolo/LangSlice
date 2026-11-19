@@ -48,7 +48,7 @@ class ScriptContext(ToolContext):
     ``script_write`` line each in ``logs/events.jsonl``; each outermost write
     is one undo step (``with job.context.writing():`` makes several one);
     each read picks up what another writer saved first; ``work_dir`` and
-    ``start_work`` are refused (``NOT_FOR_SCRIPTS``). A script may write
+    ``start_work`` are refused (``TOOL_OFF``). A script may write
     every property the job does not freeze: the job's ``disabled`` list
     switches tools off and does not gate a script's writes.
     :meth:`preview_overlay` and :meth:`preview_positioning` save a
@@ -278,7 +278,7 @@ class ScriptContext(ToolContext):
 
         if not proposal:
             raise ToolError(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 "a preview draws a proposal; job.look(mode='overlay', "
                 "sections=[...]) draws the section as it stands",
             )
@@ -333,7 +333,7 @@ class ScriptContext(ToolContext):
 
         if not proposal:
             raise ToolError(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 "a preview draws a proposal; job.look(mode="
                 "'positioning') draws the stack as it stands",
             )

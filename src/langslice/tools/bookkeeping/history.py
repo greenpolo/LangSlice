@@ -133,7 +133,7 @@ def undo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
     step = undo(run.job, count)
     if not step.done:
         raise Refused(
-            RefusalCode.NOTHING_TO_UNDO,
+            RefusalCode.PRECONDITION,
             "Nothing to undo: the job's history holds no earlier step.",
         )
     return _stepped_reply(run, "undone", "undo_depth", step, count)
@@ -160,7 +160,7 @@ def redo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
     step = redo(run.job, count)
     if not step.done:
         raise Refused(
-            RefusalCode.NOTHING_TO_REDO,
+            RefusalCode.PRECONDITION,
             "Nothing to redo: no step is undone since the last write "
             "(a write clears what was undone).",
         )
@@ -168,7 +168,7 @@ def redo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
 
 
 def _step_count(steps: object) -> int:
-    """Return the tools' *steps* as a count; ``BAD_ARGS`` for anything but a
+    """Return the tools' *steps* as a count; ``BAD_ARGUMENT`` for anything but a
     whole number from 1.
     """
     try:
@@ -176,7 +176,7 @@ def _step_count(steps: object) -> int:
     except (OverflowError, ValueError):
         count = 0
     if count < 1 or count != steps:
-        raise Refused(RefusalCode.BAD_ARGS, "steps is a whole number, 1 or more.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "steps is a whole number, 1 or more.")
     return count
 
 

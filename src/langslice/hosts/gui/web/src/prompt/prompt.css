@@ -132,10 +132,6 @@
 .tool-note { color: var(--muted); font-size: var(--size-xs); }
 .tool-name { font-family: var(--mono); font-size: var(--size-xs); color: var(--violet); overflow-wrap: anywhere; }
 .tool.absent .tool-label, .tool.absent .tool-name { color: var(--faint); }
-.tool.option { border-top: 0; padding-left: 44px; }
-.tool.option::before { content: ""; position: absolute; left: 21px; top: 0; width: 15px; height: 50%; border-left: 1px solid var(--tract); border-bottom: 1px solid var(--tract); border-bottom-left-radius: 3px; }
-.tool.option:not(.last)::after { content: ""; position: absolute; left: 21px; top: 50%; bottom: 0; border-left: 1px solid var(--tract); }
-.tool.parent::after { content: ""; position: absolute; left: 21px; top: calc(50% + 8px); bottom: 0; border-left: 1px solid var(--tract); }
 
 /* The image model. */
 .tools.image > .help { margin-top: var(--space-3); }

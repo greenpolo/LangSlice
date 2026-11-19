@@ -65,30 +65,31 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is |
+| `description` | The tool's description in place of the stub's docstring, laid out the same way: a string, or a function of `ToolsOn` (importable from `langslice.plugin_api`) that returns the string. A sentence that names another tool is built only where `on.has("zoom")` is true, for example `on.say("zoom", ", or zoom")`, so no description names a tool the job switched off. Empty: the stub's docstring |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
 | `task` | `position`, `transform`, `nonlinear` or `None`: the tool exists only while that task is on; `angles`: while the agent may write the cutting angles, as `position_sections` does (the position task on, or the transform task leaving the angles to the agent) |
 | `writes` | The section properties it may write (`position`, `angles`, `orientation`, `affine`, `deformation`, `damage`). A write outside this set is refused; a tool that writes only properties frozen on every section is not offered |
 | `long` | Computes outside the job's write lock and applies under it (see [long tools](#long-tools-and-stale_input)) |
-| `limits` | The most one call takes: `{"sections": 4}` refuses a longer `sections` argument (`TOO_MANY_SECTIONS`); `{"pictures": 2}` sends at most two pictures |
-| `needs` | What the tool needs while it is on: groups of names, one of each on (`(("look:overlay",),)`), as for native tools |
+| `limits` | The most one call takes: `{"sections": 4}` refuses a longer `sections` argument (`BAD_ARGUMENT`); `{"pictures": 2}` sends at most two pictures |
+| `needs` | What the tool needs while it is on: groups of tool names, one of each on (`(("fireants_syn",),)`), as for native tools |
 | `version` | The plugin's own version, kept in the provenance |
 | `meta` | JSON values kept with the tool in the provenance |
 | `atlases` | Shell-style patterns for the job's atlas name (`("allen_mouse_*um", "ccfv3augmented_mouse_25um")`); the tool is offered on a job whose atlas matches one. Empty: every atlas |
 | `planes` | The section planes it is offered on (`("coronal",)`); empty: every plane |
 
 A tool whose `atlases` or `planes` do not fit the job is absent, as a disabled
-tool is: it is not declared or listed, its options are gone, and every sentence
-that names it in the other tools' descriptions (written with [needs
-marks](../reference/tools.md#switching-tools-and-options-off), `[[?other_tool ...]]`)
-is dropped. The provenance records the two fields.
+tool is: it is not declared or listed, and every sentence
+that names it in the other tools' descriptions (built from the job's
+`ToolsOn`, as a plugin's `description` is) is left out. The provenance records
+the two fields.
 
-A plugin's description is also rendered by the tools the job's tasks leave out: a
-sentence written `[[?elastix_affine ...]]` in a plugin's stub stands only where the
-Linear task is on and `elastix_affine` is not disabled or frozen away. The native
-tools' texts render the same way.
+A plugin's `description` is also called by the tools the job's tasks leave out:
+`on.has("elastix_affine")` is true only where the Linear task is on and
+`elastix_affine` is not disabled or frozen away. The native tools' texts are
+built the same way.
 
 The checks run when the factory is called: a name that clashes (with a native
 tool, another plugin tool, or `script`, the name a script's writes are
@@ -112,7 +113,7 @@ call's write saved; a picture of a proposal not written records none. Raising `T
 `{"status": "error", "error": code, "message": message, **details}` (the
 message says what was attempted, what was found and what to do, as every
 refusal LangSlice raises does); any other
-exception is a reply `PLUGIN_FAILED` naming it, and the job carries on.
+exception is a reply `INTERNAL` naming it, and the job carries on.
 `ToolError` is the plugin's name for LangSlice's own refusal (a `ValueError`,
 as every refusal the context raises is); `code` is a member of
 `langslice.plugin_api.RefusalCode`, which lists every code LangSlice answers
@@ -124,7 +125,7 @@ One per call; a handler must not keep it. A script gets the same context as
 `job.context` ([your own method](library.md#your-own-method)): its writes are
 recorded as `script` instead of `plugin:<tool>`, each outermost write is one
 undo step, its reads sync the job first, and `work_dir` and `start_work` are
-refused (`NOT_FOR_SCRIPTS`).
+refused (`TOOL_OFF`).
 
 **The job.** `ctx.spec` (the job's spec as a read-only mapping), `ctx.job_dir`,
 `ctx.work_dir()` (`<job>/plugins/<tool>/`, made on use), `ctx.task_on(task)`.
@@ -143,7 +144,7 @@ refused (`NOT_FOR_SCRIPTS`).
 | `ctx.atlas()` | `AtlasView`: `name`, `resolution_um`, `orientation`, `species`, `plane`, `shape` |
 | `ctx.fit_frame(id, atlas=, image=, stain=)` | `FitFrame`: the section on its fit grid (`image`: its `preprocessed` image; `section_image` and `section_image_ref` (`{name, kind, file, digest}`, what a fit reply's `inputs.section_image` names) for `image=`, any name `ctx.image_names(id)` lists; `stain=True` is `image="preprocessed"`), `"nissl"` in `atlas=` the atlas's Nissl plane (under both names), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3: native atlas pixels to fit-grid pixels with no in-plane transform), `placed_atlas_to_section` (the same map under the section's stored transform, its current linear placement; None without a transform), `excluded` (the native plane's pixels of the section's marked damage regions, sides included, which every native fit leaves out; None when none are marked), `damage_zone` (`excluded` widened by the margin the native fits also leave out of their comparison, 0.1 mm scaled to the atlas's brain size), `stain` with `stain=True` (the section's `preprocessed` image on the grid of `image`, the picture the native fits read by default), `applied_map` (the native atlas pixel of every fit-grid pixel through the section's current registration, its deformation included, `(H, W, 2)` as `deformation_from_map` takes it: where an engine that builds on a landmark warp or an earlier fit starts; None without a deformation), `plane` (the plane in atlas micrometres: `center_um`, `dx`, `dy`, `px_um`, `shape`, and `native_to_um`, the 3x3 taking a native pixel centre `[x, y, 1]` to its atlas micrometres, voxel centres at index times resolution) |
 | `ctx.atlas_slice(id, kind=)` | One of those atlas planes |
-| `ctx.mask(id, name)` | A section's mask by name as a `MaskView` (`weights` float `(H, W)`, `kind`, `params`, `left_out`; `UNKNOWN_MASK`, `STALE_MASK`) |
+| `ctx.mask(id, name)` | A section's mask by name as a `MaskView` (`weights` float `(H, W)`, `kind`, `params`, `left_out`; `NOT_FOUND`, `STALE_INPUT`) |
 | `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, its made images' digests, damage marks); for [`expect=`](#long-tools-and-stale_input) |
 | `ctx.read_registration(path, sections=(), at=None, registered_on="file")` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements`, nothing written; see [reading a registration](#reading-a-registration) |
 | `ctx.layers(id)` | The layers the section shows |
@@ -165,7 +166,7 @@ micrometres (a normal and a point on it, the atlas's axis order, as
 placement that says it in the stack's conventions: `position_mm` (where the
 plane crosses the volume's in-plane centre), `pitch_deg` and `yaw_deg`.
 Nothing is written; a plane tilted past what a cutting angle can say is
-`BAD_PLANE`.
+`BAD_ARGUMENT`.
 
 `ctx.write_frame(id, folder, format="tif")` writes an outside engine's
 inputs (the section, its preprocessed channel and the atlas plane placed on
@@ -205,7 +206,7 @@ section holds, read through `FitFrame.applied_map`) the held record is its
 record's parent and the section's steps stay before its own, as a native fit
 chains, so the section's files keep what the warp was built on; it is written
 only while the section still holds that deformation (`STALE_INPUT`
-otherwise), and a section holding none is `BAD_ARGS`. Either way the map is
+otherwise), and a section holding none is `BAD_ARGUMENT`. Either way the map is
 the whole registration. `note` and `meta` (JSON values) are kept in the
 record's provenance.
 
@@ -218,15 +219,15 @@ record's provenance.
 | `ctx.set_deformations(rows, expect=None)` | rows `{"id", "map", "note"?, "meta"?}` (the map `deformation_from_map` takes) or `{"id", "deformation"}` (a `DeformationProposal`); each replaces the section's deformation, or, made with `start="current"`, builds on it; ok rows carry the proposal's `summary` | `deformation` |
 | `ctx.mark_damage(rows, expect=None)` | rows `{"id", "regions", "note"?}`, as `mark_damage` | any write tool |
 | `ctx.add_layer(id, layer)` | a [layer](#layers) | any write tool |
-| `ctx.add_image(id, name, array, note="")` | a made [section image](../reference/tools.md#make_image): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation (computed from `raw_plane` or `working_rgb`), `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGS` | any write tool |
+| `ctx.add_image(id, name, array, note="")` | a made [section image](../reference/tools.md#make_image): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation (computed from `raw_plane` or `working_rgb`), `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGUMENT` | any write tool |
 
 A write returns a `WriteResult`: `ok` is false when the call was refused whole
 (`error`, `message`); otherwise `rows` has one row per section asked
 (`status` `ok` or `error` with the code: `FROZEN`, `STALE_INPUT`,
-`UNKNOWN_SLICE_IDS`, ...) and `written` the ids written. `result.reply()` is
+`NOT_FOUND`, ...) and `written` the ids written. `result.reply()` is
 those as reply fields; `result.refusal(id)` is the `ToolError` that says why
 one section was not written. A read tool that writes, or a write outside `writes`, is
-refused (`READ_TOOL_WRITES`, `WRITE_NOT_DECLARED`). The door adds `registration`
+refused (`INTERNAL`). The door adds `registration`
 `{section: number}` to the tool's reply for each section whose registration the
 call changed (the number `restore_registration` takes; see
 [writes](../reference/tools.md#restore_registration)), and a background notice ends
@@ -239,8 +240,8 @@ section's folder (`sections/<name>/deformable/<key>/`, its engine
 "settings"?}` (after the held deformation's steps for `current`), and `look`,
 `export_maps`, `registration.json`, the VisuAlign markers and the ABBA
 connector read it like any other. A section whose transform cannot be used is
-that section's row `INVALID_LINEAR_PLACEMENT`, as a native fit refuses it; a
-map of another shape, not float or not finite is `BAD_FIELD`. Maps are
+that section's row `PRECONDITION`, as a native fit refuses it; a
+map of another shape, not float or not finite is `BAD_ARGUMENT`. Maps are
 converted before the job's write lock is taken.
 
 Everything a write tool's call writes is one undo step: `undo` reverts it
@@ -260,9 +261,7 @@ PIL images, one per part of a long stack (`part=` picks one, 0-based; the
 caption says which part). With `proposal={id: {"position_mm": mm, "angles":
 (pitch, yaw)}}` (either key, any of the sections) it is drawn at the proposed
 positions and angles, ordered by them, and carries one more caption band, `proposal: ...
-NOT written`; the job is not touched. Where the job disables `look:positioning`
-it is refused (`POSITIONING_OFF`): give the tool `needs=(("look:positioning",),)`
-to be absent there. `ctx.caption(image, text)`.
+NOT written`; the job is not touched. `ctx.caption(image, text)`.
 
 ### What a raster shows
 
@@ -274,11 +273,11 @@ turn, then flip) and reduced to `level`. What the pixels are depends on
 |---|---|
 | no `images` | The section's `preprocessed` image (gray RGB), what the native fits read by default: its file, resized (the opening one is the automatic path run once on the working copy: CLAHE and coverage-weighted blend with `preprocess="auto"`, a host's own blend with `host_preprocessing`, the file in gray with `preprocess="none"`) |
 | `images=[name]` | That section image alone, gray RGB (three equal planes): a raw channel as the file holds it, a made image from its file |
-| `images=[names]` | Those raw channels together, each in its own colour with automatic contrast; a made image among several is `BAD_ARGS` |
+| `images=[names]` | Those raw channels together, each in its own colour with automatic contrast; a made image among several is `BAD_ARGUMENT` |
 | `raw=True` | The file as an image viewer shows it, 8-bit RGB: no preprocessing, no contrast changes. For a PNG or JPEG this is the delivered image, oriented |
-| `raw=True, images=[name]` | That one raw channel as gray RGB, as read from the file. More than one image, or a made one, is `BAD_ARGS` |
+| `raw=True, images=[name]` | That one raw channel as gray RGB, as read from the file. More than one image, or a made one, is `BAD_ARGUMENT` |
 
-A name the section has no image of is `UNKNOWN_IMAGE`.
+A name the section has no image of is `NOT_FOUND`.
 
 Pixels come from LangSlice's working copy (a file over 3072 pixels on the long
 edge is already reduced to it) and never above the source size, so
@@ -359,7 +358,7 @@ when the model ends its turn; an agent-CLI call that started work waits for
 it before the process ends and puts the notice on its reply.
 
 While the work runs, any write to its sections, by any tool, native or
-plugin, is refused `SECTION_BUSY` naming the work (a call over several
+plugin, is refused `BUSY` naming the work (a call over several
 sections gives that section's row); so is starting work on a section that
 already has some. The work's own landing is not refused.
 
@@ -401,12 +400,12 @@ and runs on CPU TensorFlow from the `engines` extra
 only when the tool runs. Its weights are fetched once from the EBRAINS bucket
 DeepSlice names, checked by SHA-256, into `~/.cache/langslice/deepslice`
 (`plugin_config` `cache_folder`); a call without the extra, or whose weights
-cannot be fetched, is refused `ENGINE_MISSING`. Options (`plugin_config`):
+cannot be fetched, is refused `ENGINE_UNAVAILABLE`. Options (`plugin_config`):
 `ensemble` (true), `long_edge` (3072), `cache_folder`; any other is refused
 when the plugin loads. Its README (`src/langslice/engines/deepslice/README.md`)
 gives the reply, the files of each call and its parity with DeepSlice.
 
-STalign, SPOmiAlign and emlddmm are `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools` and `langslice.engines.emlddmm.plugin:tools`. All three run in LangSlice's process, their method imported when a tool runs, never when the plugin loads. SPOmiAlign runs on RoMa (`romatch`), which the `engines` extra installs (`pip install "langslice[engines]"`); its one option is `device`, and a call without the extra is refused `ENGINE_MISSING` naming it. STalign and emlddmm need nothing beyond LangSlice's own dependencies: both are vendored, STalign (GPL-3.0) as `langslice_vendor.stalign` (its pure-torch engine, without its optional C++ engine) and emlddmm (Apache-2.0) as `langslice_vendor.emlddmm`. Their 3-D fits read the atlas image from BrainGlobe at 50 um (`langslice/engines/_atlas_images.py`, kept under `~/.cache/langslice-engines`). Each engine's README lists its `plugin_config` options. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+STalign, SPOmiAlign and emlddmm are `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools` and `langslice.engines.emlddmm.plugin:tools`. All three run in LangSlice's process, their method imported when a tool runs, never when the plugin loads. SPOmiAlign runs on RoMa (`romatch`), which the `engines` extra installs (`pip install "langslice[engines]"`); its one option is `device`, and a call without the extra is refused `ENGINE_UNAVAILABLE` naming it. STalign and emlddmm need nothing beyond LangSlice's own dependencies: both are vendored, STalign (GPL-3.0) as `langslice_vendor.stalign` (its pure-torch engine, without its optional C++ engine) and emlddmm (Apache-2.0) as `langslice_vendor.emlddmm`. Their 3-D fits read the atlas image from BrainGlobe at 50 um (`langslice/engines/_atlas_images.py`, kept under `~/.cache/langslice-engines`). Each engine's README lists its `plugin_config` options. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `BAD_ARGUMENT`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
@@ -443,7 +442,7 @@ never share one. A notice words a fit's plausibility flags as the native fits do
 once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
 on a `DeformationProposal.summary`: `FOLDS, REGION_VANISHED (CA1, DG)`).
 
-Brainways is `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Like STalign and emlddmm it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_MISSING`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
+Brainways is `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Like STalign and emlddmm it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_UNAVAILABLE`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
 
 Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes a slot of one queue (file locks: `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`, and `gpu.1.lock`, `gpu.2.lock` and so on beside it), as many at once as the queue's slots (`LANGSLICE_GPU_SLOTS`, else the GPU's memory over 2 GB: 15 on a 32 GB GPU), whatever job, process or thread they come from; a fit beyond them waits for a free slot, and a fit that still runs out of GPU memory waits and runs again. A plugin that fits in LangSlice's process takes the queue with `gpu_turn(device)` of `langslice.plugin_api` (a context manager; a device whose name starts with `cuda` takes a slot, any other none; it yields how long it waited as `waited_s`) and tells an out-of-memory error with `out_of_memory(error)`, as SPOmiAlign, STalign and emlddmm do. A wait of a second or more for the queue is in the reply: `gpu_wait_s` on each SPOmiAlign row (the call's one wait) and on an STalign or emlddmm notice's result, and in the notice's words; a SPOmiAlign section that ran again after the GPU ran out of memory says so in its row's `retried`. `spomialign` and `stalign_lddmm` take up to 20 sections a call (`stalign_plane_search` 8).
 
@@ -559,16 +558,18 @@ A plugin keeps its files under `plugins/<tool>/` of the job (`ctx.work_dir()`).
 
 ## Errors a plugin tool can reply
 
-| Code | Meaning |
+A refusal's code is one of twelve (`RefusalCode`, in `langslice.plugin_api`); its message says the specific reason and what to do next. A plugin may give a code of its own, a plain string, in `ToolError`.
+
+| Code | Meaning for a plugin tool |
 |---|---|
-| `TOO_MANY_SECTIONS` | More sections than `limits["sections"]` (the message says so, and that it is the plugin's limit) |
-| `READ_TOOL_WRITES`, `WRITE_NOT_DECLARED` | A write by a read tool, or of a property not in `writes` |
-| `FROZEN`, `STALE_INPUT`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS` | Rows of a write, as for native tools |
-| `INVALID_LINEAR_PLACEMENT` | A section whose transform is missing or cannot be used (marked stale, made on another orientation) |
-| `BAD_MATRIX`, `BAD_FIELD` | A degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid |
-| `BAD_LAYER`, `UNKNOWN_PLUGIN_LAYER` | A malformed layer; `look` naming a layer no drawn section has |
-| `PLUGIN_FAILED` | The handler raised something other than `ToolError` (or a refusal of the context's) |
-| `NOT_FOR_SCRIPTS` | `work_dir` or `start_work` from a script's `job.context` |
-| `ENGINE_MISSING`, `FIT_FAILED`, `REGION_TOO_SMALL`, `UNKNOWN_REGIONS`, `NO_SIDES` | `fit_fireants` / `fit_elastix`, and the in-tree engines: the engine does not import (or its extra or weights are missing), failed, or the regions given cannot be fitted |
-| `DEFORMATION_UNREADABLE` | A section's deformation whose record cannot be read (a format this version no longer reads, its files gone), or whose inverse a point conversion cannot read |
-| `MCP_TOOL_ERROR`, `MCP_TIMEOUT`, `MCP_UNAVAILABLE` | The adapter's server answered with an error, did not answer, or is not running |
+| `BAD_ARGUMENT` | A wrong argument: more sections than `limits["sections"]` (the message says so, and that it is the plugin's limit); a degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid; a malformed layer; a made image among several in `images`; regions that cannot be fitted (too small, a side a sagittal plane lacks) |
+| `NOT_FOUND` | A named section, image, mask, region or `look` layer that does not exist |
+| `FROZEN` | A write to a property the job froze (a row of a write, as for native tools) |
+| `BUSY` | Background work is running on the section |
+| `STALE_INPUT` | The section changed under a fit, or a mask is stale (a row of a write, as for native tools) |
+| `PRECONDITION` | A section whose transform is missing or cannot be used (marked stale, made on another orientation), or that holds a deformation a new transform would leave misplaced; regions with no sides on this plane |
+| `TOOL_OFF` | `work_dir` or `start_work` from a script's `job.context` |
+| `ENGINE_UNAVAILABLE` | The engine does not import, or its extra or weights are missing |
+| `FIT_FAILED` | An engine ran and failed or gave an unusable result |
+| `IO_ERROR` | A section's deformation whose record cannot be read (a format this version no longer reads, its files gone), or whose inverse a point conversion cannot read |
+| `INTERNAL` | A write by a read tool, or of a property not in `writes`; the handler raised something other than `ToolError` (or a refusal of the context's) |

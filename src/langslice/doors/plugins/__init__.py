@@ -39,6 +39,7 @@ from langslice.doors.plugins.reads import (
     SectionView,
 )
 from langslice.doors.plugins.writes import WriteResult
+from langslice.job.settings.tools_on import ToolsOn
 
 _loader.install()
 
@@ -60,6 +61,7 @@ __all__ = [
     "ToolError",
     "ToolResult",
     "ToolSpec",
+    "ToolsOn",
     "TransformProposal",
     "WriteResult",
     "as_refs",

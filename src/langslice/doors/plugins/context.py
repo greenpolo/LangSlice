@@ -45,7 +45,7 @@ from langslice.doors.plugins.writes import ContextWrites
 
 
 def _not_for_scripts(what: str) -> ToolError:
-    return ToolError(RefusalCode.NOT_FOR_SCRIPTS, what)
+    return ToolError(RefusalCode.TOOL_OFF, what)
 
 
 class ToolContext(ContextFits, ContextWrites, ContextPictures):
@@ -70,7 +70,7 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
     def work_dir(self) -> Path:
         """``<job>/plugins/<tool>/``: the one place this tool writes files
         (scratch, logs, an engine's inputs and outputs). Made on first use.
-        A script has none (``NOT_FOR_SCRIPTS``): it keeps its files in the
+        A script has none (``TOOL_OFF``): it keeps its files in the
         job folder's ``scripts/`` and ``scratch/``."""
         if not self._caller.work_dir:
             raise _not_for_scripts(
@@ -102,7 +102,7 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
         its message. The next tool reply carries the notice
         (``background``); ``status`` lists running work; ``submit`` waits
         for it. While it runs, a write to any of *sections*, by any tool, is
-        refused ``SECTION_BUSY``; so is starting it while other work runs
+        refused ``BUSY``; so is starting it while other work runs
         there."""
         from langslice.job.background import DONE, FAILED, Landed
 

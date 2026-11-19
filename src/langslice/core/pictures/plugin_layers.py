@@ -287,7 +287,7 @@ class _Mapper:
     def from_section_px(self, xy: np.ndarray) -> np.ndarray:
         if self.section is None:
             raise ToolError(
-                RefusalCode.LAYER_NOT_DRAWABLE,
+                RefusalCode.BAD_ARGUMENT,
                 "this picture has no section to place a section layer on",
             )
         width, height = self.file_size()
@@ -305,7 +305,7 @@ class _Mapper:
             return transform(np.linalg.inv(np.asarray(self.atlas["pixel_to_native"])), native_xy)
         if self.section is None:
             raise ToolError(
-                RefusalCode.LAYER_NOT_DRAWABLE,
+                RefusalCode.BAD_ARGUMENT,
                 "this picture shows no plane to place an atlas layer on",
             )
         width, height = frame.file_size
@@ -325,7 +325,7 @@ class _Mapper:
         two arrays of the bounds' shape plus the mask."""
         if self.section is None:
             raise ToolError(
-                RefusalCode.LAYER_NOT_DRAWABLE,
+                RefusalCode.BAD_ARGUMENT,
                 "this picture has no section to place a raster layer on",
             )
         x0, y0, x1, y1 = self.bounds

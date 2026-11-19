@@ -18,16 +18,9 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import status_text
 from langslice.job.folder.layout import JobLayout, read_job_file
 from langslice.job.review import read_comments, revised
-from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import is_off
-
-_IMAGE_MODEL_OFF = (
-    "[[?trace_borders The image-model tool (trace_borders) is off: no image "
-    "model is connected to LangSlice (no key or login for this job's image "
-    "provider).[[?fireants_syn  Fit each section's deformation to its stain "
-    "with fireants_syn.]]]]"
-)
+from langslice.job.settings.tools_on import ToolsOn
 
 OPENING_SHOWS = (
     "They show every section in strips, in the stack's current order, each "
@@ -150,12 +143,12 @@ def read_notes(layout: JobLayout) -> str:
     return str(record.get(NOTES_KEY) or "")
 
 
-def image_model_off_text(disabled: Collection[str]) -> str:
+def image_model_off_text(on: ToolsOn) -> str:
     """Return the line saying the image-model tool is off, for a job.
 
     Parameters
     ----------
-    disabled
+    on
         What the job switches off.
 
     Returns
@@ -163,7 +156,14 @@ def image_model_off_text(disabled: Collection[str]) -> str:
     str
         The line; empty when the job has no ``trace_borders`` to be off.
     """
-    return render(_IMAGE_MODEL_OFF, disabled)
+    if not on.has("trace_borders"):
+        return ""
+    fit = on.say("fireants_syn", " Fit each section's deformation to its stain with fireants_syn.")
+    return (
+        "The image-model tool (trace_borders) is off: no image "
+        "model is connected to LangSlice (no key or login for this job's image "
+        f"provider).{fit}"
+    )
 
 
 def image_model_state(spec: JobSpec, *, connected: bool) -> dict[str, str | bool] | None:

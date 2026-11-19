@@ -10,8 +10,9 @@ order.
 
 ``_answer_crashes``
     After: a call that crashed (a step's or the body's exception that is
-    no refusal) is answered with the refusal its exception makes, its code
-    the exception's class name, where the box answers crashes (MCP's);
+    no refusal) is answered with the refusal its exception makes (``INTERNAL``,
+    the exception's class name and text its message), where the box answers
+    crashes (MCP's);
     elsewhere it is raised to the door.
 ``_serialize``
     One call at a time, the job held as the tool needs it: a write runs
@@ -173,7 +174,7 @@ class ToolBox:
         Returns
         -------
         Refused or None
-            ``OPENING_NOT_READ`` with the unread pages, or None when the gate
+            ``PRECONDITION`` with the unread pages, or None when the gate
             is open.
         """
         if not self.opening_unread:
@@ -181,7 +182,7 @@ class ToolBox:
         pages = sorted(self.opening_unread)
         calls = ", ".join(f"show_stack(page={page})" for page in pages)
         return Refused(
-            RefusalCode.OPENING_NOT_READ,
+            RefusalCode.PRECONDITION,
             f"Read every opening page before the first write: {calls}"
             " (the pictures of the stack the job statement asks for); "
             "nothing was written.",

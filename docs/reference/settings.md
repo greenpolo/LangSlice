@@ -29,8 +29,8 @@ The flags of earlier versions (such as `--thickness`, `--image-provider`,
 `create_job` refuses `fresh=` together with `resume=`.
 
 A job already in the folder is continued with its saved settings. `init` with
-other settings is refused with `SETTINGS_CHANGED`, and other supplied
-`inputs` or `frozen` with `INPUTS_CHANGED`; `--no-resume` starts the job over
+other settings is refused with `STALE_INPUT`, and other supplied
+`inputs` or `frozen` with `STALE_INPUT`; `--no-resume` starts the job over
 and discards its work.
 
 ## Summary
@@ -42,7 +42,7 @@ and discards its work.
 | [`tasks`](#tasks) | `position`, `transform` | What the agent does |
 | [`inputs`](#inputs) | none | What is already known per section |
 | [`frozen`](#frozen) | none | What the agent may not change |
-| [`disabled`](#disabled) | none | Tools and options switched off |
+| [`disabled`](#disabled) | none | Tools switched off |
 | [`enabled`](#enabled) | none | Tools that start off, switched on |
 | [`plugins`](#plugins), `plugin_config` | none | Tools of your own, and the engines' options |
 | [`position.*`](#position-settings) | | Section thickness and interval, spacing rule, guidance, notes |
@@ -94,7 +94,7 @@ A task left out brings none of its tools and takes its answer from
 [`inputs`](#inputs); its properties are frozen on every section. Nonlinear
 needs a linear placement: with Positioning and Linear off, `inputs` must
 supply positions and transforms, and a nonlinear fit refuses a section
-without a transform (`NO_TRANSFORM_LINEAR_OFF`). Two other defaults apply: with `--registration` (an imported
+without a transform (`no_transform_linear_off`). Two other defaults apply: with `--registration` (an imported
 registration) the default is `nonlinear` alone, and in the library with no
 `tasks` it is `nonlinear`, plus `transform` unless every section has a
 supplied transform.
@@ -213,15 +213,13 @@ an injection site, a known problem with the slides.
 
 Default none. Flag `--disabled NAME[,NAME...]`; library `disabled=[...]`.
 
-Tools and tool options switched off on top of what the tasks give: a tool
-(`zoom`) or `tool:option` (`look:positioning`,
-`interactive_transform:flip`). The valid names, what each removes and the
-lists that are refused are in [Tools and options](tools.md#switching-tools-and-options-off).
+Tools switched off on top of what the tasks give, by name (`zoom`). The
+valid names, what each removes and the lists that are refused are in
+[Tools](tools.md#switching-tools-off).
 
 Switch a tool off to keep the agent from spending its context on it, or to
-take away a choice that does not apply: `interactive_transform:flip` when no
-section can be mirrored, `trace_borders` when you want fits to the stain
-alone. `disabled` is not a guard against a script; [`frozen`](#frozen) is.
+take away a choice that does not apply: `trace_borders` when you want fits to
+the stain alone. `disabled` is not a guard against a script; [`frozen`](#frozen) is.
 
 ### `enabled`
 

@@ -99,13 +99,13 @@ def check_image(
     name: object,
 ) -> str:
     """*name* as a fit reads it (empty: ``preprocessed``), once every one of
-    *records* has that image; ``UNKNOWN_IMAGE`` otherwise."""
+    *records* has that image; ``NOT_FOUND`` otherwise."""
     label = str(name or PREPROCESSED).strip()
     for record in records:
         known = images.image_names(workspace, record)
         if label not in known:
             raise Refused(
-                RefusalCode.UNKNOWN_IMAGE,
+                RefusalCode.NOT_FOUND,
                 image=label,
                 images=known,
                 message=f"{record.id} has no section image {label!r}; its images: "
@@ -115,7 +115,7 @@ def check_image(
 
 
 def read(job: Job, workspace: Workspace, record: Section, name: str) -> ImageView:
-    """Section image *name* of *record* (``UNKNOWN_IMAGE`` when it has none)."""
+    """Section image *name* of *record* (``NOT_FOUND`` when it has none)."""
     check_image(job, workspace, [record], name)
     return images.read_image(workspace, record, str(name))
 
@@ -124,7 +124,7 @@ def _check_name(workspace: Workspace, state: Stack, name: object) -> str:
     label = str(name or "").strip()
     if label.lower() in RESERVED or not NAME_PATTERN.match(label):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"an image's name is 1 to {images.MAX_NAME} letters, "
             "digits, '_' or '-', starting with a letter or digit, and not "
             f"{' or '.join(map(repr, RESERVED))}.",
@@ -132,7 +132,7 @@ def _check_name(workspace: Workspace, state: Stack, name: object) -> str:
     raw = {value for record in state.slices for value in images.raw_names(workspace, record.id)}
     if label in raw:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"{label!r} is a raw channel of the image files; a raw "
             "channel is never edited. Make an image from it under another name.",
         )
@@ -198,7 +198,7 @@ def make_image_tool(
     try:
         exponent = _exponent(gamma)
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, "gamma is a number.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, "gamma is a number.") from None
     given = ImageRecipe(
         weights=dict(weights or {}),
         clahe_clip=clahe_clip,
@@ -219,7 +219,7 @@ def make_image_tool(
     else:
         reply["recipe"] = done.in_force
     reply["section_images"] = done.images
-    if done.deleted or run.spec.off("look:section") or not run.shows(view):
+    if done.deleted or not run.shows(view):
         return reply
     made = [job.state.by_id(section) for section in done.sections]
     existing = [section for section in made if section is not None]
@@ -274,11 +274,11 @@ def make_section_image(
     *delete* removes the entry from the sections (``preprocessed`` cannot be
     deleted: every fit reads it by default).
 
-    Refused (nothing written): ``BAD_ARGS`` (the name: a raw channel's, a
+    Refused (nothing written): ``BAD_ARGUMENT`` (the name: a raw channel's, a
     reserved word, a bad spelling; a bad value; an image made from itself;
-    deleting ``preprocessed``), ``UNKNOWN_SLICE_IDS``, ``UNKNOWN_IMAGE`` (a
+    deleting ``preprocessed``), ``NOT_FOUND`` (a
     weighted image a section lacks; delete of a name no named section holds),
-    ``RENDER_FAILED`` (a section's image could not be computed).
+    ``IO_ERROR`` (a section's image could not be computed).
     """
     state = job.state
     label = _check_name(workspace, state, name)
@@ -286,14 +286,14 @@ def make_section_image(
     if delete:
         if label == PREPROCESSED:
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message="preprocessed is what every fit reads by "
                 "default and cannot be deleted; make it again instead.",
             )
         holding = [record for record in records if label in record.images]
         if not holding:
             raise Refused(
-                RefusalCode.UNKNOWN_IMAGE,
+                RefusalCode.NOT_FOUND,
                 image=label,
                 message=f"no section named holds a made image {label!r}.",
             )
@@ -321,11 +321,11 @@ def make_section_image(
             invert=given.invert,
         )
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     held = recipe["weights"]
     if isinstance(held, Mapping) and label in held:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"an image is made from other images; {label!r} "
             "cannot be one of its own sources.",
         )
@@ -335,7 +335,7 @@ def make_section_image(
                 images.sources_of(workspace, record.id, record.images, recipe)
             except ValueError as exc:
                 raise Refused(
-                    RefusalCode.UNKNOWN_IMAGE,
+                    RefusalCode.NOT_FOUND,
                     message=str(exc),
                     images=images.image_names(workspace, record),
                 ) from exc
@@ -380,7 +380,7 @@ class _Making:
 
 
 def _made(making: _Making, section: Section) -> ImageRef:
-    """Make *section*'s image and write its file; ``RENDER_FAILED`` refused."""
+    """Make *section*'s image and write its file; ``IO_ERROR`` refused."""
     layout, recipe = making.job.layout, making.recipe
     try:
         if making.reset:
@@ -389,7 +389,10 @@ def _made(making: _Making, section: Section) -> ImageRef:
             making.workspace, section.id, section.images, recipe, enhance=making.enhance
         )
     except (OSError, ValueError, RuntimeError) as exc:
-        raise Refused(RefusalCode.RENDER_FAILED, message=f"{section.id}: {exc}") from exc
+        raise Refused(
+            RefusalCode.IO_ERROR,
+            message=f"{section.id}: {exc}; check the section file opens, then try again.",
+        ) from exc
     extra = {}
     if not isinstance(recipe["weights"], Mapping):
         extra = {"weights_used": used}
@@ -398,7 +401,10 @@ def _made(making: _Making, section: Section) -> ImageRef:
             layout, section.id, making.label, array, {"recipe": recipe}, extra=extra
         )
     except (OSError, ValueError, RuntimeError) as exc:
-        raise Refused(RefusalCode.RENDER_FAILED, message=f"{section.id}: {exc}") from exc
+        raise Refused(
+            RefusalCode.IO_ERROR,
+            message=f"{section.id}: {exc}; check the section file opens, then try again.",
+        ) from exc
 
 
 def add_image(
@@ -413,14 +419,14 @@ def add_image(
     *note* recorded as the source). *array* is ``(H, W)`` on the section's
     working grid, in the file's orientation (as a raw plane is held): ``uint8``,
     or floats from 0 to 1 (scaled to 0-255). One undo step; the file written as
-    any made image's. Refused: ``BAD_ARGS`` (the name, the shape or values).
+    any made image's. Refused: ``BAD_ARGUMENT`` (the name, the shape or values).
     Returns the entry."""
     label = _check_name(workspace, job.state, name)
     held = np.asarray(array)
     width, height = workspace.working_source(record.id)[0].size
     if held.shape != (height, width):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"{record.id}'s images are (H, W) = ({height}, "
             f"{width}) on its working grid, in the file's orientation; got "
             f"{tuple(held.shape)}.",
@@ -428,7 +434,7 @@ def add_image(
     if held.dtype != np.uint8:
         if not np.issubdtype(held.dtype, np.floating) or not np.isfinite(held).all():
             raise Refused(
-                RefusalCode.BAD_ARGS, message="an image is uint8, or finite floats from 0 to 1."
+                RefusalCode.BAD_ARGUMENT, message="an image is uint8, or finite floats from 0 to 1."
             )
         held = np.rint(np.clip(held, 0.0, 1.0) * 255.0).astype(np.uint8)
     entry = images.write_file(

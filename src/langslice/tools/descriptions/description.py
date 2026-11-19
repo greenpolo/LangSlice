@@ -17,16 +17,17 @@ field              what the model reads
 
 A text is prose at no indentation, broken into lines as the model reads
 it; a line too long for the source ends in a backslash, which joins it to
-the next. A passage that names a tool or an option is written with what
-it needs (:mod:`langslice.job.settings.needs`), and an argument names what
-it needs in ``needs``. A slot is ``${name}``, filled before the marks are
-rendered.
+the next. A text that names a tool is a function of the run's
+:class:`~langslice.job.settings.tools_on.ToolsOn` (:data:`Text`) that builds
+the text from the pieces whose tools are on; an argument that exists only
+where a tool is on names it in ``requires``. A slot is ``${name}``, filled in
+the text a function returns.
 """
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import KW_ONLY, dataclass, field
 from enum import Enum, auto
 
@@ -36,8 +37,11 @@ from langslice.core.space import as_plane
 from langslice.job.plugins import LoadedPlugin, of_spec
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import tools_for
+from langslice.job.settings.tools_on import ToolsOn
 
 REQUIRED = inspect.Parameter.empty
+
+Text = str | Callable[[ToolsOn], str]
 
 AGENT_DOOR = "agent"
 
@@ -64,8 +68,7 @@ class DescriptionFacts:
     positions: bool = True
     uncapped: bool = False
     prompt: str = ""
-    switched_off: frozenset[str] = frozenset()
-    absent: frozenset[str] = frozenset()
+    on: ToolsOn = ToolsOn()
     plugins: tuple[LoadedPlugin, ...] = ()
     brain_scale: float = 1.0
 
@@ -125,8 +128,7 @@ class DescriptionFacts:
             positions=spec.has("position"),
             uncapped=uncapped,
             prompt=prompt,
-            switched_off=frozenset(spec.switched_off),
-            absent=absent,
+            on=ToolsOn(frozenset(spec.switched_off) | absent),
             plugins=plugins,
             brain_scale=brain_scale,
         )
@@ -175,13 +177,14 @@ Slot = PerCap | PerDoor | Distance
 
 @dataclass(frozen=True)
 class Argument:
-    """One argument of a tool: its type, its default and its text."""
+    """One argument of a tool: its type, its default and its text; with
+    ``requires``, the tool that must be on for the run to offer it."""
 
     annotation: object
     default: object
-    text: str
+    text: Text
     _: KW_ONLY
-    needs: str = ""
+    requires: str = ""
     offered: Offered = Offered.ALWAYS
 
 
@@ -189,9 +192,9 @@ class Argument:
 class ToolDescription:
     """One tool's description as data (see the module text)."""
 
-    summary: str
-    body: tuple[str, ...] = ()
+    summary: Text
+    body: tuple[Text, ...] = ()
     arguments: Mapping[str, Argument] = field(default_factory=dict[str, Argument])
-    returns: str = ""
-    prompt_heading: str = ""
+    returns: Text = ""
+    prompt_heading: Text = ""
     slots: Mapping[str, Slot] = field(default_factory=dict[str, Slot])

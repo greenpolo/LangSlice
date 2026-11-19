@@ -14,7 +14,7 @@ Import-linter enforces the boundaries without exceptions.
 | Package | Responsibility |
 |---|---|
 | `core` | The science and the stack's shapes: the stack and section state (`stack/`), geometry, atlas access, the section files and images (`sections/`), pictures, the registration methods and engines (`fits/`), maps; of a job's settings it reads only the few the workspace carries (`ImageSettings`) |
-| `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports; the job's settings (`settings/`: the form `JobSpec`, the table of every setting, what is frozen, the tool table, the needs marks) and the registry of loaded plugins |
+| `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports; the job's settings (`settings/`: the form `JobSpec`, the table of every setting, what is frozen, the tool table, the tools a job has on) and the registry of loaded plugins |
 | `tools` | Operations on a job; `catalog.py` lists tools, task conditions and call limits; the shared declarations and the job statement (`descriptions/`) |
 | `doors` | The ways in: native agent tools, the built-in ADK agent (`agent/`), MCP, the agent CLI, the `langslice` command and the Python library |
 | `hosts` | The LangSlice window (`langslice gui`) |
@@ -24,11 +24,12 @@ Import-linter enforces the boundaries without exceptions.
 passed in as arguments.
 
 A call that cannot be done raises one exception, `Refused` (`core/refusal.py`),
-with a code from the `RefusalCode` enum (every code the agent can meet, each
-with its meaning), a message and the facts behind it; nothing is written for
+with a code from the twelve of the `RefusalCode` enum (each with its
+meaning), a message that says the specific reason and what to do next, and the
+facts behind it; nothing is written for
 it. The core, the job and the tools raise it, and each interface turns it into
 its own answer once: the tool reply `{"status": "error", "error": code, ...}`,
-the agent CLI's envelope with its exit code and fix, the MCP text block, the
+the agent CLI's envelope with its exit code, the MCP text block, the
 library's reply. A plugin raises the same refusal as `ToolError`. `connectors/` contains code installed in another
 program: the Claude Desktop, Claude Code, Antigravity and Codex setups.
 
@@ -51,8 +52,7 @@ availability; each tool's description is data in `tools/descriptions/`
 (one module per tool family), which `render.py` lays out for every door. Tasks remove whole registration tools, a job's `disabled`
 list removes single tools and options, and viewing and image tools remain
 available otherwise. Model-facing text that names a tool or an option is
-written with what it needs (`job/settings/needs.py`) and rendered for the
-job. See [tools and options](../reference/tools.md).
+built for the job's tools (`ToolsOn`, `job/settings/tools_on.py`). See [tools and options](../reference/tools.md).
 
 The in-tree engines' tools are rows of the tool table
 (`ToolDef.engine`) whose declaration and handler live in `engines/`, written

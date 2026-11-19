@@ -36,7 +36,7 @@ from langslice.tools.fitting.deformable import (
     refuse_without_engine,
     resolved_atlas_image,
 )
-from langslice.tools.refusal import section_refusal, unknown_sections
+from langslice.tools.refusal import put_back_words, section_refusal, unknown_sections
 from langslice.tools.stale import stale_refusal
 
 if TYPE_CHECKING:
@@ -81,11 +81,10 @@ def fit_record(
     *marked* adds the section's marked damage regions to the settings'
     ``exclude``, as every native fit leaves them out.
 
-    Refused: ``UNKNOWN_SLICE_IDS``, ``ENGINE_MISSING``, ``BAD_ARGS`` (settings
-    that are not a FireANTs stain fit, a start that is neither, ``current``
-    without a deformation), ``INVALID_LINEAR_PLACEMENT``, ``UNKNOWN_MASK``,
-    ``STALE_MASK``, ``FIT_FAILED`` (the engine or the masks failed, the
-    message says how).
+    Refused: ``NOT_FOUND``, ``ENGINE_UNAVAILABLE``, ``BAD_ARGUMENT`` (settings
+    that are not a FireANTs stain fit, a start that is neither), ``PRECONDITION``
+    (``current`` without a deformation), ``STALE_INPUT``, ``FIT_FAILED`` (the
+    engine or the masks failed, the message says how).
     """
     from langslice.core.fits.deformable.fit import prepare_fit, run_prepared
 
@@ -98,25 +97,25 @@ def fit_record(
         or (settings.section_image != "stain" or settings.labels != "none")
     ):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message="settings are a FireANTs stain fit's FitSettings "
             "(engine fireants, section_image stain, labels none).",
         )
     if start not in tuple(deformation.FitStart):
-        raise Refused(RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="start is 'linear' or 'current'.")
     refuse_without_engine()
     label = str(mask or ops_masks.NO_MASK).strip()
     weights = ops_masks.section_weights(job, record, label)
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
     except (ValueError, OSError) as exc:
-        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}") from exc
+        raise Refused(RefusalCode.PRECONDITION, message=f"{record.id}: {exc}") from exc
     previous = None
     if start == deformation.FitStart.CURRENT:
         previous = job.deformations.current(job.state, record)
         if previous is None:
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message=f"{record.id} has no deformation to start from.",
             )
     image_name = check_image(job, workspace, [record], section_image)
@@ -223,34 +222,34 @@ def warp_from_map(
     [0, 1] (stored as float16 with the record; ``make_mask`` source ``fit``
     copies it); None when it estimated none.
 
-    Refused (nothing built): ``UNKNOWN_SLICE_IDS``; ``INVALID_LINEAR_PLACEMENT``
-    (no position or no usable transform, as a fit refuses); ``BAD_FIELD`` (not
+    Refused (nothing built): ``NOT_FOUND``; ``PRECONDITION``
+    (no position or no usable transform, as a fit refuses); ``BAD_ARGUMENT`` (not
     a float array of the grid's shape with two channels, or not finite;
-    *weights* not a finite ``(H, W)`` array); ``BAD_ARGS`` (a *start* that is
-    neither, ``current`` on a section that holds no deformation);
-    ``DEFORMATION_UNREADABLE``.
+    *weights* not a finite ``(H, W)`` array; a *start* that is neither);
+    ``PRECONDITION`` (``current`` on a section that holds no deformation);
+    ``IO_ERROR``.
     """
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [str(section)])
     if start not in tuple(deformation.FitStart):
-        raise Refused(RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="start is 'linear' or 'current'.")
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
     except (ValueError, OSError) as exc:
-        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}") from exc
+        raise Refused(RefusalCode.PRECONDITION, message=f"{record.id}: {exc}") from exc
     previous: deformation.DeformableRecord | None = None
     if start == deformation.FitStart.CURRENT:
         try:
             previous = job.deformations.current(job.state, record)
         except ValueError as exc:
             raise Refused(
-                RefusalCode.DEFORMATION_UNREADABLE,
-                message=f"{record.id}: {exc}",
+                RefusalCode.IO_ERROR,
+                message=f"{record.id}: {exc} {put_back_words(job.spec.tools_on)}",
             ) from exc
         if previous is None:
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message=f"{record.id} holds no deformation to build on: start is 'linear'.",
             )
     parent_key = None
@@ -311,26 +310,26 @@ def warp_from_map(
 def _checked_map(section_id: str, native_xy: object, size: tuple[int, int]) -> np.ndarray:
     """Return the map as an array.
 
-    Refused (``BAD_FIELD``) unless it is a finite float ``(H, W, 2)`` array
+    Refused (``BAD_ARGUMENT``) unless it is a finite float ``(H, W, 2)`` array
     on the fit grid of ``size`` ``(W, H)``.
     """
     width, height = size
     array = np.asarray(native_xy)
     if not np.issubdtype(array.dtype, np.floating):
         raise Refused(
-            RefusalCode.BAD_FIELD,
+            RefusalCode.BAD_ARGUMENT,
             message=f"{section_id}: the map is a float array, not {array.dtype}.",
         )
     if array.shape != (height, width, 2):
         raise Refused(
-            RefusalCode.BAD_FIELD,
+            RefusalCode.BAD_ARGUMENT,
             message=f"{section_id}: the map is (H, W, 2) = "
             f"({height}, {width}, 2) on the fit grid; got {array.shape}.",
             expected_shape=[height, width, 2],
         )
     if not np.isfinite(array).all():
         raise Refused(
-            RefusalCode.BAD_FIELD,
+            RefusalCode.BAD_ARGUMENT,
             message=f"{section_id}: the map has values that are not finite.",
         )
     return array
@@ -339,7 +338,7 @@ def _checked_map(section_id: str, native_xy: object, size: tuple[int, int]) -> n
 def _stored_weights(section_id: str, weights: object, size: tuple[int, int]) -> np.ndarray | None:
     """Return the engine's weights as stored (float16 in [0, 1]).
 
-    Refused (``BAD_FIELD``) unless a finite ``(H, W)`` array; None without
+    Refused (``BAD_ARGUMENT``) unless a finite ``(H, W)`` array; None without
     any.
     """
     if weights is None:
@@ -348,7 +347,7 @@ def _stored_weights(section_id: str, weights: object, size: tuple[int, int]) -> 
     given = np.asarray(weights)
     if given.shape != (height, width) or not np.isfinite(given.astype(np.float64)).all():
         raise Refused(
-            RefusalCode.BAD_FIELD,
+            RefusalCode.BAD_ARGUMENT,
             message=f"{section_id}: weights are a finite (H, W) = "
             f"({height}, {width}) array on the fit grid; got {given.shape}.",
             expected_shape=[height, width],
@@ -413,7 +412,7 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
             try:
                 folder = store.save(record.id, warp.key, warp.record)
             except (OSError, ValueError) as exc:
-                failed = Refused(RefusalCode.RECORD_WRITE_FAILED, message=str(exc))
+                failed = Refused(RefusalCode.IO_ERROR, message=str(exc))
                 rows.append(WarpApplied(record.id, refusal=failed))
                 continue
             record.deformation = deformation.reference(

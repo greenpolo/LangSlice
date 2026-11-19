@@ -13,7 +13,7 @@ unless the job disables it); the others come with their task: Positioning
 ``transform.angles``), Linear (``transform``) or Nonlinear (``nonlinear``),
 the user-facing task names. A task that is off removes its tools, and a
 job's ``disabled`` list (:attr:`langslice.job.settings.spec.JobSpec.disabled`)
-removes single tools and tool options on top.
+removes single tools on top.
 
 Every door is generated from this list: the agent tools and the MCP tools
 (``build_tools`` builds the verbs :func:`enabled` names for the run, in this

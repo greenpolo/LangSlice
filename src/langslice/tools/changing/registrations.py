@@ -9,10 +9,10 @@ settings of its deformation and the pictures the write that left it saved;
 :func:`restore` puts one registration of each section named back, as ONE
 undo step, the other sections untouched. A section is refused, as its own
 row, when it would change a property the job froze (``FROZEN``), names no
-registration of the section (``UNKNOWN_REGISTRATION``), or holds a
+registration of the section (``NOT_FOUND``), or holds a
 deformation fitted with the section at another position or cutting angles
-(``REGISTRATION_ELSEWHERE``: its linear placement would not be the one it
-was fitted on), or one whose record is gone (``DEFORMATION_UNREADABLE``).
+(``STALE_INPUT``: its linear placement would not be the one it
+was fitted on), or one whose record is gone (``IO_ERROR``).
 :func:`entry_for` is the registration ``look`` draws a section under
 without writing it. The tool's function (``restore_registration_tool``)
 answers with a listing, or with a restore's rows and the overlays of the
@@ -33,7 +33,6 @@ from langslice.core.stack.codec import Written
 from langslice.core.stack.section import Angles, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import deformation_entry, transform_entry
-from langslice.job.settings.needs import render
 from langslice.job.state_file import stack_from_json
 from langslice.job.steps.history import (
     HOST,
@@ -217,26 +216,25 @@ def _unknown(job: Job, record: Section, number: object) -> Refused:
         else "it has none listed yet"
     )
     return Refused(
-        RefusalCode.UNKNOWN_REGISTRATION,
+        RefusalCode.NOT_FOUND,
         id=record.id,
         registration=number,
         registrations=numbers,
-        message=render(
-            f"{record.id} has no registration {number}; {listed}.[[?"
-            "restore_registration  Call restore_registration with the section "
-            "alone to list them.]]",
-            job.spec.switched_off,
+        message=f"{record.id} has no registration {number}; {listed}."
+        + job.spec.tools_on.say(
+            "restore_registration",
+            " Call restore_registration with the section alone to list them.",
         ),
     )
 
 
 def _number(section: Section, number: object) -> int:
-    """Return a registration number the model gave; ``BAD_ARGS`` for
+    """Return a registration number the model gave; ``BAD_ARGUMENT`` for
     anything but a whole number from 1.
     """
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"{section.id}: a registration is a number from 1; got {number!r}.",
         )
     return number
@@ -246,8 +244,8 @@ def entry_for(job: Job, section: object, number: object) -> tuple[Section, Row, 
     """``(record, entry, held)``: registration *number* of *section* as it
     can be drawn on the section as it stands (what ``look`` draws a section
     under without writing it), and the number the section holds. Refused:
-    ``UNKNOWN_SLICE_IDS``, ``UNKNOWN_REGISTRATION``,
-    ``REGISTRATION_ELSEWHERE``, ``DEFORMATION_UNREADABLE``, ``BAD_ARGS``."""
+    ``NOT_FOUND``,
+    ``STALE_INPUT``, ``IO_ERROR``, ``BAD_ARGUMENT``."""
     record = _resolve(job, str(section))
     entry = _listed(job, record, number)
     held = job.histories.registration_number(job.state, record)
@@ -259,7 +257,7 @@ def entry_for(job: Job, section: object, number: object) -> tuple[Section, Row, 
 
 def _listed(job: Job, section: Section, number: object) -> Row | None:
     """Return the first line of registration *number* of a section; None
-    without one; ``BAD_ARGS`` for a number that is not one.
+    without one; ``BAD_ARGUMENT`` for a number that is not one.
     """
     given = _number(section, number)
     for entry in job.histories.registrations(section.id):
@@ -273,7 +271,7 @@ def _check_entry(job: Job, record: Section, entry: Row) -> None:
     elsewhere = _elsewhere(job.state, record, entry)
     if elsewhere:
         raise Refused(
-            RefusalCode.REGISTRATION_ELSEWHERE,
+            RefusalCode.STALE_INPUT,
             id=record.id,
             registration=entry.registration,
             message=f"Registration {entry.registration} of {record.id} cannot go back "
@@ -286,7 +284,7 @@ def _check_entry(job: Job, record: Section, entry: Row) -> None:
         and not (job.layout.resolve(deformation.record or "") / "record.json").is_file()
     ):
         raise Refused(
-            RefusalCode.DEFORMATION_UNREADABLE,
+            RefusalCode.IO_ERROR,
             id=record.id,
             registration=entry.registration,
             message=f"The deformation of registration {entry.registration} of "
@@ -335,15 +333,15 @@ def restore(job: Job, sections: Any) -> RestoredMany:
     module text). A section that cannot be restored is its own row and the
     others are written; any other failure partway puts back the sections
     already changed and raises (nothing written, in memory or on disk).
-    Refused, nothing written: ``BAD_ARGS`` (no entries,
+    Refused, nothing written: ``BAD_ARGUMENT`` (no entries,
     an entry that is not ``{"id", "registration"}``),
-    ``DUPLICATE_SLICE_IDS``, ``UNKNOWN_SLICE_IDS``."""
+    ``NOT_FOUND``."""
     entries = list(sections or [])
     if not entries or not all(
         isinstance(e, dict) and set(e) == {"id", "registration"} for e in entries
     ):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message='sections is a list of {"id": filename, '
             '"registration": number}, one per section to put back.',
         )
@@ -363,7 +361,7 @@ def restore(job: Job, sections: Any) -> RestoredMany:
         doubled = sorted({name for name in ids if ids.count(name) > 1})
         if doubled:
             raise Refused(
-                RefusalCode.DUPLICATE_SLICE_IDS,
+                RefusalCode.BAD_ARGUMENT,
                 duplicate_ids=doubled,
                 message="Name each section once.",
             )
@@ -415,7 +413,7 @@ def restore_registration_tool(
     entries = as_list(sections)
     if bool(str(section or "").strip()) == bool(entries):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "Give section alone to list its registrations, "
             'or sections ([{"id": filename, "registration": number}]) to '
             "put them back; not both.",

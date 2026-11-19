@@ -6,6 +6,7 @@ Each tool's description is data, read as
 
 from __future__ import annotations
 
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.arguments import SectionRegistration
 from langslice.tools.descriptions.description import (
     REQUIRED,
@@ -13,6 +14,14 @@ from langslice.tools.descriptions.description import (
     Offered,
     ToolDescription,
 )
+
+
+def _full_resolution(on: ToolsOn) -> str:
+    zoom = on.say("zoom", " but a zoom")
+    return f"""Write the maps on the image file's own pixels
+instead of its working copy (what every picture{zoom} is
+drawn from)."""
+
 
 NOTE = ToolDescription(
     summary=("Append one line to the run notes, which are saved with the results."),
@@ -70,8 +79,8 @@ returns sections to any earlier registrations, such as fits made before
 another method's, and leaves the other sections as they are. One
 undoable write for the call. A deformation fitted with the section at
 another position or other cutting angles is refused until the section is
-back there.[[?look:section|look:overlay  look draws an earlier registration
-without writing it.]]""",
+back there. look draws an earlier registration
+without writing it.""",
     ),
     arguments={
         "section": Argument(
@@ -163,10 +172,7 @@ section.""",
         "full_resolution": Argument(
             bool,
             False,
-            """\
-Write the maps on the image file's own pixels
-instead of its working copy (what every picture[[?zoom  but a zoom]] is
-drawn from).""",
+            _full_resolution,
         ),
     },
     returns="""\

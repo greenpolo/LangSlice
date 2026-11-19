@@ -12,7 +12,6 @@ import { DUR, EASE_IN_OUT } from '../motion';
 import { Message } from './Message';
 import './prompt.css';
 
-const KEPT = 'Off: you said what this would change stays as it is.';
 const capital = (word: string) => (word ? word[0].toUpperCase() + word.slice(1) : '');
 
 // The job the window was opened on (`#tab=prompt&job=<n>`): the form starts from its job.json.
@@ -297,10 +296,10 @@ function AbbaBlock({ form, up }: { data: Data; form: Form; up: (p: Partial<Form>
   );
 }
 
-// The tools table: a switch per tool and option, each greyed row saying why; the image
+// The tools table: a switch per tool, each greyed row saying why; the image
 // model after the warp's tools.
 function Tools({ data, form, up }: { data: Data; form: Form; up: (p: Partial<Form>) => void }) {
-  const here = Generator.present(data, form), off = new Set(form.off), keptOff = Generator.keptOff(data, form);
+  const here = Generator.present(data, form), keptOff = Generator.keptOff(data, form);
   const noImageModel = form.imageProvider === 'none';
   const setOff = (name: string, isOff: boolean) => {
     const tool = data.tools.find(t => t.name === name);
@@ -324,7 +323,7 @@ function Tools({ data, form, up }: { data: Data; form: Form; up: (p: Partial<For
       <div key={group.name}>
         <ToolGroup title={group.label} note={inRun || !task ? '' : `Not in this run: “${task.label}” is not chosen above.`} absent={!inRun}>
           {data.tools.filter(t => t.group === group.name).map(tool => (
-            <ToolRows key={tool.name} data={data} form={form} tool={tool} here={here} off={off} keptOff={keptOff} noImageModel={noImageModel} setOff={setOff} />
+            <ToolRows key={tool.name} data={data} form={form} tool={tool} here={here} keptOff={keptOff} noImageModel={noImageModel} setOff={setOff} />
           ))}
         </ToolGroup>
         {showImage && <ImageModel data={data} form={form} up={up} />}
@@ -350,36 +349,24 @@ function ToolGroup({ title, note, absent, children }: { title: string; note: str
   );
 }
 
-function ToolRows({ data, form, tool, here, off, keptOff, noImageModel, setOff }: {
-  data: Data; form: Form; tool: Tool; here: Set<string>; off: Set<string>; keptOff: Set<string>;
+function ToolRows({ data, form, tool, here, keptOff, noImageModel, setOff }: {
+  data: Data; form: Form; tool: Tool; here: Set<string>; keptOff: Set<string>;
   noImageModel: boolean; setOff: (name: string, off: boolean) => void;
 }) {
   void data;
   const inRun = here.has(tool.name), held = keptOff.has(tool.name);
   const noModel = !inRun && noImageModel && tool.image_model;
-  const toolOff = tool.disableable && Generator.toolOff(form, tool);
   const note = !tool.disableable ? 'always on' : noModel ? 'not in this run: you chose no image model' : held ? 'off: you said this stays as it is' : '';
   const checked = tool.disableable ? !held && !Generator.toolOff(form, tool) : true;
   return (
     <>
-      <label className={'tool' + (tool.options.length ? ' parent' : '') + (inRun ? '' : ' absent') + (tool.disableable ? '' : ' fixed')}
+      <label className={'tool' + (inRun ? '' : ' absent') + (tool.disableable ? '' : ' fixed')}
         title={inRun ? '' : (noModel ? 'Not in this run: you chose no image model.' : 'Not in this run: its task is not chosen.')}>
         <Switch checked={checked} disabled={!tool.disableable || !inRun || held}
           title={tool.disableable ? undefined : 'Every run needs this tool.'} onChange={on => setOff(tool.name, !on)} />
         <span className="tool-words"><span className="tool-label">{tool.label}</span>{note && <span className="tool-note">{note}</span>}</span>
         <code className="tool-name">{tool.name}</code>
       </label>
-      {tool.options.map((option, i) => {
-        const kept = keptOff.has(option.name);
-        return (
-          <label key={option.name} className={'tool option' + (i === tool.options.length - 1 ? ' last' : '') + (inRun ? '' : ' absent')} title={kept ? KEPT : ''}>
-            <Switch checked={!kept && !toolOff && !off.has(option.name)} disabled={!inRun || kept || toolOff}
-              onChange={on => setOff(option.name, !on)} />
-            <span className="tool-words"><span className="tool-label">{option.label}</span>{kept && <span className="tool-note">off: you said this stays as it is</span>}</span>
-            <code className="tool-name">{option.name}</code>
-          </label>
-        );
-      })}
     </>
   );
 }

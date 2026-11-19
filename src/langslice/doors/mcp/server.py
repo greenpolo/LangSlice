@@ -427,7 +427,7 @@ def build_server(
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
         if session is None:
-            refusal = Refused(RefusalCode.NO_FOLDER, "Name a job: start_job(image_folder=...).")
+            refusal = Refused(RefusalCode.BAD_ARGUMENT, "Name a job: start_job(image_folder=...).")
             reply = json.dumps(refusal.payload())
             return [TextContent(type="text", text=reply)]
         blocks = await to_thread.run_sync(opened_reply, session)

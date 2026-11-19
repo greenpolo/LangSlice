@@ -42,7 +42,7 @@ sheet=True)` tiles the pictures into sheets
 ([looking](../reference/tools.md#look)).
 The handle reloads other processes' saved changes before each call; a read
 never waits for another process's write lock.
-Registration requirements still apply. See [tools and options](../reference/tools.md).
+Registration requirements still apply. See [tools](../reference/tools.md).
 
 `trace_borders`, `fireants_syn` and a plugin's long tools (`stalign_lddmm`) start
 background work. Subsequent replies deliver its completion notice; `job.wait(timeout=None)`
@@ -84,7 +84,7 @@ untouched.
 | `pixel_size_um` | Source pixel size in µm: one number for every file, or `{filename: um}` (a file it does not name uses its metadata); otherwise file metadata, else uncalibrated (image width mapped onto the atlas plane's width) |
 | `inputs` | Other `JobSpec.inputs`, including `order`, `damaged`, `damaged_regions`, `channel_names` |
 | `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`, `damage`; see [freezing](../reference/settings.md#frozen) |
-| `disabled` | Tools and `tool:option` names the job does without, for example `["zoom", "look:positioning"]`; see [switching tools off](../reference/tools.md#switching-tools-and-options-off) |
+| `disabled` | Tool names the job does without, for example `["zoom", "trace_borders"]`; see [switching tools off](../reference/tools.md#switching-tools-off) |
 | `image_model` | Optional provider, profile or callable for `trace_borders`; omitted creates a job without one |
 | `enabled` | The tools that start off and this job gets: `deepslice_place`, `brainways_ap` ([settings](../reference/settings.md#enabled)); `image_model=` switches `trace_borders` on |
 | `plugins`, `plugin_config` | [Tool plugins](plugins.md) to add to the job's toolbox (LangSlice's own engines are in every job; `plugin_config` holds their options too): `module:factory` references, factory functions defined at module level, or `ToolSpec` objects; options for a factory by reference. Loading runs their code. The references are saved with the job, so reopening it loads the same plugins |
@@ -190,8 +190,8 @@ lists them. For a script:
   supplies, is that section's row `FROZEN`; a placement write drops the
   deformations it made stale in the same undo step; the job's `disabled` list
   does not gate a script's writes (it switches tools off to save the agent's
-  context, [switching tools off](../reference/tools.md#switching-tools-and-options-off));
-- `work_dir()` and `start_work()` are refused (`NOT_FOR_SCRIPTS`): a script
+  context, [switching tools off](../reference/tools.md#switching-tools-off));
+- `work_dir()` and `start_work()` are refused (`TOOL_OFF`): a script
   keeps its files in `scripts/` and `scratch/` and is its own computation.
 
 A long computation takes `digest = c.section_inputs(id)` first and passes
@@ -279,7 +279,7 @@ says the engine had the atlas fixed (the map is inverted on the fit grid),
 `atlas="native"` that it registered against `template` rather than
 `placed_template`. `c.transform_from_itk(id, source, ...)` reads an affine
 (ANTs' `0GenericAffine.mat`, either way round) as a `TransformProposal`;
-a transform that is not affine is `BAD_MATRIX`. For Elastix, `transformix
+a transform that is not affine is `BAD_ARGUMENT`. For Elastix, `transformix
 -def all` writes the deformation field file.
 
 ### Points, regions and atlas planes
@@ -310,7 +310,7 @@ returns a `DeformationProposal` NOT written. Its settings are `fireants_syn`'s,
 by its names and with its defaults (`restrict_to` fits those regions'
 neighbourhood only; `exclude` adds regions to leave out). `mask` is `"none"` or
 the NAME of a mask of the section that `make_mask` made (`c.mask(id, name)`
-reads one: `UNKNOWN_MASK`, `STALE_MASK`); an array is refused (`BAD_ARGS`, make
+reads one: `NOT_FOUND`, `STALE_INPUT`); an array is refused (`BAD_ARGUMENT`, make
 the mask with `make_mask` so the job holds it). `start="current"` fits on top
 of the applied deformation and the written step keeps the chain; `marked=False`
 keeps the section's marked damage regions in the fit. The proposal's provenance
@@ -319,7 +319,7 @@ holds the fit's `inputs` and `estimated` blocks, as a tool's reply does.
 atlas_image="nissl", mask="none", edges=True, marked=True, note="")` runs the
 Elastix affine `elastix_affine` runs, with its names and defaults, from the
 current placement, and returns a `TransformProposal` (refused
-`HAS_DEFORMATION` on a section that holds a deformation).
+`PRECONDITION` on a section that holds a deformation).
 `set_deformations` / `set_transforms` write them as the script's: the
 FireANTs call's settings as the deformation step's `settings` (what `status`
 and the registration list show) and in the record's provenance, the engine's

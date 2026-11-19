@@ -109,7 +109,9 @@ def _quint(folder: Path, kind: str) -> Written:
         files = [Path(path) for path in job.export_stack()]
     named = [path for path in files if path.name == QUINT_FILES[kind]]
     if not named:
-        raise Refused(RefusalCode.NOTHING_EXPORTED, "no section has a placement to write")
+        raise Refused(
+            RefusalCode.PRECONDITION, "no section has a placement to write: place a section first"
+        )
     count = sum(1 for path in files if path.suffix == ".png")
     return Written(str(named[0]), f"{count} sections", 0)
 

@@ -125,7 +125,7 @@ def export_maps(
     """Write the maps of *ids* (every section when None or empty) and the
     stack's exports (see the module text). A section without a placement
     (no position or transform), or whose files cannot be read, is skipped
-    with its reason. ``UNKNOWN_SLICE_IDS`` when *ids* names a section the
+    with its reason. ``NOT_FOUND`` when *ids* names a section the
     job does not have.
 
     Beside other writers (a running agent, CLI calls): the stack is read under
@@ -311,7 +311,7 @@ def section_maps(
     ``coords``,
     ``labels``, ``residual`` (None without a deformation), the grid's
     ``pixel_to_atlas_um``, ``grid_size``, ``um_per_px``), from the stack as
-    it stands after a sync. ``UNKNOWN_SLICE_IDS`` for a name that is no
+    it stands after a sync. ``NOT_FOUND`` for a name that is no
     section's; ``ValueError`` saying why for a section without a placement,
     or whose applied record or image file cannot be read."""
     from langslice.core.maps.section_maps import (
@@ -533,7 +533,7 @@ def export_maps_tool(run: Run, sections: Sequence[str], full_resolution: bool) -
     Returns
     -------
     dict
-        The reply: ``status`` (``error``, ``NOTHING_EXPORTED``, when every
+        The reply: ``status`` (``error``, ``PRECONDITION``, when every
         section named was skipped), the sections written and skipped, the
         files written, and the time it took.
     """
@@ -544,7 +544,11 @@ def export_maps_tool(run: Run, sections: Sequence[str], full_resolution: bool) -
     status = "ok" if exported else "error"
     result: dict[str, Any] = {"status": status}
     if not exported:
-        result["error"] = RefusalCode.NOTHING_EXPORTED
+        result["error"] = RefusalCode.PRECONDITION
+        result["message"] = (
+            "Nothing was exported: each skipped section's reason is under skipped; place the "
+            "section first."
+        )
     result.update(
         written=done.sections,
         skipped=done.skipped,

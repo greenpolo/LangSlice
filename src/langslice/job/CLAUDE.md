@@ -49,29 +49,28 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_m
   `tool_table.refusal`, the plugins by loading them). `image_settings()`
   makes the core's `ImageSettings` (`core/workspace.py`) from it;
   `missing_transform()` words what a fit says of a section with no written
-  transform (`NO_TRANSFORM`, or `NO_TRANSFORM_LINEAR_OFF` rendered for the
+  transform (`NO_TRANSFORM`, or `no_transform_linear_off(on)` worded for the
   disabled list when Linear is off). Protocol metadata:
   `PositionSpec.thickness_um` and `interval_um`, and the state's millimetre
   equivalents, are optional (`None` when not supplied); known values are
   positive integers in micrometres, and strict spacing requires an
   interval. `PositionSpec.start_mm` (`JobSpec.start_mm`) and the interval
   are the start and spacing of the sections' initial positions (`ingest`).
-- `tool_table.py` and `needs.py`: what a job can switch off (and, through
+- `tool_table.py` and `tools_on.py`: what a job can switch off (and, through
   `ToolDef.writes`, what its frozen properties switch off: `off_names`).
   `tool_table.py` lists every tool (`TOOLS`: `ToolDef` name, kind, task
-  group, `when`, scripting / image-model / hidden, `options`, `essential`,
+  group, `when`, scripting / image-model / hidden, `essential`,
   `needs`; `tools/catalog.py` binds each to its operation), the names a
-  `JobSpec.disabled` takes (`valid_names`: a tool, or `tool:option`;
-  `is_off`, `options_on`) and `refusal(spec)`, the one-line reason a list
-  cannot work (an unknown or essential name, every `look` mode off, a task
-  with every tool that writes its answer off, a tool without the pictures
-  it needs), which the spec raises as a `ValueError` when it is made. The
-  kinds and groups and the `look` modes are the core's plain names
-  (`core/tool_kinds.py`, `core/pictures/modes.py`). `needs.py`:
-  `render(text, off)`, text written with what it needs (`[[?NAMES
-  text||other]]`, `[[#NAMES=item||...]]` lists), dropped or swapped for the
-  disabled list; with nothing off a text renders to itself without its
-  marks, byte for byte. The in-tree engines' tools are rows too: `ToolDef.engine` is the
+  `JobSpec.disabled` takes (`valid_names`: a tool; `is_off`) and
+  `refusal(spec)`, the one-line reason a list
+  cannot work (an unknown or essential name, a task
+  with every tool that writes its answer off, a tool without the tools it
+  needs), which the spec raises as a `ValueError` when it is made. The
+  kinds and groups are the core's plain names (`core/tool_kinds.py`).
+  `tools_on.py`: `ToolsOn`, the tools that are off for a job (`JobSpec.tools_on`),
+  asked by the code that words a text (`has`, `has_all`, `has_any`, `say`,
+  `say_all`, `say_any`, `listed`), so a text names only a tool that is on.
+  The in-tree engines' tools are rows too: `ToolDef.engine` is the
   reference of the engine that declares and runs the tool (`ENGINES`,
   `engines_on(spec)`: the engines a run has a tool of), `atlases` / `planes`
   the jobs it is offered on (`ToolDef.fits`), `default_off` a tool that is
@@ -101,15 +100,14 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_m
   whose properties are all frozen on every section, `JobSpec.frozen_for(id)`
   includes what a task that is off supplies, and `JobSpec.switched_off` is
   `disabled` plus the tools that write (`ToolDef.writes`) only properties
-  frozen on every section and the mirror under a frozen orientation
-  (`tool_table.off_names`): every door and text renders by it.
-- `labels.py`: a short label for people per tool and `tool:option`
+  frozen on every section (`tool_table.off_names`): every door and text renders by it.
+- `labels.py`: a short label for people per tool
   (`TOOL_LABELS`, `label`), per task (`TASK_LABELS`, `TASK_ABOUT`) and per
   tool group (`GROUP_LABELS`, with the group's task), for the LangSlice
   window's prompt generator (`hosts/gui/generator.py`, its only importer).
   Never model-facing; `tests/test_gui_generator.py` checks that every tool
-  and option has one and no other name does, and that none appears in the
-  pinned model-facing text. A new tool or option is a row here too.
+  has one and no other name does, and that none appears in the
+  pinned model-facing text. A new tool is a row here too.
 
 `plugins.py`: the job's part of the in-tree engines and of tool plugins
 (`docs/developers/plugins.md`; the types are `core/plugins.py`'s): `engines(spec)`
@@ -269,7 +267,7 @@ spec: `job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
 anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--no-resume`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
-agent CLI's `init` answers `INPUTS_CHANGED` (exit 3).
+agent CLI's `init` answers `STALE_INPUT` (exit 3).
 
 **Opening a job without writing.** `Job.open` writes `job.json` and a
 first checkpoint. `Job.load(spec, workspace, folder=)` opens an
@@ -537,7 +535,7 @@ longer exist be taken over by the images it is opened with.
   picture's `step` is the undo history's depth), `frozen_for(id)` and
   `frozen_refusal(ids, *properties)` (the `FROZEN` `Refused` when a write to a
   property the job froze on one of the sections would change it: `ids`,
-  `properties`, `message`; `busy_refusal(ids)` the `SECTION_BUSY` one),
+  `properties`, `message`; `busy_refusal(ids)` the `BUSY` one),
   `emit_results` (atomic).
   `ingest`; in `host_inputs.py`, `apply_host_inputs` (the host's inputs, each section named
   checked; `spec.frozen` must name sections that are here, a frozen position
@@ -561,11 +559,11 @@ longer exist be taken over by the images it is opened with.
   against the atlas and the section's placement as `mark_damage` checks the
   agent's (`core.sections.damage.checked_entries`, `side_pair_refusal`). The submit
   gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`,
-  status `refused`, or None), in order and only for the tasks that are on: `MISSING_POSITIONS` (a section still at its initial position),
-  `STRICT_INTERVAL` or
-  `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
-  `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
-  section (`NonlinearSpec.require_deformation`). The sections whose
+  status `refused`, or None), in order and only for the tasks that are on, each `GATE_REFUSED`: a section
+  still at its initial position, then a strict interval broken or a reported
+  break the written positions do not support, then a section without a
+  transform, then a section without a deformation, only where the host
+  requires one on every section (`NonlinearSpec.require_deformation`). The sections whose
   deformation is frozen need no deformation and no image correction.
 - `public_files.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
@@ -664,7 +662,7 @@ longer exist be taken over by the images it is opened with.
   writes never share one.
 - `browse.py` — read-only browsing of the job folder for `tools/looking/files.py`: `resolve`
   (a path relative to the folder, or absolute inside it; `..` and a symlink
-  pointing out are refused, `Refused` `BAD_PATH`; one that does not exist,
+  pointing out are refused, `Refused` `BAD_ARGUMENT`; one that does not exist,
   `NOT_FOUND` with `nearest`, the nearest folder above it that exists, and
   `holds`, at most `NEAREST_NAMES` of its names), `list_entries`, `search`
   (regex, else plain text; case-insensitive; text files only), `read_lines`,
@@ -672,7 +670,7 @@ longer exist be taken over by the images it is opened with.
   `SEARCH_MATCHES`, `READ_LINES`, `TEXT_BYTES`, `LINE_CHARS`). A walk skips
   symlinks leaving the folder. `HIDDEN` (`TRACE_DIR`, the agent transcripts;
   `is_hidden`): left out of every listing, search, walk and a missing path's
-  `holds`, and a path in it (or a symlink into it) refused `BAD_PATH`
+  `holds`, and a path in it (or a symlink into it) refused `BAD_ARGUMENT`
   whether or not it exists.
 - `quint.py` — QUINT JSON: `job_export(rows, atlas, write_markers=)`
   (QuickNII / VisuAlign JSON of the placed sections, each anchoring from

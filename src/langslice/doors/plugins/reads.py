@@ -276,7 +276,7 @@ class ContextReads:
     def raw_plane(self, section: object, name: str) -> np.ndarray:
         """Raw channel *name* of the section, ``uint8`` ``(H, W)`` on its working
         grid in the image file's orientation: the frame :meth:`add_image` takes.
-        ``ToolError`` ``UNKNOWN_IMAGE`` for a name that is no raw channel."""
+        ``ToolError`` ``NOT_FOUND`` for a name that is no raw channel."""
         from langslice.core.sections.images import raw_plane
 
         record = self._record(section)
@@ -284,7 +284,7 @@ class ContextReads:
             plane = raw_plane(self._run.workspace, record.id, str(name))
             return np.array(plane)
         except ValueError as exc:
-            raise ToolError(RefusalCode.UNKNOWN_IMAGE, str(exc)) from exc
+            raise ToolError(RefusalCode.NOT_FOUND, str(exc)) from exc
 
     def working_rgb(self, section: object) -> np.ndarray:
         """The section's working copy as read, ``uint8`` ``(H, W, 3)`` in the image
@@ -311,8 +311,8 @@ class ContextReads:
         """The section's mask *name* (``make_mask`` made it) as a
         :class:`langslice.core.sections.masks.MaskView`: ``weights`` (float
         ``(H, W)`` on the fit grid, 0 to 1), ``kind`` (``em`` / ``fit``),
-        ``params`` and ``left_out``. ``ToolError`` ``UNKNOWN_MASK`` for a name the
-        section does not hold, ``STALE_MASK`` when the section changed since
+        ``params`` and ``left_out``. ``ToolError`` ``NOT_FOUND`` for a name the
+        section does not hold, ``STALE_INPUT`` when the section changed since
         the mask was made."""
         from langslice.tools.changing import masks as ops_masks
 
@@ -320,7 +320,7 @@ class ContextReads:
         view = ops_masks.read(self._run.job, record, str(name))
         if view.stale:
             raise ToolError(
-                RefusalCode.STALE_MASK, ops_masks.stale_mask(self._run.job, record.id, str(name))
+                RefusalCode.STALE_INPUT, ops_masks.stale_mask(self._run.job, record.id, str(name))
             )
         return view
 
@@ -384,7 +384,7 @@ class ContextReads:
             edge = PICTURE_EDGES[level][1]
         else:
             raise ToolError(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 f"level is a pixel size or one of {', '.join(PICTURE_EDGES)}; got {level!r}",
             )
         names = [str(name) for name in images or ()]
@@ -392,7 +392,7 @@ class ContextReads:
         unknown = [name for name in names if name not in known]
         if unknown:
             raise ToolError(
-                RefusalCode.UNKNOWN_IMAGE,
+                RefusalCode.NOT_FOUND,
                 f"{record.id} has no section image "
                 f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}",
             )
@@ -400,7 +400,7 @@ class ContextReads:
         if raw:
             if len(names) > 1 or (names and kind_of(workspace, record, names[0]) != "raw"):
                 raise ToolError(
-                    RefusalCode.BAD_ARGS,
+                    RefusalCode.BAD_ARGUMENT,
                     "raw takes no image (the file as it is) or one raw channel name",
                 )
             look = {"image": names[0]} if names else {"file": True}
@@ -409,14 +409,14 @@ class ContextReads:
         elif names:
             if any(kind_of(workspace, record, name) != "raw" for name in names):
                 raise ToolError(
-                    RefusalCode.BAD_ARGS,
+                    RefusalCode.BAD_ARGUMENT,
                     "several images are drawn together only when all are raw channels",
                 )
             look = {"overlay": names}
         try:
             image = render_slice(workspace, record, long_edge=edge, look=look)
         except ValueError as exc:
-            raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
+            raise ToolError(RefusalCode.BAD_ARGUMENT, str(exc)) from exc
         return SectionRaster(
             id=record.id,
             array=np.asarray(image.convert("RGB")),

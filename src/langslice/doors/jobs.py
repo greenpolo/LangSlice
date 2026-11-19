@@ -154,8 +154,8 @@ def find(path: str | os.PathLike[str]) -> Path:
             return folder
     raise NoJob(
         f"No LangSlice job in {given} (neither a job folder nor an image folder "
-        "with one beside it). A job made with init --job-dir is in that folder: "
-        "name it instead of the images."
+        "with one beside it). Create the job first: `langslice-job IMAGE_FOLDER init`; a job "
+        "made with init --job-dir is named by its own folder."
     )
 
 

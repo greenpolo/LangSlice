@@ -119,10 +119,7 @@ def can_change(run: Run) -> list[str]:
         if has("interactive_transform"):
             by_hand: list[str] = []
             if "orientation" not in frozen:
-                by_hand.append(
-                    "orientation"
-                    + ("" if spec.off("interactive_transform:flip") else " and mirroring")
-                )
+                by_hand.append("orientation and mirroring")
             if "affine" not in frozen:
                 by_hand.append("in-plane transforms")
             out.append(" and ".join(by_hand) + " by hand")

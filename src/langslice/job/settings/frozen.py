@@ -176,7 +176,10 @@ def statement(frozen: Mapping[str, Collection[str]], section_ids: list[str]) -> 
 def message(properties: Collection[str], ids: list[str], total: int) -> str:
     """The sentence of a refusal: what is frozen, on which sections."""
     who = "every section" if total and len(ids) == total else ", ".join(ids)
-    return f"Frozen on {who}: {words(_ordered(properties))}. The job keeps the value it gave there."
+    return (
+        f"Frozen on {who}: {words(_ordered(properties))}. The job keeps the value it gave "
+        "there: leave them out of the call."
+    )
 
 
 def derived(tasks_on: Collection[str], *, angles_free: bool) -> frozenset[str]:

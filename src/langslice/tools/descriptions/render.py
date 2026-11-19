@@ -19,13 +19,15 @@ reference card      ``summary``
 ADK and FastMCP send a function's ``__doc__`` as it is, so ``doc`` is laid
 out as a docstring: the summary, then every other line indented eight
 spaces; ``Args:`` entries four more, their continuation lines eight more.
-A run's declaration renders each text for what the job switches off
-(:mod:`langslice.job.settings.needs`), fills its slots, leaves out the
-arguments the run does not offer and narrows the ones whose values the job
-switches off; ``trace_borders`` carries the run's base image prompt last,
-as the image model receives it. A tool plugin's tool is declared from its
-stub: the docstring indented as above, rendered for what the job switches
-off and lacks, and the stub's signature. Door-only parameters (ADK's
+A run's declaration words each text for what the job switches off (a
+text that is a function of the run's
+:class:`~langslice.job.settings.tools_on.ToolsOn` is called with it), fills
+its slots, leaves out the arguments the run does not offer and narrows the
+ones whose values the job switches off; ``trace_borders`` carries the run's
+base image prompt last, as the image model receives it. A tool plugin's tool
+is declared from its stub's signature and its description: the spec's
+``description`` (a string, or a function of ``ToolsOn``), else the stub's
+docstring, indented as above. Door-only parameters (ADK's
 ``tool_context``) are the tool body's, never declared.
 """
 
@@ -33,22 +35,16 @@ from __future__ import annotations
 
 import functools
 import inspect
-import typing
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from string import Template
-from typing import Any, Literal
+from typing import Any
 
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
+from langslice.core.plugins import ToolSpec
 from langslice.job import plugins
-from langslice.job.settings.needs import is_met, render
-from langslice.job.settings.tool_table import OPTION_SEPARATOR, TOOLS, is_off
-from langslice.tools.arguments import (
-    SectionTransform,
-    SectionTransformNoFlip,
-    SectionTransformNoOrientation,
-    SectionTransformNoRotate,
-)
+from langslice.job.settings.tool_table import TOOLS
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.descriptions import (
     bookkeeping,
     changing,
@@ -65,6 +61,7 @@ from langslice.tools.descriptions.description import (
     PerCap,
     PerDoor,
     Slot,
+    Text,
     ToolDescription,
 )
 
@@ -135,27 +132,24 @@ def _native(name: str, description: ToolDescription, facts: DescriptionFacts) ->
         if is_offered(entry, facts)
     }
     slots = {key: _slot_text(slot, facts) for key, slot in description.slots.items()}
-    rendered = functools.partial(
-        _rendered, slots=slots, switched_off=facts.switched_off | facts.absent
-    )
+    on = facts.on
 
-    blocks = [rendered(paragraph) for paragraph in description.body]
+    blocks = [_worded(paragraph, on, slots) for paragraph in description.body]
     blocks = [block for block in blocks if block]
-    texts = {argument: rendered(entry.text) for argument, entry in offered.items()}
+    texts = {argument: _worded(entry.text, on, slots) for argument, entry in offered.items()}
     if texts:
         blocks.append(_arguments_block(texts))
-    if description.returns:
-        returns = _indented(rendered(description.returns), ENTRY_INDENT)
-        blocks.append(f"Returns:\n{returns}")
+    returns = _worded(description.returns, on, slots)
+    if returns:
+        blocks.append(f"Returns:\n{_indented(returns, ENTRY_INDENT)}")
     if description.prompt_heading and facts.prompt:
-        blocks += [rendered(description.prompt_heading), facts.prompt]
+        blocks += [_worded(description.prompt_heading, on, slots), facts.prompt]
     below = "\n\n".join(blocks)
-    summary = rendered(description.summary)
+    summary = _worded(description.summary, on, slots)
     doc = f"{summary}\n\n{_indented(below, DOC_INDENT)}\n{' ' * DOC_INDENT}"
 
     annotations: dict[str, object] = {
-        argument: narrowed(name, argument, entry.annotation, facts.switched_off)
-        for argument, entry in offered.items()
+        argument: entry.annotation for argument, entry in offered.items()
     }
     parameters = [
         inspect.Parameter(
@@ -177,9 +171,9 @@ def _native(name: str, description: ToolDescription, facts: DescriptionFacts) ->
     )
 
 
-def _rendered(text: str, *, slots: Mapping[str, str], switched_off: frozenset[str]) -> str:
-    filled = Template(text).substitute(slots)
-    return render(filled, switched_off).rstrip(" ")
+def _worded(text: Text, on: ToolsOn, slots: Mapping[str, str]) -> str:
+    written = text(on) if callable(text) else text
+    return Template(written).substitute(slots).rstrip(" ")
 
 
 def is_offered(argument: Argument, facts: DescriptionFacts) -> bool:
@@ -195,10 +189,10 @@ def is_offered(argument: Argument, facts: DescriptionFacts) -> bool:
     Returns
     -------
     bool
-        True when the run has the argument's fact and every name it needs.
+        True when the run has the argument's fact and the tool it requires.
     """
-    return _has(facts, argument.offered) and is_met(
-        argument.needs, facts.switched_off | facts.absent
+    return _has(facts, argument.offered) and (
+        not argument.requires or facts.on.has(argument.requires)
     )
 
 
@@ -254,15 +248,21 @@ def _one_line(text: str) -> str:
 
 
 def _plugin(name: str, facts: DescriptionFacts) -> Declaration:
-    stub = plugin_stub(name, facts)
-    written = stub.__doc__ or ""
-    first, newline, rest = written.partition("\n")
-    if newline:
-        written = f"{first}\n{_indented(rest, DOC_INDENT - STUB_INDENT)}"
-    doc = render(written, facts.switched_off | facts.absent)
-    _, _, below = render(
-        inspect.cleandoc(stub.__doc__ or ""), facts.switched_off | facts.absent
-    ).partition("\n")
+    tool = plugin_tool(name, facts)
+    stub = tool.stub
+    if tool.description:
+        written = tool.description(facts.on) if callable(tool.description) else tool.description
+        first, newline, rest = written.strip().partition("\n")
+        doc = first
+        if newline:
+            doc = f"{first}\n{_indented(rest, DOC_INDENT)}\n{' ' * DOC_INDENT}"
+        below = rest
+    else:
+        doc = stub.__doc__ or ""
+        first, newline, rest = doc.partition("\n")
+        if newline:
+            doc = f"{first}\n{_indented(rest, DOC_INDENT - STUB_INDENT)}"
+        _, _, below = inspect.cleandoc(stub.__doc__ or "").partition("\n")
     annotations = dict(inspect.get_annotations(stub, eval_str=True))
     annotations["return"] = RETURNS
     signature = inspect.signature(stub, eval_str=True)
@@ -307,53 +307,8 @@ def argument_texts(doc: str) -> dict[str, str]:
     return texts
 
 
-def narrowed(name: str, argument: str, annotation: object, off: Collection[str]) -> object:
-    """Return an argument's type without the options the job switches off.
-
-    The options of ``look``'s ``mode`` are values of its enumeration; the
-    ``flip`` and ``rotate`` options of ``interactive_transform`` are keys of
-    each section it takes.
-
-    Parameters
-    ----------
-    name
-        The tool the argument belongs to.
-    argument
-        One of the tool's arguments.
-    annotation
-        The argument's declared type.
-    off
-        What the job switches off.
-
-    Returns
-    -------
-    object
-        The type with the switched-off values or keys left out.
-    """
-    options = TOOLS[name].options if name in TOOLS else {}
-    if argument in options.values():
-        values: tuple[object, ...] = typing.get_args(annotation)
-        kept = tuple(
-            value for value in values if not is_off(off, f"{name}{OPTION_SEPARATOR}{value}")
-        )
-        return Literal[kept]
-    if (name, argument) != ("interactive_transform", "sections"):
-        return annotation
-    no_flip = is_off(off, "interactive_transform:flip")
-    no_rotate = is_off(off, "interactive_transform:rotate")
-    return _SECTION_TRANSFORMS[no_flip, no_rotate]
-
-
-_SECTION_TRANSFORMS: dict[tuple[bool, bool], object] = {
-    (False, False): list[SectionTransform],
-    (True, False): list[SectionTransformNoFlip],
-    (False, True): list[SectionTransformNoRotate],
-    (True, True): list[SectionTransformNoOrientation],
-}
-
-
-def plugin_stub(name: str, facts: DescriptionFacts) -> Callable[..., object]:
-    """Return the stub of a tool plugin's tool.
+def plugin_tool(name: str, facts: DescriptionFacts) -> ToolSpec:
+    """Return the spec of a tool plugin's tool.
 
     Parameters
     ----------
@@ -364,8 +319,9 @@ def plugin_stub(name: str, facts: DescriptionFacts) -> Callable[..., object]:
 
     Returns
     -------
-    Callable
-        The function whose signature and docstring declare the tool.
+    ToolSpec
+        The tool, whose ``description`` (else its stub's docstring) and
+        stub's signature declare it.
 
     Raises
     ------
@@ -375,9 +331,9 @@ def plugin_stub(name: str, facts: DescriptionFacts) -> Callable[..., object]:
     for plugin in facts.plugins:
         for tool in plugin.tools:
             if tool.name == name:
-                return tool.stub
+                return tool
     if name in TOOLS and TOOLS[name].engine:
-        return plugins.tool_specs(None)[name][1].stub
+        return plugins.tool_specs(None)[name][1]
     raise KeyError(name)
 
 

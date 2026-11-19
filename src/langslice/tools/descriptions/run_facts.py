@@ -3,8 +3,8 @@
 Each fact is a template below, one bullet each, its slots filled from the
 run; :func:`run_facts` chooses which stand. A fact that names a tool or an
 option is written with what it needs (:mod:`langslice.job.settings.needs`)
-and rendered for what the job switches off; the user's own words (the
-facts, the hemisphere cue) are never rendered.
+and built for what the job switches off; the user's own words (the
+facts, the hemisphere cue) are never changed.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from langslice.core.stack.section import INITIAL
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.job.settings import frozen as freeze
-from langslice.job.settings.needs import render
 from langslice.job.settings.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
+from langslice.job.settings.tools_on import ToolsOn
 
 Channels = list[str] | dict[str, list[str]]
 
@@ -61,11 +61,17 @@ PROTOCOL_UNKNOWN = (
     "are missing."
 )
 STACK_ANGLES = "- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
-MIXED_ANGLES = (
-    "- Cutting angles: these differ between sections, as supplied; each "
-    "status row carries its own cutting_angles_deg.[[?position_sections  "
-    "position_sections sets one angle for every section.]]"
-)
+
+
+def mixed_angles(on: ToolsOn) -> str:
+    """The fact on a stack whose sections' cutting angles differ."""
+    one_angle = on.say("position_sections", " position_sections sets one angle for every section.")
+    return (
+        "- Cutting angles: these differ between sections, as supplied; each "
+        f"status row carries its own cutting_angles_deg.{one_angle}"
+    )
+
+
 INITIAL_POSITIONS = (
     "- {initial} of {count} sections are still at their initial position, "
     "as ABBA places a new stack: the first section at the job's start, each "
@@ -91,7 +97,6 @@ TRANSFORMS_GIVEN = (
     "- Existing linear transforms are supplied and fixed for this run, orientation included."
 )
 ORIENTATION_GIVEN = "- The orientation shown is fixed; transforms are not part of this run."
-NO_FLIP = "- Flipping sections is switched off for this run."
 CANVAS = (
     "- Alignment canvas: each section is drawn at its TRUE physical size "
     "from its pixel size (read from the file, or given by the host; without "
@@ -114,14 +119,23 @@ RAW_CHANNELS = (
 )
 CHANNELS_SHARED = "- Raw image channels of every section ({raw}): {names}."
 CHANNELS_PER_SECTION = "- Raw image channels per section ({raw}): {names}."
-SECTION_IMAGES = (
-    "- Section images (status lists them[[?list_files , list_files shows "
-    "their files under sections/<name>/images/]]): the raw channels of each "
-    "file[[?make_image , and the images made from them with make_image]]. "
-    "`preprocessed` was made when the job opened: {opening}. Every "
-    "fit[[?trace_borders  and the image model read|| reads]] a section image "
-    "by name, and a picture of it is exactly what they read."
-)
+
+
+def section_images(on: ToolsOn, opening: str) -> str:
+    """The fact on the section images, with *opening* saying how
+    ``preprocessed`` was made."""
+    files = on.say("list_files", ", list_files shows their files under sections/<name>/images/")
+    made = on.say("make_image", ", and the images made from them with make_image")
+    read = on.say("trace_borders", " and the image model read", " reads")
+    return (
+        f"- Section images (status lists them{files}): the raw channels of each "
+        f"file{made}. "
+        f"`preprocessed` was made when the job opened: {opening}. Every "
+        f"fit{read} a section image "
+        "by name, and a picture of it is exactly what they read."
+    )
+
+
 SPARSE_SIGNAL = (
     "- A channel whose signal is sparse (a tracer, a reporter) shows little "
     "of the anatomy the atlas draws."
@@ -137,7 +151,9 @@ BORROWED = (
     "Nissl, registered to the CCFv3 annotation), resampled onto this atlas's "
     "grid."
 )
-ENGINE_MISSING = "- FireANTs (or torch) is not installed on this host, so {tools} cannot run."
+FIREANTS_NOT_INSTALLED = (
+    "- FireANTs (or torch) is not installed on this host, so {tools} cannot run."
+)
 
 
 def run_facts(
@@ -181,7 +197,7 @@ def run_facts(
         RANGE.format(axis=axis, low=low, high=high),
         AXIS_ENDS.format(low=low, low_end=axis_ends[0], high_end=axis_ends[1]),
         _protocol_fact(state),
-        _angles_fact(state, spec.switched_off),
+        _angles_fact(state, spec.tools_on),
         *_section_facts(spec, state),
         *_change_facts(spec),
     ]
@@ -203,9 +219,9 @@ def _protocol_fact(state: Stack) -> str:
     return PROTOCOL.format(interval=interval, thickness=thickness) + tail
 
 
-def _angles_fact(state: Stack, off: Collection[str]) -> str:
+def _angles_fact(state: Stack, on: ToolsOn) -> str:
     if state.mixed_angles:
-        return render(MIXED_ANGLES, off)
+        return mixed_angles(on)
     pitch, yaw = state.stack_angles
     return STACK_ANGLES.format(pitch=pitch, yaw=yaw)
 
@@ -243,18 +259,14 @@ def _change_facts(spec: JobSpec) -> list[str]:
 
 def _transform_facts(spec: JobSpec) -> list[str]:
     frozen_everywhere = freeze.everywhere(spec.frozen)
-    flips = not spec.off("interactive_transform:flip")
-    by_hand = not spec.off("interactive_transform")
-    facts: list[str] = []
-    if not flips and by_hand and "orientation" not in frozen_everywhere:
-        facts.append(NO_FLIP)
-    facts += [CANVAS, FRAME]
+    mirrors = not spec.off("interactive_transform") and "orientation" not in frozen_everywhere
+    facts: list[str] = [CANVAS, FRAME]
     cap = spec.transform.max_parallel
     if cap < MAX_PARALLEL_TRANSFORMS:
         sections = "section" if cap == 1 else "sections"
         facts.append(TRANSFORM_CAP.format(cap=cap, sections=sections))
     cue = spec.transform.hemisphere_cue.strip()
-    if cue and flips:
+    if cue and mirrors:
         facts.append(HEMISPHERE_CUE.format(cue=cue))
     return facts
 
@@ -266,7 +278,7 @@ def channel_facts(
     *,
     max_resolution: int | None,
     nissl_image: str | None,
-    off: Collection[str],
+    on: ToolsOn,
 ) -> list[str]:
     """Return the facts on what the pictures and fits read.
 
@@ -283,7 +295,7 @@ def channel_facts(
         where it does not.
     nissl_image
         What the fits' default ``nissl`` image is on this atlas.
-    off
+    on
         What the job switches off and the run lacks.
 
     Returns
@@ -302,7 +314,7 @@ def channel_facts(
 
     opening = opening_words(opening_source(spec.image_settings()))
     if opening:
-        facts.append(render(SECTION_IMAGES.format(opening=opening), off))
+        facts.append(section_images(on, opening))
         facts.append(SPARSE_SIGNAL)
     images = [name for name in atlas_channels or () if name not in (BORDERS, NISSL)]
     if images:
@@ -359,7 +371,7 @@ def engine_fact(tool_names: Collection[str]) -> str | None:
     needing = [name for name in ("fireants_syn", "trace_borders") if name in tool_names]
     if not needing or engine_available():
         return None
-    return ENGINE_MISSING.format(tools=" and ".join(needing))
+    return FIREANTS_NOT_INSTALLED.format(tools=" and ".join(needing))
 
 
 def section_channels(workspace: Workspace, state: Stack) -> Channels | None:

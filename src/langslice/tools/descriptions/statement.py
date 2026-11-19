@@ -31,9 +31,9 @@ door       after the statement
 =========  ==========================================================
 
 The ADK agent's system prompt is :data:`SYSTEM_PROMPT`, the same for every
-job. A line that names a tool or an option is written with what it needs
-(:mod:`langslice.job.settings.needs`) and rendered for the job; the user's
-own words are never rendered.
+job. A line that names a tool is built for the tools the job has on
+(:class:`~langslice.job.settings.tools_on.ToolsOn`); the user's own words are
+never changed.
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ from langslice.job.gates import (
     STRICT_INTERVAL_TOLERANCE,
 )
 from langslice.job.settings import frozen as freeze
-from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.descriptions.description import AGENT_DOOR
 from langslice.tools.descriptions.door_text import (
     image_model_off_text,
@@ -141,7 +141,6 @@ JOB_TRANSFORM_AND_ORIENTATION = (
     "give every section one in-plane transform onto its atlas section, "
     "correcting the orientation of any section that is {turned}"
 )
-TURNED = "turned"
 MIRRORED_OR_TURNED = "mirrored or turned"
 JOB_EVERY_DEFORMATION = (
     "give every section a deformation onto the atlas, on top of its linear "
@@ -205,26 +204,31 @@ NO_LIMITS = (
 )
 
 METHOD = "Method:"
-PLAYBOOK = (
-    "- Start from the opening stack and identify anatomical progression, "
-    "possible interleaved series, missing sections and uncertain "
-    "orientations. Form initial position hypotheses from the anatomy.",
-    "- [[?look:positioning Use `look` in mode positioning to compare sections "
-    "with candidate atlas positions and their neighbours. ]]"
-    "[[?grep_atlas|grep_atlas_view Use [[#grep_atlas=`grep_atlas`||"
-    "grep_atlas_view=`grep_atlas_view`]] to locate distinguishing anatomy; ]]"
-    "[[?look:section|look:atlas|zoom [[?grep_atlas|grep_atlas_view u||U]]se "
-    "[[#look:section|look:atlas=section or atlas views||zoom=`zoom`]] when "
-    "you need more detail.]]",
-    "- Write supported placements with `position_sections`, in groups that "
-    "you can assess together. Revisit uncertain sections as their neighbours "
-    "become clearer; the nominal interval informs the search but does not "
-    "replace anatomical evidence.",
-    "- Review the whole stack[[?look:positioning  in positioning mode]] after "
-    "changes. Check both sides of an apparent gap before reporting an "
-    "interval break. Complete the enabled alignment and deformation tasks "
-    "before submitting.",
-)
+
+
+def playbook(on: ToolsOn) -> list[str]:
+    """The step-by-step positioning method, for the tools *on* has."""
+    locate = on.listed([("grep_atlas", "`grep_atlas`"), ("grep_atlas_view", "`grep_atlas_view`")])
+    use = f"Use {locate} to locate distinguishing anatomy; use" if locate else "Use"
+    views = on.listed([("look", "section or atlas views"), ("zoom", "`zoom`")])
+    return [
+        "- Start from the opening stack and identify anatomical progression, "
+        "possible interleaved series, missing sections and uncertain "
+        "orientations. Form initial position hypotheses from the anatomy.",
+        "- Use `look` in mode positioning to compare sections "
+        "with candidate atlas positions and their neighbours. "
+        f"{use} {views} when you need more detail.",
+        "- Write supported placements with `position_sections`, in groups that "
+        "you can assess together. Revisit uncertain sections as their neighbours "
+        "become clearer; the nominal interval informs the search but does not "
+        "replace anatomical evidence.",
+        "- Review the whole stack in positioning mode after "
+        "changes. Check both sides of an apparent gap before reporting an "
+        "interval break. Complete the enabled alignment and deformation tasks "
+        "before submitting.",
+    ]
+
+
 PLACING = (
     "- Place each section on its own evidence: compare it against candidate "
     "atlas positions before writing, and do not let the nominal interval "
@@ -234,12 +238,19 @@ PLACING = (
     "on either side of any gap before reporting an interval break.",
     "- Submit when the work is complete; address any missing requirements it returns.",
 )
-REVISIT_POSITIONS = (
-    "- Positions can be revisited throughout registration. If [[?zoom zooms "
-    "or ]]repeated looks suggest that a section's placement is wrong, return "
-    "to atlas comparisons and re-place it, even after beginning linear or "
-    "nonlinear alignment."
-)
+
+
+def revisit_positions(on: ToolsOn) -> str:
+    """The bullet saying positions can be revisited, for the tools *on* has."""
+    zooms = on.say("zoom", "zooms or ")
+    return (
+        f"- Positions can be revisited throughout registration. If {zooms}"
+        "repeated looks suggest that a section's placement is wrong, return "
+        "to atlas comparisons and re-place it, even after beginning linear or "
+        "nonlinear alignment."
+    )
+
+
 FITS_REFINE = (
     "- Fitting algorithms refine a placement that is already close; they do "
     "not correct a large offset."
@@ -399,7 +410,7 @@ def job_statement(
 
     if opening:
         lines += ["", *opening]
-    off_text = image_model_off_text(facts.spec.switched_off)
+    off_text = image_model_off_text(facts.spec.tools_on)
     if image_model_off and off_text:
         lines += ["", off_text]
     lines += user_notes_lines(notes)
@@ -437,7 +448,7 @@ def build_job_statement(facts: StatementFacts) -> str:
             facts.atlas_channels,
             max_resolution=facts.max_resolution,
             nissl_image=facts.nissl_image,
-            off={*spec.switched_off, *absent},
+            on=ToolsOn(frozenset(spec.switched_off) | frozenset(absent)),
         ),
         *atlas_facts(state.atlas, facts.atlas_channels),
     ]
@@ -491,14 +502,11 @@ def _job(spec: JobSpec, names: Collection[str]) -> list[str]:
 
 def _transform_job(spec: JobSpec) -> str:
     frozen_everywhere = freeze.everywhere(spec.frozen)
-    turned = MIRRORED_OR_TURNED
-    if spec.off("interactive_transform:flip"):
-        turned = TURNED
     if "orientation" in frozen_everywhere:
         return JOB_TRANSFORM
     if "affine" in frozen_everywhere:
-        return JOB_ORIENTATION.format(turned=turned)
-    return JOB_TRANSFORM_AND_ORIENTATION.format(turned=turned)
+        return JOB_ORIENTATION.format(turned=MIRRORED_OR_TURNED)
+    return JOB_TRANSFORM_AND_ORIENTATION.format(turned=MIRRORED_OR_TURNED)
 
 
 def _position_constraints(spec: JobSpec, state: Stack) -> list[str]:
@@ -565,13 +573,12 @@ def _method(spec: JobSpec, names: Collection[str]) -> list[str]:
 def _positioning_method(spec: JobSpec) -> list[str]:
     if not _writes_positions(spec):
         return []
-    off = spec.switched_off
+    on = spec.tools_on
     method: list[str] = list(PLACING)
     if spec.position.playbook:
-        bullets = [render(bullet, off).rstrip() for bullet in PLAYBOOK]
-        method = [bullet for bullet in bullets if bullet.strip(" -")]
+        method = playbook(on)
     if spec.has("transform") or spec.has("nonlinear"):
-        method.append(render(REVISIT_POSITIONS, off))
+        method.append(revisit_positions(on))
     return method
 
 

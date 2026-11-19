@@ -6,6 +6,7 @@ Each tool's description is data, read as
 
 from __future__ import annotations
 
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.arguments import LandmarkPair
 from langslice.tools.descriptions.description import (
     REQUIRED,
@@ -17,61 +18,79 @@ from langslice.tools.descriptions.description import (
 
 LANDMARK_MOVE_UM = 400.0
 
-SET_LANDMARKS = ToolDescription(
-    summary=("Add, update or delete persistent corresponding landmarks. Does not apply a warp."),
-    body=(
-        """\
+
+def _landmarks_move(on: ToolsOn) -> str:
+    refine = on.say(
+        "fireants_syn",
+        ", then refine with fireants_syn, which\n"
+        "keeps the landmark move and finishes the fit. Rough pairs are enough.\n"
+        "fireants_syn alone moves such a piece only part of the way and stretches\n"
+        "borders across the gap. A piece within ${landmark_move} of its place needs no\n"
+        "pairs: fireants_syn fits it alone",
+    )
+    return f"""\
 When a piece of tissue lies away from its place in the atlas outline (a
 cerebellum or olfactory bulb pulled off across a gap, a shifted
 hemisphere, a folded-back flap), move it with landmarks before a dense
 fit: pair points on the piece with their places in the atlas, apply them
-with landmark_triangulation[[?fireants_syn , then refine with fireants_syn, \
-which
-keeps the landmark move and finishes the fit. Rough pairs are enough.
-fireants_syn alone moves such a piece only part of the way and stretches
-borders across the gap. A piece within ${landmark_move} of its place needs no
-pairs: fireants_syn fits it alone]].""",
-        """\
+with landmark_triangulation{refine}."""
+
+
+def _landmarks_pairs(on: ToolsOn) -> str:
+    grid = on.say(
+        "zoom",
+        "On a zoom, x,y are the numbers its grid prints (pixels of the whole\n"
+        "picture it was cut from), so a number read off any grid works whether you\n"
+        "name the zoom's picture or the whole picture. ",
+    )
+    overlay = on.say("zoom", ", or a zoom of it")
+    close_zoom = on.say(
+        "zoom",
+        "Read endpoints off a close\n"
+        "zoom, its grid lines 10 to 20 pixels apart: read off a coarse grid, a point can\n"
+        "miss the border you meant by 20 pixels or more. ",
+    )
+    damage = on.say(
+        "mark_damage",
+        "An atlas region\n"
+        "with no tissue on the section (torn or missing) takes no pair: mark it with\n"
+        "mark_damage; a region\n"
+        "only partly missing keeps its pairs on the part that is present. ",
+    )
+    return f"""\
 Build corresponding pairs across the full section and atlas before calling
 landmark_triangulation to apply the set. Pair IDs are stable. Every batch
 is one undo step. Atlas and section endpoints are explicitly named.
 Coordinates are x,y PIXELS from the top-left of the whole returned picture,
 including panel offsets; no fractions or atlas coordinates are accepted.
-[[?zoom On a zoom, x,y are the numbers its grid prints (pixels of the whole
-picture it was cut from), so a number read off any grid works whether you
-name the zoom's picture or the whole picture. ]]Saved geometry resolves the
+{grid}Saved geometry resolves the
 exact referenced view, including old zooms, orientation and an applied warp.
 Caption/gutter/out-of-image points are refused, and so is an atlas endpoint
 outside the atlas (the refusal gives the nearest point inside it).
-[[?look:atlas A picture of the
+A picture of the
 atlas alone supplies atlas points only when drawn with
 look(mode="atlas", sections=[section]); generic atlas browsing has no
-section context. ]]Plane changes retain pairs but flag their atlas
+section context. Plane changes retain pairs but flag their atlas
 correspondences stale; update those atlas endpoints.
-[[?look:overlay Prefer both endpoints on the same overlay[[?zoom , or a zoom \
-of it]]: the
+Prefer both endpoints on the same overlay{overlay}: the
 atlas point where an atlas border is drawn, the section point where that
 border belongs in the tissue. You point at what you see; a point on a warped
-overlay is mapped back to the section itself. ]][[?zoom Read endpoints off a \
-close
-zoom, its grid lines 10 to 20 pixels apart: read off a coarse grid, a point \
-can
-miss the border you meant by 20 pixels or more. ]]Spread pairs over the \
-outline and
+overlay is mapped back to the section itself. {close_zoom}Spread pairs over the outline and
 the internal anatomy: a pair on the outline moves the outline, and a pair
 on an internal landmark (the midline, a ventricle, a fibre tract) moves the
 anatomy inside. A pair moves the tissue around it, out to the neighbouring
 pairs and the image corners, so tissue that is already right takes pairs
-too: a pair with both endpoints on the same point[[?look:overlay  (one pixel
-of an overlay)]] keeps that spot where it is. [[?mark_damage  An atlas region
-with no tissue on the section (torn or missing) takes no pair: mark it with
-mark_damage; a region
-only partly missing keeps its pairs on the part that is present. ]]Tissue \
-with no
-atlas counterpart (debris, or tissue from another section) takes no pair \
-either.
-With no pairs and no delete, nothing is written and the reply lists the \
-pairs.""",
+too: a pair with both endpoints on the same point (one pixel
+of an overlay) keeps that spot where it is. {damage}Tissue with no
+atlas counterpart (debris, or tissue from another section) takes no pair either.
+With no pairs and no delete, nothing is written and the reply lists the pairs."""
+
+
+SET_LANDMARKS = ToolDescription(
+    summary=("Add, update or delete persistent corresponding landmarks. Does not apply a warp."),
+    body=(
+        _landmarks_move,
+        _landmarks_pairs,
     ),
     arguments={
         "section": Argument(

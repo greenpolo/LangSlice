@@ -48,7 +48,6 @@ from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.job.settings.needs import render
 from langslice.tools.changing import masks as ops_masks
 from langslice.tools.changing.images import check_image
 from langslice.tools.fitting.deformable_rows import (
@@ -64,6 +63,7 @@ from langslice.tools.fitting.fit_regions import (
 from langslice.tools.looking.look import show_result
 from langslice.tools.refusal import (
     check_section_count,
+    put_back_words,
     section_refusal,
     unknown_sections,
 )
@@ -269,7 +269,7 @@ def fit_deformable(
     a made image, by name; ``trace_borders`` fits the traced lines) and
     ``choice.mask`` the section mask by name
     (:mod:`langslice.tools.changing.masks`): a
-    stale mask is that section's row (``STALE_MASK``). Every ok row carries the
+    stale mask is that section's row (``STALE_INPUT``). Every ok row carries the
     ``inputs`` the fit read and what it ``estimated``
     (:mod:`langslice.core.fits.inputs`). Each fit builds on the section's
     applied deformation where it holds one (composed onto it), else on its
@@ -323,11 +323,10 @@ def fit_deformable(
                 DeformableRow(
                     record.id,
                     refusal=Refused(
-                        RefusalCode.DEFORMATION_UNREADABLE,
+                        RefusalCode.IO_ERROR,
                         "The section's applied deformation record cannot be read "
                         f"({folder}); it is not replaced by a fit from the "
-                        "linear placement. Put the section back on another "
-                        "registration, or undo the step that applied it.",
+                        f"linear placement. {put_back_words(job.spec.tools_on)}",
                     ),
                 )
             )
@@ -349,7 +348,7 @@ def fit_deformable(
             rows.append(
                 DeformableRow(
                     record.id,
-                    refusal=Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=str(exc)),
+                    refusal=Refused(RefusalCode.PRECONDITION, message=str(exc)),
                 )
             )
             continue
@@ -391,7 +390,7 @@ def fit_deformable(
             rows.append(failure(refusal=refusal))
             continue
         except (ValueError, OSError) as exc:
-            refusal = Refused(RefusalCode.BAD_SETTINGS, message=str(exc))
+            refusal = Refused(RefusalCode.BAD_ARGUMENT, message=str(exc))
             rows.append(failure(refusal=refusal))
             continue
         held_mask = record.masks.get(choice.mask)
@@ -544,7 +543,7 @@ def _apply(
         try:
             folder = store.save(record.id, fit.key, outcome)
         except OSError as exc:
-            refusal = Refused(RefusalCode.RECORD_WRITE_FAILED, message=str(exc))
+            refusal = Refused(RefusalCode.IO_ERROR, message=str(exc))
             rows[at] = replace(row, refusal=refusal)
             continue
         traced_fit = fit.choice.fit_section == deformation.TRACED_BORDERS
@@ -594,7 +593,7 @@ SECTION_CAP_REASON = (
 
 def engine_ready() -> bool:
     """Whether the deformable engine (FireANTs on torch) imports here
-    (``ENGINE_MISSING`` when not)."""
+    (``ENGINE_UNAVAILABLE`` when not)."""
     if not deformation.engine_available():
         return False
     from langslice.core.fits.deformable.engines import import_fireants
@@ -608,10 +607,14 @@ def engine_ready() -> bool:
 
 
 def refuse_without_engine() -> None:
-    """Refuse ``ENGINE_MISSING`` (nothing done) when the deformable engine does
+    """Refuse ``ENGINE_UNAVAILABLE`` (nothing done) when the deformable engine does
     not import."""
     if not engine_ready():
-        raise Refused(RefusalCode.ENGINE_MISSING, message=deformation.ENGINE_MISSING + ".")
+        raise Refused(
+            RefusalCode.ENGINE_UNAVAILABLE,
+            message=deformation.DEFORMABLE_ENGINE_UNIMPORTABLE
+            + ". Use another method, or ask the user to install it.",
+        )
 
 
 def fireants_syn(
@@ -653,24 +656,23 @@ def fireants_syn(
     worked out itself. The tool door draws the picture of what was written
     (:func:`langslice.tools.looking.look.show_result`).
 
-    Refused (nothing done): ``ENGINE_MISSING``; ``BAD_ARGS`` (no sections,
+    Refused (nothing done): ``ENGINE_UNAVAILABLE``; ``BAD_ARGUMENT`` (no sections,
     an image the atlas does not have, a metric, detail or smoothness that is
-    not one of the allowed, a bad region entry); ``UNKNOWN_SLICE_IDS``;
-    ``UNKNOWN_IMAGE``; ``UNKNOWN_MASK`` (a section without that mask);
-    ``UNKNOWN_REGIONS``; ``NO_SIDES``.
+    not one of the allowed, a bad region entry); ``NOT_FOUND`` (a section, an
+    image, a region, a section without that mask); ``PRECONDITION``.
     """
     from langslice.core.fits.deformable.settings import SMOOTHNESS_BOUNDS_UM
 
     refs = list(sections or [])
     if not refs:
-        raise Refused(RefusalCode.BAD_ARGS, message="Name the sections to fit.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="Name the sections to fit.")
     kind = check_atlas_image(workspace, atlas_image)
     metric_name = str(metric or "mutual_information").strip()
     if metric_name not in METRICS:
-        raise Refused(RefusalCode.BAD_ARGS, message=f"metric is one of {list(METRICS)}.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=f"metric is one of {list(METRICS)}.")
     level = str(detail or "standard").strip().lower()
     if level not in DETAILS:
-        raise Refused(RefusalCode.BAD_ARGS, message=f"detail is one of {list(DETAILS)}.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=f"detail is one of {list(DETAILS)}.")
     low, high = SMOOTHNESS_BOUNDS_UM
     if (
         isinstance(smoothness_um, bool)
@@ -678,7 +680,7 @@ def fireants_syn(
         or not (low <= smoothness_um <= high)
     ):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"smoothness_um is a number of micrometres from {low:g} to {high:g}.",
         )
     refuse_without_engine()
@@ -740,8 +742,8 @@ def refuse_unknown_inputs(
     mask: object,
 ) -> str:
     """The section image a fit reads, after checking every one of *records* has
-    it (``UNKNOWN_IMAGE``) and has the mask *mask* unless it is ``"none"``
-    (``UNKNOWN_MASK``); a stale mask is the section's own row, later."""
+    it and has the mask *mask* unless it is ``"none"``
+    (``NOT_FOUND`` for either); a stale mask is the section's own row, later."""
     image = check_image(job, workspace, records, section_image)
     label = _mask_label(mask)
     if label != ops_masks.NO_MASK:
@@ -749,14 +751,15 @@ def refuse_unknown_inputs(
         if lacking:
             named = ", ".join(lacking)
             raise Refused(
-                RefusalCode.UNKNOWN_MASK,
+                RefusalCode.NOT_FOUND,
                 sections=lacking,
-                message=render(
-                    f"No mask {label!r} on {named}[[?make_mask ; "
-                    "make it with make_mask||; status lists each "
-                    "section's masks]].",
-                    job.spec.switched_off,
-                ),
+                message=f"No mask {label!r} on {named}"
+                + job.spec.tools_on.say(
+                    "make_mask",
+                    "; make it with make_mask",
+                    "; status lists each section's masks",
+                )
+                + ".",
             )
     return image
 
@@ -779,13 +782,13 @@ def check_atlas_image(workspace: Workspace, atlas_image: object) -> str:
     Raises
     ------
     Refused
-        ``BAD_ARGS`` when the atlas has no image of that name.
+        ``BAD_ARGUMENT`` when the atlas has no image of that name.
     """
     kind = str(atlas_image or "nissl").strip()
     try:
         resolve_image(workspace.atlas, kind)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     return kind
 
 
@@ -802,11 +805,14 @@ def nothing_fitted(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
     dict
         When every section was refused for the same reason, that reason's
         ``error`` and ``message`` (the rows keep theirs); otherwise
-        ``NOTHING_FITTED``, each row naming its own.
+        ``FIT_FAILED``, each row naming its own.
     """
     codes = {str(row.get("error")) for row in rows if row.get("error")}
     if not rows or len(codes) != 1 or not all(row.get("error") for row in rows):
-        return {"error": RefusalCode.NOTHING_FITTED}
+        return {
+            "error": RefusalCode.FIT_FAILED,
+            "message": "Nothing was fitted: each section's row under results names its problem.",
+        }
     code = codes.pop()
     message = str(rows[0].get("message") or "")
     if message and len(rows) > 1:

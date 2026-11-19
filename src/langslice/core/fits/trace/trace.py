@@ -152,7 +152,7 @@ def _saved_result(result_path: Path) -> dict[str, Any] | None:
         saved, problem = None, str(exc)
     if not isinstance(saved, dict):
         raise Refused(
-            RefusalCode.BORDER_TRACE_IO_ERROR,
+            RefusalCode.IO_ERROR,
             f"The saved image reply {result_path} cannot be read "
             f"({problem}); nothing was started. The file is "
             "damaged: tell the user.",
@@ -211,7 +211,7 @@ def _open_attempt(
         retried(claim.acquire)
     except Timeout:
         return Refused(
-            RefusalCode.IMAGE_CALL_IN_PROGRESS,
+            RefusalCode.BUSY,
             "An image call for this section at this placement and region "
             "choice is still running in another process (its folder is "
             "artifact_dir); no new call was made. Its reply is saved there "
@@ -355,7 +355,7 @@ def shown_labels(
     regions' borders are drawn and their edge with the rest is an outline.
     Sides (``"CTX:left"``) are the section's as shown, through the placement.
     Unknown names or sides raise ``ValueError``; a choice that leaves no
-    region, :class:`Refused` ``BAD_ARGS``.
+    region, :class:`Refused` ``BAD_ARGUMENT``.
     """
     from langslice.core.atlas.sides import has_sides, native_left
     from langslice.core.fits.deformable.plane_images import regions_mask
@@ -383,7 +383,7 @@ def shown_labels(
         keep &= ~regions_mask(atlas, labels, exclude, left)
     if not keep.any():
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "The regions chosen (restrict_to, less the section's marked "
             "damage) leave no atlas region on this section's atlas plane; "
             "nothing was started. Choose regions the plane shows.",
@@ -417,7 +417,7 @@ def start_correction(
     thread while the agent keeps working. ``job`` is ``None`` when there is
     nothing to run: a saved reply at this geometry (returned with
     ``cached``), or an attempt another process is running
-    (``IMAGE_CALL_IN_PROGRESS``; an interrupted one is made again).
+    (``BUSY``; an interrupted one is made again).
 
     *prompt* is the agent's edited copy of the base prompt (blank sends the
     base); the base, the prompt sent and their word diff are saved with the
@@ -448,7 +448,7 @@ def start_correction(
     """
     provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
-        raise Refused(RefusalCode.BAD_ARGS, "prompt is text; nothing was started.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "prompt is text; nothing was started.")
     prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)
     key: dict[str, Any] = {

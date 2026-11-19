@@ -20,11 +20,10 @@ from langslice.engines.deepslice.proposal import (
     ProposalRow,
     in_plane_params,
 )
-from langslice.plugin_api import ToolContext, WriteResult
+from langslice.plugin_api import RefusalCode, ToolContext, WriteResult
 
 TRANSFORM_NOTE = "DeepSlice in-plane fit"
 NO_PIXEL_SIZE = "not written (no pixel size)"
-NOT_WRITTEN = "NOT_WRITTEN"
 
 
 class AnswerPart(enum.StrEnum):
@@ -270,5 +269,7 @@ def _row_errors(result: WriteResult) -> dict[str, str]:
     rows = cast("list[dict[str, str]]", result.rows)
     landed = set(result.written)
     return {
-        row["id"]: str(row.get("error", NOT_WRITTEN)) for row in rows if row["id"] not in landed
+        row["id"]: str(row.get("error", RefusalCode.PRECONDITION))
+        for row in rows
+        if row["id"] not in landed
     }

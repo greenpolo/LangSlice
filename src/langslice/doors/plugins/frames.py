@@ -100,9 +100,7 @@ class ContextFrames(ContextReads):
                     self._run.state, self._run.workspace, record, params=list(IDENTITY_PARAMS)
                 )
             except ValueError as exc:
-                raise ToolError(
-                    RefusalCode.INVALID_LINEAR_PLACEMENT, f"{record.id}: {exc}"
-                ) from exc
+                raise ToolError(RefusalCode.PRECONDITION, f"{record.id}: {exc}") from exc
         return self._grids[key]
 
     def fit_frame(
@@ -122,7 +120,7 @@ class ContextFrames(ContextReads):
         asked for and under the image's own; a name the atlas does not have is
         skipped. *image* adds that section image on the grid: a raw channel,
         ``"preprocessed"`` or another made image (:meth:`image_names`);
-        ``ToolError`` ``UNKNOWN_IMAGE`` for another. *stain* True is
+        ``ToolError`` ``NOT_FOUND`` for another. *stain* True is
         ``image="preprocessed"`` and also fills ``stain``."""
         from langslice.core.atlas.brain_size import brain_scale
         from langslice.core.atlas.images import atlas_images, nissl_note, resolve_image
@@ -204,7 +202,7 @@ class ContextFrames(ContextReads):
             known = self.image_names(record.id)
             if wanted not in known:
                 raise ToolError(
-                    RefusalCode.UNKNOWN_IMAGE,
+                    RefusalCode.NOT_FOUND,
                     f"{record.id} has no section image {wanted!r}; its images: {', '.join(known)}",
                     images=list(known),
                 )
@@ -259,7 +257,7 @@ class ContextFrames(ContextReads):
         :attr:`FitFrame.plane` gives a plane): ``position_mm`` (where it crosses
         the volume's in-plane centre, the stack's position convention),
         ``pitch_deg`` and ``yaw_deg`` (the stack's cutting-angle convention).
-        Nothing is written. ``ToolError`` ``BAD_PLANE`` for a plane tilted
+        Nothing is written. ``ToolError`` ``BAD_ARGUMENT`` for a plane tilted
         past what a cutting angle can say."""
         from langslice.core.maps.imported import (
             plane_angles,
@@ -277,13 +275,13 @@ class ContextFrames(ContextReads):
             or not normal.any()
         ):
             raise ToolError(
-                RefusalCode.BAD_PLANE,
+                RefusalCode.BAD_ARGUMENT,
                 "normal_um and point_um are three finite numbers, the normal not zero",
             )
         try:
             pitch, yaw = plane_angles(normal, atlas, plane)
         except ValueError as exc:
-            raise ToolError(RefusalCode.BAD_PLANE, str(exc)) from exc
+            raise ToolError(RefusalCode.BAD_ARGUMENT, str(exc)) from exc
         return {
             "position_mm": float(plane_position_mm(point, normal, atlas, plane)),
             "pitch_deg": float(pitch),
@@ -299,7 +297,7 @@ class ContextFrames(ContextReads):
         offered = ("annotation", *atlas_images(self._run.workspace.atlas))
         if kind not in offered:
             raise ToolError(
-                RefusalCode.BAD_ARGS, f"kind is one of {', '.join(offered)}; got {kind!r}"
+                RefusalCode.BAD_ARGUMENT, f"kind is one of {', '.join(offered)}; got {kind!r}"
             )
         frame = self.fit_frame(section, atlas=(kind,))
         return frame.atlas[kind]
@@ -329,7 +327,7 @@ class ContextFrames(ContextReads):
         values = [float(position_mm), float(pitch_deg), float(yaw_deg)]
         if not np.isfinite(values).all():
             raise ToolError(
-                RefusalCode.BAD_ARGS, "position_mm, pitch_deg and yaw_deg are finite numbers"
+                RefusalCode.BAD_ARGUMENT, "position_mm, pitch_deg and yaw_deg are finite numbers"
             )
         placement = Placement(
             atlas_name=str(self._run.state.atlas),
@@ -367,7 +365,7 @@ class ContextFrames(ContextReads):
             return np.asarray(atlas.annotation)
         if kind not in atlas_images(atlas):
             raise ToolError(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 f"kind is annotation or one of {', '.join(atlas_images(atlas))}; got {kind!r}",
             )
         return volume(atlas, kind)

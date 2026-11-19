@@ -85,8 +85,8 @@ def check_tool(tool: object, *, taken: Sequence[str] = (), engine: str = "") -> 
         return f"{where}: the handler is not callable"
     if not callable(tool.stub):
         return f"{where}: the stub is not callable"
-    if not (getattr(tool.stub, "__doc__", None) or "").strip():
-        return f"{where}: the stub has no docstring (it is the tool's description)"
+    if not tool.description and not (getattr(tool.stub, "__doc__", None) or "").strip():
+        return f"{where}: the stub has no docstring and the tool no description"
     try:
         inspect.signature(tool.stub, eval_str=True)
     except SIGNATURE_FAILURES as exc:

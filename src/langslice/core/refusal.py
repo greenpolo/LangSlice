@@ -8,12 +8,13 @@ refused call. The core, the job and the tools raise it; each door turns it
 into its own answer once: the tool reply (:meth:`Refused.payload`), the
 agent CLI's envelope, the MCP text block, the library's reply. A per-section
 answer carries a refused section as its row, the other sections going on;
-a crash is answered as a refusal whose code is the exception's class name.
+a crash is answered as a refusal with the code ``INTERNAL`` and the
+exception's class name and text as its message.
 
 The codes are strings the agent reads, so a member's value never changes.
-A member's name is its value (one excepted, :attr:`RefusalCode.NO_SUCH_PATH`,
-whose value names a word the style guide keeps out of names), so a reader
-who meets a code in a reply finds it here with its meaning.
+A member's name is its value, so a reader who meets a code in a reply finds
+it here with its meaning. The specific reason and what to do next are the
+message's, at the place that raises.
 """
 
 from __future__ import annotations
@@ -46,128 +47,54 @@ FAILED_STATUSES = (ReplyStatus.ERROR, ReplyStatus.REFUSED)
 
 
 class RefusalCode(TextEnum):
-    """Every refusal code, once, with its meaning."""
+    """Every refusal code, once, with its meaning.
 
-    ATLAS_ENDPOINT_OUTSIDE = "ATLAS_ENDPOINT_OUTSIDE"
-    ATLAS_RENDER_FAILED = "ATLAS_RENDER_FAILED"
-    BAD_ARGS = "BAD_ARGS"
-    BAD_BOX = "BAD_BOX"
-    BAD_CONFIG = "BAD_CONFIG"
-    BAD_FIELD = "BAD_FIELD"
-    BAD_JSON = "BAD_JSON"
-    BAD_LANDMARK_PICTURE = "BAD_LANDMARK_PICTURE"
-    BAD_LANDMARK_POINT = "BAD_LANDMARK_POINT"
-    BAD_LAYER = "BAD_LAYER"
-    BAD_MATRIX = "BAD_MATRIX"
-    BAD_PATH = "BAD_PATH"
-    BAD_PIVOT = "BAD_PIVOT"
-    BAD_PLANE = "BAD_PLANE"
-    BAD_REGION_PICTURE = "BAD_REGION_PICTURE"
-    BAD_REGISTRATION = "BAD_REGISTRATION"
-    BAD_ROTATION = "BAD_ROTATION"
-    BAD_SETTINGS = "BAD_SETTINGS"
-    BAD_WARP = "BAD_WARP"
-    BORDER_TRACE_IO_ERROR = "BORDER_TRACE_IO_ERROR"
-    DEFORMATION_UNREADABLE = "DEFORMATION_UNREADABLE"
-    DUPLICATE_SLICE_IDS = "DUPLICATE_SLICE_IDS"
-    EMPTY_BOX = "EMPTY_BOX"
-    ENGINE_MISSING = "ENGINE_MISSING"
-    ENV_FAILED = "ENV_FAILED"
-    ERROR = "ERROR"
-    FIT_FAILED = "FIT_FAILED"
+    ``BAD_ARGUMENT``
+        The call's arguments are wrong: a bad value or shape, an unknown mode,
+        option or key, too many of something, a value out of range.
+    ``NOT_FOUND``
+        A named thing does not exist: a section, picture, region, image, mask,
+        registration, layer, path, job or run.
+    ``FROZEN``
+        The job froze the property the call would change.
+    ``BUSY``
+        Something else holds what the call needs: a busy section, a job lock
+        that timed out, background work still running.
+    ``STALE_INPUT``
+        What the call computed from changed underneath it, or a saved thing no
+        longer matches the section.
+    ``PRECONDITION``
+        The job is not in the state the call needs: no transform yet, no
+        deformation, a deformation already held, no trace, an opening not
+        read, nothing to export, no sides on this plane.
+    ``GATE_REFUSED``
+        A submit gate refused: missing positions, transforms or deformations,
+        a strict interval, interval breaks that are not supported.
+    ``TOOL_OFF``
+        The tool or verb is not offered in this job or at this door.
+    ``ENGINE_UNAVAILABLE``
+        An engine, its weights or the image model cannot be loaded or reached.
+    ``FIT_FAILED``
+        An engine ran and failed, or produced an unusable result.
+    ``IO_ERROR``
+        Reading or writing a file failed: a render, a record, a trace.
+    ``INTERNAL``
+        A fault in LangSlice or in a plugin, or an unexpected exception
+        answered by the tool pipeline.
+    """
+
+    BAD_ARGUMENT = "BAD_ARGUMENT"
+    NOT_FOUND = "NOT_FOUND"
     FROZEN = "FROZEN"
-    HAS_DEFORMATION = "HAS_DEFORMATION"
-    IMAGE_CALL_IN_PROGRESS = "IMAGE_CALL_IN_PROGRESS"
-    INPUTS_CHANGED = "INPUTS_CHANGED"
-    INSUFFICIENT_LANDMARKS = "INSUFFICIENT_LANDMARKS"
-    INTERNAL = "INTERNAL"
-    INTERVAL_BREAKS_UNSUPPORTED = "INTERVAL_BREAKS_UNSUPPORTED"
-    INVALID_LINEAR_PLACEMENT = "INVALID_LINEAR_PLACEMENT"
-    JOB_BUSY = "JOB_BUSY"
-    JOB_UNREADABLE = "JOB_UNREADABLE"
-    LANDMARK_TRIANGULATION_FAILED = "LANDMARK_TRIANGULATION_FAILED"
-    LANDMARK_WARP_UNAVAILABLE = "LANDMARK_WARP_UNAVAILABLE"
-    LAYER_NOT_DRAWABLE = "LAYER_NOT_DRAWABLE"
-    MASK_UNSUPPORTED = "MASK_UNSUPPORTED"
-    MCP_MISSING = "MCP_MISSING"
-    MCP_TIMEOUT = "MCP_TIMEOUT"
-    MCP_TOOL_ERROR = "MCP_TOOL_ERROR"
-    MCP_UNAVAILABLE = "MCP_UNAVAILABLE"
-    MISSING_ARGUMENTS = "MISSING_ARGUMENTS"
-    MISSING_DEFORMATIONS = "MISSING_DEFORMATIONS"
-    MISSING_POSITIONS = "MISSING_POSITIONS"
-    MISSING_TRANSFORMS = "MISSING_TRANSFORMS"
-    MIXED_IMAGES = "MIXED_IMAGES"
-    NEEDS_STACK = "NEEDS_STACK"
-    NO_ATLAS_IN_PICTURE = "NO_ATLAS_IN_PICTURE"
-    NO_DEFORMATION = "NO_DEFORMATION"
-    NO_FOLDER = "NO_FOLDER"
-    NO_IMAGES = "NO_IMAGES"
-    NO_JOB = "NO_JOB"
-    NO_PICTURE = "NO_PICTURE"
-    NO_REGIONS = "NO_REGIONS"
-    NO_SIDES = "NO_SIDES"
-    NO_SORTING = "NO_SORTING"
-    NO_STRUCTURES = "NO_STRUCTURES"
-    NO_TISSUE = "NO_TISSUE"
-    NO_TRACE = "NO_TRACE"
-    NOT_A_GAP = "NOT_A_GAP"
-    NOT_A_STACK = "NOT_A_STACK"
-    NOT_FOR_SCRIPTS = "NOT_FOR_SCRIPTS"
-    NO_SUCH_PATH = "NOT_FOUND"
-    NOT_STARTED = "NOT_STARTED"
-    NOT_WRITTEN = "NOT_WRITTEN"
-    NOTHING_EXPORTED = "NOTHING_EXPORTED"
-    NOTHING_FITTED = "NOTHING_FITTED"
-    NOTHING_TO_REDO = "NOTHING_TO_REDO"
-    NOTHING_TO_UNDO = "NOTHING_TO_UNDO"
-    NOTHING_WRITTEN = "NOTHING_WRITTEN"
-    OPENING_NOT_READ = "OPENING_NOT_READ"
-    OPTION_OFF = "OPTION_OFF"
-    PICTURE_NOT_SAVED = "PICTURE_NOT_SAVED"
-    PLUGIN_FAILED = "PLUGIN_FAILED"
-    POSITIONING_OFF = "POSITIONING_OFF"
-    READ_TOOL_WRITES = "READ_TOOL_WRITES"
-    RECORD_WRITE_FAILED = "RECORD_WRITE_FAILED"
-    REGION_NOT_IN_PLANE = "REGION_NOT_IN_PLANE"
-    REGION_TOO_SMALL = "REGION_TOO_SMALL"
-    REGISTRATION_ELSEWHERE = "REGISTRATION_ELSEWHERE"
-    RENDER_FAILED = "RENDER_FAILED"
-    RUN_LOST = "RUN_LOST"
-    SECTION_BUSY = "SECTION_BUSY"
-    SECTION_GONE = "SECTION_GONE"
-    SETTINGS_CHANGED = "SETTINGS_CHANGED"
-    SIDES_AMBIGUOUS = "SIDES_AMBIGUOUS"
-    STACK_TOO_LARGE = "STACK_TOO_LARGE"
+    BUSY = "BUSY"
     STALE_INPUT = "STALE_INPUT"
-    STALE_LANDMARK_PLANE = "STALE_LANDMARK_PLANE"
-    STALE_MASK = "STALE_MASK"
-    STRICT_INTERVAL = "STRICT_INTERVAL"
-    TOO_MANY_CHANNELS = "TOO_MANY_CHANNELS"
-    TOO_MANY_LANDMARK_VIEWS = "TOO_MANY_LANDMARK_VIEWS"
-    TOO_MANY_SECTIONS = "TOO_MANY_SECTIONS"
-    TRACE_FAILED = "TRACE_FAILED"
-    TRACE_RUNNING = "TRACE_RUNNING"
-    TRACE_STALE = "TRACE_STALE"
-    TRACE_TIMEOUT = "TRACE_TIMEOUT"
-    UNKNOWN_ARGUMENTS = "UNKNOWN_ARGUMENTS"
-    UNKNOWN_IMAGE = "UNKNOWN_IMAGE"
-    UNKNOWN_LANDMARK = "UNKNOWN_LANDMARK"
-    UNKNOWN_LAYER = "UNKNOWN_LAYER"
-    UNKNOWN_MASK = "UNKNOWN_MASK"
-    UNKNOWN_MODE = "UNKNOWN_MODE"
-    UNKNOWN_PART = "UNKNOWN_PART"
-    UNKNOWN_PICTURE = "UNKNOWN_PICTURE"
-    UNKNOWN_PLUGIN_LAYER = "UNKNOWN_PLUGIN_LAYER"
-    UNKNOWN_REGIONS = "UNKNOWN_REGIONS"
-    UNKNOWN_REGISTRATION = "UNKNOWN_REGISTRATION"
-    UNKNOWN_RUN = "UNKNOWN_RUN"
-    UNKNOWN_SLICE_IDS = "UNKNOWN_SLICE_IDS"
-    UNKNOWN_VERB = "UNKNOWN_VERB"
-    UNREADABLE_RECIPE = "UNREADABLE_RECIPE"
-    VERB_OFF = "VERB_OFF"
-    WRITE_NOT_DECLARED = "WRITE_NOT_DECLARED"
-    WRONG_SIDE_PAIR = "WRONG_SIDE_PAIR"
+    PRECONDITION = "PRECONDITION"
+    GATE_REFUSED = "GATE_REFUSED"
+    TOOL_OFF = "TOOL_OFF"
+    ENGINE_UNAVAILABLE = "ENGINE_UNAVAILABLE"
+    FIT_FAILED = "FIT_FAILED"
+    IO_ERROR = "IO_ERROR"
+    INTERNAL = "INTERNAL"
 
 
 class Refused(Exception):
@@ -216,9 +143,9 @@ class Refused(Exception):
         """Return the refusal an unexpected exception is answered with.
 
         A tool, an image-model call or a background job that crashes is
-        answered like a refusal whose code is the exception's class name
-        (``ValueError``, ``KeyError``): no :class:`RefusalCode` member, since
-        the class is whatever was raised.
+        answered like a refusal with the code ``INTERNAL``: the exception's
+        class (``ValueError``, ``KeyError``) is whatever was raised, so it
+        leads the message.
 
         Parameters
         ----------
@@ -228,9 +155,10 @@ class Refused(Exception):
         Returns
         -------
         Refused
-            The class name as the code, the exception's text as the message.
+            ``INTERNAL``, the class name and the exception's text as the
+            message.
         """
-        return cls(type(error).__name__, message=str(error))
+        return cls(RefusalCode.INTERNAL, message=f"{type(error).__name__}: {error}")
 
     def payload(self, *, section_id: str | None = None) -> dict[str, object]:
         """Return the reply every door answers with.

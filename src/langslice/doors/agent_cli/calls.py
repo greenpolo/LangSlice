@@ -3,7 +3,7 @@
 The agent CLI: the verbs of a session that sets a job up and checks it
 (:data:`langslice.doors.agent_cli.catalog.CLI_VERBS`, kebab-case accepted:
 ``export-maps``; any other verb is a registration tool and is refused,
-``VERB_OFF``), plus ``init`` (create the job for a folder of images),
+``TOOL_OFF``), plus ``init`` (create the job for a folder of images),
 ``launch --role ROLE`` (the launch prompt of a
 registration subagent, :mod:`langslice.doors.agent_cli.launch`), ``runs [ID]``
 and ``wait [ID]`` (background runs; ``status`` is only the verb). FOLDER is the
@@ -48,7 +48,6 @@ from langslice.doors.agent_cli.catalog import (
     on_command_line,
 )
 from langslice.doors.agent_cli.envelope import (
-    DISABLED,
     EXIT_ARGUMENTS,
     EXIT_INTERNAL,
     EXIT_OK,
@@ -95,9 +94,8 @@ def progress(message: str) -> None:
 class _Refusal(Exception):
     """Carry the agent CLI's own refusal out of a call, its envelope made.
 
-    The envelope is made where the refusal is raised (its fix read while
-    the job's disabled list applies) and :func:`execute` answers it as it
-    stands.
+    The envelope is made where the refusal is raised and :func:`execute`
+    answers it as it stands.
     """
 
     def __init__(self, envelope: Envelope) -> None:
@@ -109,7 +107,7 @@ class _Parser(argparse.ArgumentParser):
     """argparse that raises instead of exiting (the envelope reports it)."""
 
     def error(self, message: str) -> typing.NoReturn:
-        raise _Refusal(Envelope.failure(RefusalCode.BAD_ARGS, message))
+        raise _Refusal(Envelope.failure(RefusalCode.BAD_ARGUMENT, message))
 
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
@@ -151,7 +149,7 @@ def execute(folder: str, verb: str, rest: list[str], *, atlas_loader: Any = None
     except _Refusal as refusal:
         envelope = refusal.envelope
     except JobBusy as exc:
-        envelope = Envelope.failure(RefusalCode.JOB_BUSY, str(exc), exit=EXIT_REFUSED)
+        envelope = Envelope.failure(RefusalCode.BUSY, str(exc), exit=EXIT_REFUSED)
     except Exception as exc:
         logger.exception("langslice-job %s %s failed", folder, verb)
         envelope = Envelope.failure(
@@ -185,13 +183,11 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         from langslice.doors.jobs import NoJob, find
 
         if rest:
-            raise _Refusal(
-                Envelope.failure(RefusalCode.BAD_ARGS, "ops takes no arguments.", verb=name)
-            )
+            raise _Refusal(Envelope.failure(RefusalCode.BAD_ARGUMENT, "ops takes no arguments."))
         try:
             return ops(argparse.Namespace(job=str(find(folder))))
         except NoJob as exc:
-            return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+            return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
     if name == "schema":
         from langslice.doors.agent_cli.catalog import schema
         from langslice.doors.jobs import NoJob, find
@@ -199,7 +195,7 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         try:
             job = str(find(folder))
         except NoJob as exc:
-            return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+            return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
         named = [
             token
             for index, token in enumerate(rest)
@@ -219,14 +215,13 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         try:
             layout = JobLayout(find(folder))
         except NoJob as exc:
-            return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+            return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
         return jobenv.command(layout, positional)
     if positional:
         raise _Refusal(
             Envelope.failure(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 f"Unexpected value(s) {positional}: give arguments as --name value or --args JSON.",
-                verb=name,
             )
         )
     return call(folder, name, arguments, options, atlas_loader=atlas_loader)
@@ -326,16 +321,27 @@ def _load_args(value: str) -> dict[str, Any]:
             text = Path(value[1:]).expanduser().read_text(encoding="utf-8")
         except OSError as exc:
             raise _Refusal(
-                Envelope.failure(RefusalCode.BAD_JSON, f"--args {value}: {exc}")
+                Envelope.failure(
+                    RefusalCode.BAD_ARGUMENT,
+                    f"--args {value}: {exc}. Pass --args a JSON object, or @path/to/file.json.",
+                )
             ) from exc
     try:
         loaded = json.loads(text)
     except ValueError as exc:
         raise _Refusal(
-            Envelope.failure(RefusalCode.BAD_JSON, f"--args is not JSON: {exc}")
+            Envelope.failure(
+                RefusalCode.BAD_ARGUMENT,
+                f"--args is not JSON: {exc}. Pass --args a JSON object, or @path/to/file.json.",
+            )
         ) from exc
     if not isinstance(loaded, dict):
-        raise _Refusal(Envelope.failure(RefusalCode.BAD_JSON, "--args must be a JSON object"))
+        raise _Refusal(
+            Envelope.failure(
+                RefusalCode.BAD_ARGUMENT,
+                "--args must be a JSON object: pass --args a JSON object, or @path/to/file.json.",
+            )
+        )
     return loaded
 
 
@@ -372,7 +378,7 @@ def parse(rest: list[str]) -> tuple[dict[str, Any], dict[str, list[str]], list[s
                 options["timeout"] = float(value)
             except ValueError as exc:
                 raise _Refusal(
-                    Envelope.failure(RefusalCode.BAD_ARGS, "--timeout takes seconds")
+                    Envelope.failure(RefusalCode.BAD_ARGUMENT, "--timeout takes seconds")
                 ) from exc
         elif key == "run_id":
             options["run_id"] = value
@@ -447,7 +453,7 @@ def _flag_text(value: Any) -> str:
 
 
 def corrected_call(declared: Declaration, verb: str, arguments: dict[str, Any], job: str) -> str:
-    """The fix of an ``UNKNOWN_ARGUMENTS`` refusal: every argument *verb*
+    """The fix of an ``BAD_ARGUMENT`` refusal: every argument *verb*
     takes, with the first sentence of its description and its default, then
     the call made of the arguments it knows (*arguments*, the unknown ones
     left out), the required ones it lacks as placeholders and, for a short
@@ -515,11 +521,9 @@ def arguments_for(
             fix = corrected_call(declaration, verb, known, job)
         raise _Refusal(
             Envelope.failure(
-                RefusalCode.UNKNOWN_ARGUMENTS,
-                refusal.message,
+                RefusalCode.BAD_ARGUMENT,
+                f"{refusal.message} Check the argument names with `langslice-job schema {verb}`.",
                 result=refusal.payload(),
-                verb=verb,
-                job=job,
                 fix=fix,
             )
         )
@@ -531,10 +535,10 @@ def arguments_for(
     if missing:
         raise _Refusal(
             Envelope.failure(
-                RefusalCode.MISSING_ARGUMENTS,
-                f"{verb} needs {', '.join(missing)}.",
+                RefusalCode.BAD_ARGUMENT,
+                f"{verb} needs {', '.join(missing)}. Give every required argument; see "
+                f"`langslice-job schema {verb}`.",
                 result={"missing": missing},
-                verb=verb,
             )
         )
     return normalize_arguments(tool, arguments)
@@ -559,11 +563,9 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Opened:
             folder, atlas_loader=atlas_loader, emit=progress, persist=persist, door="cli"
         )
     except NoJob as exc:
-        raise _Refusal(Envelope.failure(RefusalCode.NO_JOB, str(exc))) from exc
+        raise _Refusal(Envelope.failure(RefusalCode.NOT_FOUND, str(exc))) from exc
     except (FileNotFoundError, ValueError) as exc:
-        raise _Refusal(
-            Envelope.failure(RefusalCode.JOB_UNREADABLE, str(exc), exit=EXIT_REFUSED)
-        ) from exc
+        raise _Refusal(Envelope.failure(RefusalCode.IO_ERROR, str(exc), exit=EXIT_REFUSED)) from exc
 
 
 def call(
@@ -578,21 +580,24 @@ def call(
     from langslice.tools.catalog import verbs_for
 
     if verb not in verbs_for(_spec_of(folder)):
-        raise _Refusal(Envelope.failure(RefusalCode.UNKNOWN_VERB, f"No verb {verb!r}.", verb=verb))
+        raise _Refusal(
+            Envelope.failure(
+                RefusalCode.BAD_ARGUMENT,
+                f"No verb {verb!r}. List the verbs with `langslice-job ops`.",
+            )
+        )
     if not on_command_line(verb):
         raise _not_a_command(verb)
     dry_run = bool(options.get("dry_run"))
     if dry_run and options.get("background"):
         raise _Refusal(
             Envelope.failure(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 "--dry-run and --background do not go together: a dry run answers at once.",
-                verb=verb,
             )
         )
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
-    token = DISABLED.set(tuple(opened.spec.switched_off))
     try:
         box = opened.tools()
         tools = {tool.__name__: tool for tool in box.tools}
@@ -602,13 +607,12 @@ def call(
             tasks = spec.tasks
             raise _Refusal(
                 Envelope.failure(
-                    RefusalCode.VERB_OFF,
+                    RefusalCode.TOOL_OFF,
                     f"This job's settings (tasks {tasks}"
                     + (f", disabled {spec.disabled}" if spec.disabled else "")
-                    + f") have no {verb}.",
+                    + f") have no {verb}. `langslice-job {job_folder} status` lists the job's "
+                    "verbs under `verbs`.",
                     result={"verbs": offered},
-                    job=job_folder,
-                    verb=verb,
                 )
             )
         tool = tools[verb]
@@ -638,7 +642,6 @@ def call(
         envelope.call = arguments
         return envelope
     finally:
-        DISABLED.reset(token)
         opened.close()
 
 
@@ -653,17 +656,16 @@ def _not_a_command(verb: str) -> _Refusal:
     Returns
     -------
     _Refusal
-        ``VERB_OFF``, its fix saying where the tool is.
+        ``TOOL_OFF``, its message saying where the tool is.
     """
     runs = ", ".join(sorted(CLI_VERBS))
     return _Refusal(
         Envelope.failure(
-            RefusalCode.VERB_OFF,
+            RefusalCode.TOOL_OFF,
             f"{verb} is a registration tool, not a command: the command "
-            f"line sets a job up and checks it ({runs}, init, launch, runs).",
-            fix=f"A registration agent calls {verb} as its MCP tool; a "
-            f"script calls `langslice.open_job(FOLDER).{verb}(...)`.",
-            verb=verb,
+            f"line sets a job up and checks it ({runs}, init, launch, runs). A registration "
+            f"agent calls {verb} as its MCP tool; a script calls "
+            f"`langslice.open_job(FOLDER).{verb}(...)`.",
         )
     )
 
@@ -687,8 +689,16 @@ def _detached(
         background.cancel(layout, run_id)
         raise
     if record is None:
-        return Envelope.failure(RefusalCode.UNKNOWN_RUN, f"No run {run_id}.", job=job_folder)
+        return _no_run(job_folder, run_id)
     return run_answer(job_folder, run_id, record, background.WAIT_S)
+
+
+def _no_run(job_folder: str, run_id: str) -> Envelope:
+    """The refusal for a run id the job does not hold."""
+    return Envelope.failure(
+        RefusalCode.NOT_FOUND,
+        f"No run {run_id}. List the background runs with `langslice-job {job_folder} runs`.",
+    )
 
 
 def _command(job_folder: str, verb: str, arguments: dict[str, Any]) -> str:
@@ -706,7 +716,6 @@ def _run(
 
     verbs = verbs_for(opened.spec)
     job = opened.job
-    job_folder = str(job.folder)
     with captured() as saved:
         reply = tool(**arguments)
         work = cast("Job", job).background
@@ -751,7 +760,7 @@ def _run(
                 if isinstance(row, dict) and row.get("status") == ReplyStatus.ERROR
             ]
     if not ok:
-        unnamed = RefusalCode.ERROR
+        unnamed = RefusalCode.INTERNAL
         told = cast("dict[str, object]", reply)
         code = str(told.get("error") or unnamed)
         message = str(told.get("message") or "")
@@ -762,7 +771,7 @@ def _run(
                 for row in rows
                 if isinstance(row, dict) and row.get("error")
             )
-        failed = Envelope.failure(code, message, result=result, job=job_folder, verb=verb)
+        failed = Envelope.failure(code, message, result=result)
         failed.artifacts, failed.warnings = artifacts, warnings
         return failed
     return Envelope(result=result, artifacts=artifacts, warnings=warnings)
@@ -825,7 +834,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     ``--registration FILE`` the file's linear registration is the job's
     supplied placement (``doors.jobs.with_registration``): the result's
     ``registration`` says what was placed and what was not, and its
-    warnings are the envelope's (``BAD_REGISTRATION`` when it cannot be
+    warnings are the envelope's (``BAD_ARGUMENT`` when it cannot be
     read, matched one to one, or places no section)."""
     from langslice.core.sections.discovery import discover_slices
     from langslice.doors.commands.linear import spec_from_args
@@ -841,11 +850,15 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     args = init_parser().parse_args(rest)
     images = Path(folder).expanduser().resolve()
     if not images.is_dir() or not discover_slices(str(images)):
-        return Envelope.failure(RefusalCode.NO_IMAGES, f"No section images in {images}.")
+        return Envelope.failure(
+            RefusalCode.NOT_FOUND,
+            f"No section images in {images}. Point init at a folder of section images "
+            "(TIFF, PNG or JPEG).",
+        )
     try:
         spec = spec_from_args(args, str(images))
     except ValueError as exc:
-        return Envelope.failure(RefusalCode.BAD_ARGS, str(exc))
+        return Envelope.failure(RefusalCode.BAD_ARGUMENT, str(exc))
     imported: dict[str, Any] | None = None
     if args.registration:
         try:
@@ -853,7 +866,13 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
                 spec, args.registration, atlas_loader=atlas_loader, emit=progress
             )
         except (OSError, ValueError) as exc:
-            return Envelope.failure(RefusalCode.BAD_REGISTRATION, str(exc), job=str(images))
+            return Envelope.failure(
+                RefusalCode.BAD_ARGUMENT,
+                f"{exc} Give --registration a QuickNII/VisuAlign JSON or XML, a DeepSlice "
+                "CSV/JSON/XML or a LangSlice registration.json whose entries name this "
+                "folder's section images (by file name, stem or _sNNN number) on the job's "
+                "atlas.",
+            )
     if spec.resume:
         try:
             existing = find(spec.job_dir or images)
@@ -870,16 +889,20 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
             )
             if changed:
                 return Envelope.failure(
-                    RefusalCode.SETTINGS_CHANGED,
-                    f"The job in this folder was made with other settings: {', '.join(changed)}.",
-                    fix="Give init the job flags it was made with (job.json, spec) to continue "
+                    RefusalCode.STALE_INPUT,
+                    f"The job in this folder was made with other settings: {', '.join(changed)}. "
+                    "Give init the job flags it was made with (job.json, spec) to continue "
                     "it, or --no-resume to start it over (its work is discarded).",
-                    job=str(images),
                 )
     try:
         opened = create(spec, atlas_loader=atlas_loader, emit=progress, door="cli")
     except InputsChanged as exc:
-        return Envelope.failure(RefusalCode.INPUTS_CHANGED, str(exc), job=str(images))
+        return Envelope.failure(
+            RefusalCode.STALE_INPUT,
+            f"{exc} Rerun `langslice-job {images} init` with --no-resume to start a new job "
+            "from these inputs (the old one's work is replaced), or with the inputs the job "
+            "was made from (job.json, spec.inputs) to continue it.",
+        )
     try:
         from langslice.doors.agent_cli import launch as launches
         from langslice.doors.jobs import VIEWER_KEY, job_viewer
@@ -945,7 +968,7 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
     try:
         layout = JobLayout(find(folder))
     except NoJob as exc:
-        return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+        return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
     try:
         if role == "register":
             prompt = launches.mcp_prompt(layout.folder, atlas_loader)
@@ -956,14 +979,14 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
             )
     except ImportError as exc:
         return Envelope.failure(
-            RefusalCode.MCP_MISSING,
-            f"The {role} role needs the `mcp` package ({exc}).",
-            fix="Install it in LangSlice's environment (pip install mcp).",
+            RefusalCode.ENGINE_UNAVAILABLE,
+            f"The {role} role needs the `mcp` package ({exc}); install it in LangSlice's "
+            "environment (pip install mcp).",
         )
     except (FileNotFoundError, ValueError) as exc:
-        return Envelope.failure(RefusalCode.JOB_UNREADABLE, str(exc), exit=EXIT_REFUSED)
+        return Envelope.failure(RefusalCode.IO_ERROR, str(exc), exit=EXIT_REFUSED)
     except (OSError, subprocess.SubprocessError) as exc:
-        return Envelope.failure(RefusalCode.ENV_FAILED, str(exc))
+        return Envelope.failure(RefusalCode.IO_ERROR, str(exc))
     made = launches.Launch(role=role, prompt=prompt)
     saved = launches.save(layout, role, made.prompt)
     return Envelope(
@@ -984,10 +1007,10 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
     try:
         layout = JobLayout(find(folder))
     except NoJob as exc:
-        return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+        return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
     job_folder = str(layout.folder)
     if len(positional) > 1:
-        return Envelope.failure(RefusalCode.BAD_ARGS, "Give one run id.", job=job_folder)
+        return Envelope.failure(RefusalCode.BAD_ARGUMENT, "Give one run id.")
     if verb == "runs" and not positional:
         listed = background.listing(layout)
         return Envelope(
@@ -1001,12 +1024,13 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
     run_id = positional[0] if positional else background.latest(layout)
     if run_id is None:
         return Envelope.failure(
-            RefusalCode.UNKNOWN_RUN, "This job has no background runs.", job=job_folder
+            RefusalCode.NOT_FOUND,
+            "This job has no background runs. Start one with a long verb and --background.",
         )
     if verb == "runs":
         record = background.read(layout, run_id)
         if record is None:
-            return Envelope.failure(RefusalCode.UNKNOWN_RUN, f"No run {run_id}.", job=job_folder)
+            return _no_run(job_folder, run_id)
         return Envelope(
             result={
                 **background.brief(record),
@@ -1019,7 +1043,7 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
     waited = float(options.get("timeout", background.WAIT_S))
     record = background.wait(layout, run_id, waited)
     if record is None:
-        return Envelope.failure(RefusalCode.UNKNOWN_RUN, f"No run {run_id}.", job=job_folder)
+        return _no_run(job_folder, run_id)
     return run_answer(job_folder, run_id, record, waited)
 
 
@@ -1027,7 +1051,7 @@ def run_answer(job_folder: str, run_id: str, record: dict[str, Any], waited: flo
     """What ``wait`` (or a long verb's detached call) answers after waiting
     *waited* seconds for run *run_id*: its answer once it has one; while it
     runs, ``ok`` with its state ``running`` and the command that waits again;
-    ``RUN_LOST`` when its process ended without one."""
+    ``INTERNAL`` when its process ended without one."""
     state = record.get("state")
     if state == "running":
         return Envelope(
@@ -1041,10 +1065,13 @@ def run_answer(job_folder: str, run_id: str, record: dict[str, Any], waited: flo
         )
     if state != "finished" or not isinstance(record.get("envelope"), dict):
         return Envelope.failure(
-            RefusalCode.RUN_LOST,
-            f"Run {run_id} ended without an answer.",
+            RefusalCode.INTERNAL,
+            f"Run {run_id} ended without an answer; see its log under logs/runs/ and run the "
+            "verb again. If every background run is lost, your shell ends the processes a "
+            "command leaves running when it returns (sandboxes do this): run the verb as "
+            "`LANGSLICE_DETACH=0 langslice-job ...`, without --background, in your harness's "
+            "own background mode if it has one.",
             result=background.brief(record),
-            job=job_folder,
             exit=EXIT_INTERNAL,
         )
     answer = Envelope.from_dict(record["envelope"], int(record.get("exit", EXIT_OK)))

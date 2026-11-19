@@ -108,14 +108,12 @@ const Generator = (() => {
   }
 
   // The names the job's `--disabled` takes: the tools of this run switched off
-  // whole, then the options switched off of the tools still on (a name a kept
-  // property already switches off left out).
+  // (a name a kept property already switches off left out).
   function offNames(data, form) {
-    const off = new Set(form.off || []), here = present(data, form), held = keptOff(data, form), names = [];
+    const here = present(data, form), held = keptOff(data, form), names = [];
     for (const tool of data.tools) {
       if (!here.has(tool.name) || held.has(tool.name)) continue;
-      if (tool.disableable && toolOff(form, tool)) { if (!tool.default_off) names.push(tool.name); continue; }
-      for (const option of tool.options) if (off.has(option.name) && !held.has(option.name)) names.push(option.name);
+      if (tool.disableable && toolOff(form, tool) && !tool.default_off) names.push(tool.name);
     }
     return names;
   }
@@ -123,7 +121,6 @@ const Generator = (() => {
   function labelOf(data, name) {
     for (const tool of data.tools) {
       if (tool.name === name) return tool.label;
-      for (const option of tool.options) if (option.name === name) return `${tool.label}: ${option.label}`;
     }
     return name;
   }
@@ -154,10 +151,6 @@ const Generator = (() => {
     if (!blank(form.interval) && !wholeNumber(form.interval)) out.push('Section interval is a whole number of micrometres (µm).');
     if (!form.abba && !blank(form.pixelSize) && !positiveNumber(form.pixelSize)) out.push('Pixel size is a number of micrometres per pixel, above 0.');
     const off = new Set([...offNames(data, form), ...startsOff(data, form)]), here = present(data, form);
-    const look = data.tools.find(t => t.name === 'look');
-    if (look && look.options.length && look.options.every(o => isOff(off, o.name))) {
-      out.push(`"${look.label}" needs at least one kind of picture: turn one back on.`);
-    }
     for (const task of runTasks(data, form)) {
       const writers = data.task_writers[task] || [];
       if (writers.length && !writers.some(name => here.has(name) && !isOff(off, name))) {
@@ -220,7 +213,7 @@ const Generator = (() => {
     const tasks = chosenTasks(data, form);
     return Object.keys(data.keep).filter(prop => form.keep && form.keep[prop] && tasks.includes(data.keep[prop]));
   }
-  // The tools and options a kept property leaves nothing to do.
+  // The tools a kept property leaves nothing to do.
   function keptOff(data, form) {
     return new Set(kept(data, form).flatMap(prop => data.frozen_off[prop] || []));
   }

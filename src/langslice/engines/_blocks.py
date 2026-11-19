@@ -78,7 +78,7 @@ def atlas_plane(frame: Any, asked: str) -> tuple[np.ndarray, str]:
         key = next((name for name in (BORROWED_NISSL, *named, "template") if name in planes), None)
     if key is None:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"the atlas has no image {asked!r}; the job statement lists its images",
         )
     resolved = dict(getattr(frame, "atlas_resolved", None) or {}).get(asked)
@@ -93,7 +93,7 @@ def section_pixels(frame: Any) -> np.ndarray:
 
 
 def section_mask(ctx: ToolContext, sid: str, mask: str) -> Any | None:
-    """The named mask of the section (``UNKNOWN_MASK`` / ``STALE_MASK`` refuse), or None for
+    """The named mask of the section (``NOT_FOUND`` / ``STALE_INPUT`` refuse), or None for
     ``"none"``."""
     if mask == "none":
         return None
@@ -101,10 +101,10 @@ def section_mask(ctx: ToolContext, sid: str, mask: str) -> Any | None:
 
 
 def refuse_mask(tool: str, mask: str, why: str) -> None:
-    """``MASK_UNSUPPORTED`` for an engine that takes no section mask."""
+    """``BAD_ARGUMENT`` for an engine that takes no section mask."""
     if mask != "none":
         raise ToolError(
-            RefusalCode.MASK_UNSUPPORTED,
+            RefusalCode.BAD_ARGUMENT,
             f'{tool} {why}; mask is "none" for it. Engines '
             f"that take a section mask: {MASK_ENGINES}.",
         )

@@ -12,7 +12,7 @@ The network runs in LangSlice's process (``network.py`` and ``images.py``
 beside this file: the part of Brainways 0.1.16.3 that finds a position,
 vendored under the GPL-3.0). It needs torch, a core dependency; a call
 where torch does not import, or where the weights cannot be fetched, is
-refused with ``ENGINE_MISSING``.
+refused with ``ENGINE_UNAVAILABLE``.
 
 One tool, ``brainways_ap``, offered on ``whs_sd_rat_39um`` coronal jobs
 only and absent elsewhere. Its input is ONE raw channel of each section as
@@ -45,6 +45,7 @@ from langslice.plugin_api import (
     ToolContext,
     ToolError,
     ToolResult,
+    ToolsOn,
     ToolSpec,
     WriteResult,
 )
@@ -225,50 +226,50 @@ class CallRecord:
 EVERY_SECTION: list[str] = []
 
 
+def _brainways_description(on: ToolsOn) -> str:
+    turn_first = on.say("interactive_transform", "; turn and flip a section the right way first")
+    return f"""\
+Find each section's position along the slicing axis with Brainways.
+
+Brainways, a network trained on rat and mouse brain sections, compares one
+channel of a section, by itself, with the atlas's coronal planes: it says
+which of two planes is the more anterior, and a search over the planes
+finds the one the section cannot be told apart from. The answer is that
+plane's position and nothing else: it estimates no cutting angles and no
+in-plane placement, and each section is placed independently of the
+others. It works on whole coronal sections{turn_first}. It can miss by millimetres on a single \
+section, so check the result with the positioning view of look.
+
+Writes the positions as one undo step when write holds "positions"; a
+changed position clears the deformation of each section it moves. A
+section whose position is frozen answers FROZEN and the rest land. With
+write empty nothing is written and the reply is the proposal. Runs in
+seconds for a stack of forty.
+
+Args:
+    sections: Filenames to run (the extension may be left off); empty
+        means every section.
+    channel: The raw channel Brainways reads, by name; empty means the
+        section's first raw channel. It reads one channel.
+    write: ["positions"] writes the positions; empty writes nothing and
+        shows the proposal. Left out: ["positions"].
+    view: True returns the picture described below; false returns none.
+
+Returns:
+    Per section, in the proposed order: filename, proposed position in
+    millimetres, the change from its current position, and what was
+    written (or FROZEN and the like). With view true, the
+    positioning picture of the written sections, or, with nothing
+    written, of the proposal, captioned as not written."""
+
+
 def brainways_ap(
     *,
     sections: list[str] = EVERY_SECTION,
     channel: str = "",
     write: list[str] | None = None,
     view: bool = False,
-) -> None:
-    """Find each section's position along the slicing axis with Brainways.
-
-    Brainways, a network trained on rat and mouse brain sections, compares one
-    channel of a section, by itself, with the atlas's coronal planes: it says
-    which of two planes is the more anterior, and a search over the planes
-    finds the one the section cannot be told apart from. The answer is that
-    plane's position and nothing else: it estimates no cutting angles and no
-    in-plane placement, and each section is placed independently of the
-    others. It works on whole coronal sections[[?interactive_transform ~
-    ; turn and flip a section the right way first]]. It can miss by millimetres ~
-    on a single section, so check the result[[?look:positioning  ~
-    with the positioning view of look]].
-
-    Writes the positions as one undo step when write holds "positions"; a
-    changed position clears the deformation of each section it moves. A
-    section whose position is frozen answers FROZEN and the rest land. With
-    write empty nothing is written and the reply is the proposal. Runs in
-    seconds for a stack of forty.
-
-    Args:
-        sections: Filenames to run (the extension may be left off); empty
-            means every section.
-        channel: The raw channel Brainways reads, by name; empty means the
-            section's first raw channel. It reads one channel.
-        write: ["positions"] writes the positions; empty writes nothing and
-            shows the proposal. Left out: ["positions"].
-        view: True returns the picture described below; false returns none.
-
-    Returns:
-        Per section, in the proposed order: filename, proposed position in
-        millimetres, the change from its current position, and what was
-        written (or FROZEN and the like). With view true, [[?look:positioning the
-        positioning picture of the written sections, or, with nothing
-        written, of the proposal, captioned as not written||a picture
-        of the written sections]].
-    """
-    ...
+) -> None: ...
 
 
 def run_brainways_ap(
@@ -308,7 +309,7 @@ def run_brainways_ap(
     Raises
     ------
     ToolError
-        ``BAD_ARGS`` for a bad argument, ``ENGINE_MISSING`` when the network
+        ``BAD_ARGUMENT`` for a bad argument, ``ENGINE_UNAVAILABLE`` when the network
         cannot run here, ``FIT_FAILED`` for an atlas it does not fit.
     """
     prior_mm = {view.id: view.position_mm for view in context.sections()}
@@ -343,7 +344,7 @@ def run_brainways_ap(
         reply["clamped"] = [
             {"id": row.id, "asked_mm": row.proposed_mm, "used_mm": row.used_mm} for row in clamped
         ]
-    if not view and _positioning_on(context):
+    if not view:
         reply["view"] = _view_note(written)
 
     record = CallRecord(
@@ -392,7 +393,7 @@ def _sections_to_run(context: ToolContext, sections: Sequence[str] | None) -> li
     else:
         run = [view.id for view in context.sections()]
     if len(set(run)) != len(run):
-        raise ToolError(RefusalCode.BAD_ARGS, "a section is named twice in sections")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "a section is named twice in sections")
     return run
 
 
@@ -402,7 +403,7 @@ def _propose_only(write: Sequence[str] | None) -> bool:
     unknown = [part for part in write if part not in PARTS]
     if unknown:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f'write takes a list: ["positions"] or empty (writes nothing); got {unknown}',
         )
     return not write
@@ -411,10 +412,10 @@ def _propose_only(write: Sequence[str] | None) -> bool:
 def _channel_for(context: ToolContext, sid: str, channel: str) -> str:
     names = context.channels(sid)
     if not names:
-        raise ToolError(RefusalCode.BAD_ARGS, f"{sid} has no raw channel")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, f"{sid} has no raw channel")
     if channel and channel not in names:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"{sid} has no channel {channel!r}; its channels: {', '.join(names)}",
         )
     return channel or names[0]
@@ -448,22 +449,24 @@ def _network(options: Options) -> tuple[Device, network.Network]:
         device = network.resolve_device(options.device)
     except ImportError as error:
         raise ToolError(
-            RefusalCode.ENGINE_MISSING,
+            RefusalCode.ENGINE_UNAVAILABLE,
             f"Brainways cannot run here: torch does not import ({error}); "
-            f"install LangSlice with its engines: {INSTALL}",
+            f"install LangSlice with its engines: {INSTALL}. Use another method, or ask the user "
+            "to install it.",
         ) from error
     if device == Device.CUDA and not network.cuda_available():
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "Brainways: device cuda was asked for and torch sees no GPU",
         )
     try:
         net = network.load_network(device, cache_folder=options.cache_folder)
     except (OSError, ValueError) as error:
         raise ToolError(
-            RefusalCode.ENGINE_MISSING,
+            RefusalCode.ENGINE_UNAVAILABLE,
             f"Brainways cannot run here: its weights could not be fetched "
-            f"from Hugging Face ({network.REPOSITORY}): {error}",
+            f"from Hugging Face ({network.REPOSITORY}): {error}. Use another method, "
+            "or ask the user to install it.",
         ) from error
     return device, net
 
@@ -537,7 +540,7 @@ def _row_errors(result: WriteResult | None) -> dict[str, str]:
     errors: dict[str, str] = {}
     for row in cast("list[dict[str, object]]", result.rows):
         if row.get("status") != RowStatus.OK:
-            errors[str(row.get("id"))] = str(row.get("error", "NOT_WRITTEN"))
+            errors[str(row.get("id"))] = str(row.get("error", RefusalCode.PRECONDITION))
     return errors
 
 
@@ -559,12 +562,6 @@ def _millimetres(value: object) -> float:
     if not isinstance(value, (int, float)):
         raise TypeError(f"a position is a number; got {value!r}")
     return float(value)
-
-
-def _positioning_on(context: ToolContext) -> bool:
-    listed = cast("list[object]", context.spec.get("disabled") or [])
-    disabled = [str(name) for name in listed]
-    return "look:positioning" not in disabled and "look" not in disabled
 
 
 def _view_note(written: set[str]) -> str:
@@ -649,11 +646,11 @@ def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:
             "brainways_ap",
             brainways_ap,
             handler,
+            description=_brainways_description,
             kind="write",
             group="Positioning",
             task="position",
             writes=("position",),
-            needs=(("look:positioning",),),
             atlases=(ATLAS,),
             planes=("coronal",),
             version="2",

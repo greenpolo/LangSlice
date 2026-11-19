@@ -2,26 +2,18 @@
 
 One :class:`ToolDef` per agent tool (the verbs of
 :data:`langslice.tools.catalog.VERBS`, which binds each to its operation):
-whether it writes, its task group, when a spec has it (``when``), the parts of
-it that can be switched off on their own (``options``), whether it can be
-switched off at all (``essential``) and what it needs while it is on
+whether it writes, its task group, when a spec has it (``when``), whether it
+can be switched off at all (``essential``) and what it needs while it is on
 (``needs``). Every door is built from this list.
 
 A job's ``disabled`` list
-(:attr:`langslice.job.settings.spec.JobSpec.disabled`) takes tools and
-options off on top of what its tasks and switches give:
-
-- ``"zoom"``: the tool, whole;
-- ``"look:positioning"``: one option of a tool (``tool:option``): here a
-  ``look`` mode, taken out of the tool's schema, its description and every
-  text that words it; ``"interactive_transform:flip"``: the mirror, and
-  ``"interactive_transform:rotate"``: the quarter turn, parts of the tool that
-  are no enumeration.
+(:attr:`langslice.job.settings.spec.JobSpec.disabled`) takes tools off on top
+of what its tasks and switches give: ``"zoom"`` is the tool, whole.
 
 The valid names are derived from this table (:func:`valid_names`).
 :func:`refusal` says, in one line, why a list cannot work; the spec refuses
-it when it is made. The text a tool or option appears in is written with
-what it needs and rendered for the job (:mod:`langslice.job.settings.needs`).
+it when it is made. The text a tool appears in is built for the job's tools
+(:class:`langslice.job.settings.tools_on.ToolsOn`).
 
 The in-tree engines' tools (DeepSlice, Brainways, STalign, SPOmiAlign,
 emlddmm) are rows of this table like every other: ``engine`` names the
@@ -41,15 +33,12 @@ from __future__ import annotations
 
 import fnmatch
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, Protocol, cast
 
-from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.tool_kinds import GROUPS as GROUPS
 from langslice.core.tool_kinds import Group, Kind
-
-OPTION_SEPARATOR = ":"
 
 
 def positions_on(spec: Any) -> bool:
@@ -104,7 +93,6 @@ class ToolDef:
     long: bool = False
     scripting: bool = False
     image_model: bool = False
-    options: Mapping[str, str] = field(default_factory=dict)
     essential: bool = False
     needs: tuple[tuple[str, ...], ...] = ()
     writes: tuple[str, ...] = ()
@@ -159,16 +147,14 @@ STALIGN = _ENGINES + "stalign.plugin:tools"
 SPOMIALIGN = _ENGINES + "spomialign.plugin:tools"
 EMLDDMM = _ENGINES + "emlddmm.plugin:tools"
 
-_LOOK_OPTIONS = {mode: "mode" for mode in LOOK_MODES}
-_OVERLAY = (("look:overlay",),)
 
 TOOLS: dict[str, ToolDef] = {
     tool.name: tool
     for tool in (
-        ToolDef("look", "read", "Common", options=_LOOK_OPTIONS, essential=True),
+        ToolDef("look", "read", "Common", essential=True),
         ToolDef("zoom", "read", "Common"),
         ToolDef("make_image", "write", "Common"),
-        ToolDef("grep_atlas", "read", "Common", options={"points": ""}),
+        ToolDef("grep_atlas", "read", "Common"),
         ToolDef("grep_atlas_view", "read", "Common"),
         ToolDef("status", "read", "Common", essential=True),
         ToolDef("list_files", "read", "Common"),
@@ -180,16 +166,13 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Positioning",
             when=positions_on,
-            needs=(("look:positioning", "look:overlay"),),
             writes=("position", "angles"),
         ),
         ToolDef(
             "interactive_transform",
             "write",
             "Linear",
-            options={"flip": "", "rotate": ""},
             when=_task_on("transform"),
-            needs=_OVERLAY,
             writes=("orientation", "affine"),
         ),
         ToolDef("mark_damage", "write", "Common", writes=("damage",)),
@@ -198,7 +181,6 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Common",
             when=_task_on("transform", "nonlinear"),
-            needs=(("look:section",),),
         ),
         ToolDef(
             "elastix_affine",
@@ -206,7 +188,6 @@ TOOLS: dict[str, ToolDef] = {
             "Linear",
             long=True,
             when=_task_on("transform"),
-            needs=_OVERLAY,
             writes=("affine",),
         ),
         ToolDef(
@@ -214,9 +195,7 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Nonlinear",
             long=True,
-            options={"metric": "", "edges": "", "detail": ""},
             when=_task_on("nonlinear"),
-            needs=_OVERLAY,
             writes=("deformation",),
         ),
         ToolDef(
@@ -224,11 +203,7 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Nonlinear",
             when=_task_on("nonlinear"),
-            needs=(
-                ("look:atlas", "look:overlay"),
-                ("look:section", "look:overlay"),
-                ("landmark_triangulation",),
-            ),
+            needs=(("landmark_triangulation",),),
             writes=("deformation",),
         ),
         ToolDef(
@@ -236,7 +211,7 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Nonlinear",
             when=_task_on("nonlinear"),
-            needs=(("look:overlay",), ("set_landmarks",)),
+            needs=(("set_landmarks",),),
             writes=("deformation",),
         ),
         ToolDef(
@@ -246,7 +221,6 @@ TOOLS: dict[str, ToolDef] = {
             long=True,
             image_model=True,
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model,
-            needs=_OVERLAY,
             writes=("deformation",),
             default_off=True,
         ),
@@ -258,7 +232,6 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Common",
             when=_task_on("transform", "nonlinear"),
-            needs=_OVERLAY,
             writes=("orientation", "affine", "deformation"),
         ),
         ToolDef("submit", "write", "Common", essential=True),
@@ -268,7 +241,6 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Positioning",
             when=positions_on,
-            needs=(("look:positioning",),),
             writes=("position", "angles", "affine"),
             engine=DEEPSLICE,
             default_off=True,
@@ -280,7 +252,6 @@ TOOLS: dict[str, ToolDef] = {
             "write",
             "Positioning",
             when=_task_on("position"),
-            needs=(("look:positioning",),),
             writes=("position",),
             engine=BRAINWAYS,
             default_off=True,
@@ -389,36 +360,22 @@ def tools_for(spec: Any = None) -> Mapping[str, ToolDef]:
     return {**TOOLS, **plugins.tool_defs(spec)}
 
 
-def option_names(tool: str, tools: Mapping[str, ToolDef] = TOOLS) -> tuple[str, ...]:
-    """The ``tool:option`` names of *tool*'s options."""
-    return tuple(f"{tool}{OPTION_SEPARATOR}{option}" for option in tools[tool].options)
-
-
 def valid_names(spec: Any = None) -> list[str]:
-    """Every name a ``disabled`` list takes, in table order (a tool, then its
-    options): the tools that can be switched off and every option, the tools
-    of *spec*'s plugins after the native ones."""
-    tools = tools_for(spec)
-    names: list[str] = []
-    for tool in tools.values():
-        if not tool.essential:
-            names.append(tool.name)
-        names.extend(option_names(tool.name, tools))
-    return names
+    """Every name a ``disabled`` list takes, in table order: the tools that can
+    be switched off, the tools of *spec*'s plugins after the native ones."""
+    return [tool.name for tool in tools_for(spec).values() if not tool.essential]
 
 
 def catalog(spec: Any = None) -> list[dict[str, Any]]:
     """The tools a host dialog can offer to switch off, in table order: name,
-    group, kind, whether the tool can be disabled (``essential`` tools cannot,
-    their options can), the names of its options and what it needs (groups
-    of names, one of each on). Plain data."""
+    group, kind, whether the tool can be disabled (``essential`` tools cannot)
+    and what it needs (groups of names, one of each on). Plain data."""
     return [
         {
             "name": tool.name,
             "group": tool.group,
             "kind": tool.kind,
             "disableable": not tool.essential,
-            "options": list(tool.options),
             "needs": [list(group) for group in tool.needs],
         }
         for tool in tools_for(spec).values()
@@ -433,9 +390,7 @@ def off_names(spec: Any) -> list[str]:
     add), so no text names them, then the tools the run has that can change
     nothing because everything they write (:attr:`ToolDef.writes`) is frozen
     on every section
-    (:attr:`~langslice.job.settings.spec.JobSpec.frozen_everywhere`), and the
-    mirror and the quarter turn (``interactive_transform:flip``,
-    ``:rotate``) when the orientation is.
+    (:attr:`~langslice.job.settings.spec.JobSpec.frozen_everywhere`).
     A tool a task switched off is not listed: it is not in the run at all."""
     names = list(spec.disabled)
     enabled = _str_names(getattr(cast("object", spec), "enabled", ()))
@@ -458,26 +413,12 @@ def off_names(spec: Any) -> list[str]:
     for tool in tools_for(spec).values():
         if tool.writes and set(tool.writes) <= everywhere and tool.when(spec):
             names.append(tool.name)
-    if "orientation" in everywhere:
-        names.extend(
-            f"interactive_transform{OPTION_SEPARATOR}{option}" for option in ("flip", "rotate")
-        )
     return list(dict.fromkeys(names))
 
 
 def is_off(disabled: Collection[str], name: str) -> bool:
-    """Whether *name* (a tool, or a ``tool:option``) is switched off by
-    *disabled*: named there, or, for an option, its tool is."""
-    return name in disabled or name.partition(OPTION_SEPARATOR)[0] in disabled
-
-
-def options_on(disabled: Collection[str], tool: str) -> tuple[str, ...]:
-    """The options of *tool* still on, in table order."""
-    return tuple(
-        option
-        for option in TOOLS[tool].options
-        if not is_off(disabled, f"{tool}{OPTION_SEPARATOR}{option}")
-    )
+    """Whether the tool *name* is switched off by *disabled*."""
+    return name in disabled
 
 
 def _either(names: list[str]) -> str:
@@ -485,7 +426,7 @@ def _either(names: list[str]) -> str:
 
 
 def check_names(names: list[Any], spec: Any = None) -> str | None:
-    """Why *names* hold a name no tool or option has, or a tool that cannot
+    """Why *names* hold a name no tool has, or a tool that cannot
     be switched off; None when they do not. *spec*: the job whose plugin
     tools are valid names too."""
     known = set(valid_names(spec))
@@ -495,8 +436,8 @@ def check_names(names: list[Any], spec: Any = None) -> str | None:
         held = tools_for(spec).get(str(name))
         if held is not None and held.essential:
             return (
-                f"disabled: {name} cannot be disabled (the run needs it); the tools and "
-                f"options that can be: {', '.join(valid_names(spec))}"
+                f"disabled: {name} cannot be disabled (the run needs it); the tools that "
+                f"can be: {', '.join(valid_names(spec))}"
             )
         return (
             f"disabled: unknown name {name!r}; the valid names are {', '.join(valid_names(spec))}"
@@ -506,7 +447,7 @@ def check_names(names: list[Any], spec: Any = None) -> str | None:
 
 def refusal(spec: Any, *, image_model: bool = True) -> str | None:
     """One line saying why *spec*'s disabled list cannot work, or None when
-    it can. The checks, in order: the names; ``look`` keeps a mode; every
+    it can. The checks, in order: the names; every
     task that is on keeps a tool that writes its answer (without those that
     call the image model when *image_model* is False: a door that cannot
     reach it); a tool that is on keeps what it needs."""
@@ -516,10 +457,6 @@ def refusal(spec: Any, *, image_model: bool = True) -> str | None:
     reason = check_names(disabled, spec)
     if reason is not None:
         return reason
-    if not options_on(disabled, "look"):
-        return "disabled: every look mode is off; look keeps at least one of " + ", ".join(
-            option_names("look")
-        )
     for task in spec.active_tasks:
         writers = TASK_WRITERS.get(task, ())
         if writers and not any(

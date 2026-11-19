@@ -4,7 +4,7 @@ DeepSlice 1.2.8's inference is vendored beside this module (``network.py``,
 ``alignment.py``; MIT, ``LICENSE``). TensorFlow and ``tf_keras`` come with
 the ``langslice[engines]`` extra and are imported when a run starts, never
 when LangSlice loads, so a LangSlice without the extra imports this module
-and refuses the tool's call (``ENGINE_MISSING``, ``require_engine``).
+and refuses the tool's call (``ENGINE_UNAVAILABLE``, ``require_engine``).
 TensorFlow runs on the CPU (``hidden_gpus``), with
 ``TF_USE_LEGACY_KERAS=1`` and ``TF_CPP_MIN_LOG_LEVEL=2``, each set unless
 the environment sets it. One run at a time in a process (``RUN_LOCK``), in
@@ -230,14 +230,15 @@ def require_engine() -> None:
     Raises
     ------
     ToolError
-        ``ENGINE_MISSING`` when a package of the extra is not installed.
+        ``ENGINE_UNAVAILABLE`` when a package of the extra is not installed.
     """
     missing = [name for name in REQUIRED_MODULES if importlib.util.find_spec(name) is None]
     if missing:
         raise ToolError(
-            RefusalCode.ENGINE_MISSING,
+            RefusalCode.ENGINE_UNAVAILABLE,
             f"DeepSlice cannot run here: {', '.join(missing)} not installed "
-            f"(install LangSlice's engines extra: {INSTALL})",
+            f"(install LangSlice's engines extra: {INSTALL}). Use another method, or ask the user "
+            "to install it.",
         )
 
 
@@ -257,16 +258,17 @@ def fetched_weights(cache_folder: Path) -> Weights:
     Raises
     ------
     ToolError
-        ``ENGINE_MISSING`` when a file cannot be fetched or is not
+        ``ENGINE_UNAVAILABLE`` when a file cannot be fetched or is not
         DeepSlice's.
     """
     try:
         return network.fetch_weights(cache_folder)
     except (OSError, ValueError) as error:
         raise ToolError(
-            RefusalCode.ENGINE_MISSING,
+            RefusalCode.ENGINE_UNAVAILABLE,
             f"DeepSlice cannot run here: its weights could not be fetched "
-            f"into {cache_folder.expanduser()} ({error})",
+            f"into {cache_folder.expanduser()} ({error}). Use another method, or ask the user "
+            "to install it.",
         ) from error
 
 

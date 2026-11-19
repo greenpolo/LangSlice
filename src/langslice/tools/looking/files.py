@@ -7,7 +7,7 @@ Three tools modelled on a coding agent's file tools:
 Every picture shown so far is written and indexed before each runs. Every
 path is relative to the job folder and kept inside it
 (:mod:`langslice.job.folder.browse`); a path that leaves it is refused
-(``BAD_PATH``), and one that does not exist is ``NOT_FOUND``, whose message
+(``BAD_ARGUMENT``), and one that does not exist is ``NOT_FOUND``, whose message
 names the nearest folder above it that exists and what it holds. Each
 operation answers a small record whose ``text`` is the model-facing reply, capped
 (``browse.LIST_ENTRIES``, ``SEARCH_MATCHES``, ``READ_LINES``, ``TEXT_BYTES``)
@@ -27,7 +27,6 @@ and the way to see it again (``zoom`` by its number; where the job has no
 from __future__ import annotations
 
 import json
-from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,7 +38,7 @@ from langslice.core.pictures.look import RENDERER as LOOK_RENDERER
 from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.folder import browse
-from langslice.job.settings.needs import render
+from langslice.job.settings.tools_on import ToolsOn
 
 if TYPE_CHECKING:
     from langslice.job.job import Job
@@ -146,7 +145,7 @@ def read_file_tool(run: Run, path: str, offset: int, limit: int) -> dict[str, ob
     try:
         first, count = int(offset or 0), int(limit or 400)
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, "offset and limit are whole numbers.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, "offset and limit are whole numbers.") from None
     done = read_folder_file(run.job, str(path or ""), first, count)
     reply: dict[str, object] = {"status": "ok", "text": done.text}
     if done.picture is not None:
@@ -173,7 +172,7 @@ def list_folder(job: Job, path: str = ".", glob: str = "") -> Listing:
     below *path* whose name or path matches. At most ``browse.LIST_ENTRIES``
     are shown; the reply ends with ``N more`` for the rest.
     """
-    start = browse.resolve(_folder(job), path)
+    start = browse.resolve(_folder(job), path, job.spec.tools_on)
     entries, hidden = browse.list_entries(_folder(job), start, str(glob or ""))
     shown = browse.relative(_folder(job), start)
     rows = [
@@ -196,8 +195,8 @@ def search_folder(job: Job, query: str, path: str = ".", glob: str = "") -> Foun
     not searched. *glob* keeps files whose name or path matches it.
     """
     if not str(query or ""):
-        raise Refused(RefusalCode.BAD_ARGS, message="query is empty.")
-    start = browse.resolve(_folder(job), path)
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="query is empty.")
+    start = browse.resolve(_folder(job), path, job.spec.tools_on)
     lines, hidden, files = browse.search(_folder(job), start, str(query), str(glob or ""))
     rows = list(lines) or [f"No match in {files} file(s)."]
     if hidden:
@@ -267,10 +266,10 @@ def _look_arguments(record: PictureRecord) -> dict[str, Any] | None:
     return out
 
 
-def _see_again(record: PictureRecord, off: Collection[str]) -> str:
-    """The reply's line on how to see *record* again, written with its needs
-    and rendered for the job's disabled list *off*: ``zoom`` by its number,
-    else the ``look`` call that draws its view again, else nothing."""
+def _see_again(record: PictureRecord, on: ToolsOn) -> str:
+    """The reply's line on how to see *record* again, for the tools *on* has:
+    ``zoom`` by its number, else the ``look`` call that draws its view again,
+    else nothing."""
     redraw = _look_arguments(record)
     zoomed = bool(((record.recipe or {}).get("args") or {}).get("zoom"))
     unzoomed = ", and the whole picture, unzoomed" if zoomed else ""
@@ -278,16 +277,16 @@ def _see_again(record: PictureRecord, off: Collection[str]) -> str:
         ""
         if redraw is None
         else (
-            f"[[?look:{redraw['mode']} To draw its view again, call look with {{call}} "
+            f"To draw its view again, call look with {{call}} "
             f"(it draws the stack as it is now{unzoomed}"
-            ").]]"
+            ")."
         )
     )
-    text = render(
-        f"[[?zoom To see it again, call zoom with picture {record.seq} and a box "
-        "over the part to see (a box as large as the picture shows all of it)."
-        f"||{with_look}]]",
-        off,
+    text = on.say(
+        "zoom",
+        f"To see it again, call zoom with picture {record.seq} and a box "
+        "over the part to see (a box as large as the picture shows all of it).",
+        with_look,
     )
     if redraw is not None:
         text = text.replace(
@@ -317,11 +316,11 @@ def read_folder_file(
     ``look`` picture's view again (on the stack as it is now). A binary file is
     described by its size.
     """
-    real = browse.resolve(_folder(job), path)
+    real = browse.resolve(_folder(job), path, job.spec.tools_on)
     shown = browse.relative(_folder(job), real)
     if real.is_dir():
         raise Refused(
-            RefusalCode.BAD_PATH,
+            RefusalCode.BAD_ARGUMENT,
             message=f"'{shown}' is a folder"
             + ("." if job.spec.off("list_files") else "; list it with list_files."),
         )
@@ -340,7 +339,7 @@ def read_folder_file(
             f"{shown} is a picture file ({facts}); pixels are not returned here.",
             *_record_text(record),
         ]
-        again = _see_again(record, job.spec.switched_off)
+        again = _see_again(record, job.spec.tools_on)
         if again:
             body.append(again)
         return FileText(shown, kind, "\n".join(body), picture=record.seq)
@@ -353,7 +352,9 @@ def read_folder_file(
     try:
         numbered, total, more = browse.read_lines(real, offset, limit)
     except OSError as error:
-        raise Refused(RefusalCode.BAD_PATH, message=f"'{shown}' cannot be read: {error}") from error
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, message=f"'{shown}' cannot be read: {error}"
+        ) from error
     start = max(0, int(offset))
     if not numbered:
         text = (

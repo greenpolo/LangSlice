@@ -36,6 +36,7 @@ from langslice.doors.agent_cli.envelope import (
     Envelope,
 )
 from langslice.job.settings.spec import JobSpec
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.descriptions.render import (
     FULL,
@@ -187,7 +188,7 @@ class Declared:
         self.folder: str | None = None
         self.spec: JobSpec | None = None
         self.variant = DescriptionFacts(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)
-        self.disabled: tuple[str, ...] = ()
+        self.on = ToolsOn()
         self.verbs: tuple[str, ...] | None = None
         found = job or _job_here()
         if found:
@@ -207,7 +208,7 @@ class Declared:
                 image_model=opened.image_model_connected,
                 brain_scale=opened.ctx.brain_scale,
             )
-            self.disabled = tuple(opened.spec.switched_off)
+            self.on = opened.spec.tools_on
             self.verbs = tuple(opened.listed_verbs())
         finally:
             opened.close()
@@ -290,9 +291,9 @@ def ops(args: argparse.Namespace) -> Envelope:
         try:
             declared = Declared(folder)
         except NoJob as exc:
-            return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+            return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
         except (FileNotFoundError, ValueError) as exc:
-            return Envelope.failure(RefusalCode.JOB_UNREADABLE, str(exc), exit=EXIT_REFUSED)
+            return Envelope.failure(RefusalCode.IO_ERROR, str(exc), exit=EXIT_REFUSED)
         table = [
             {**row, "summary": summary(row["name"], declared.variant)}
             for row in verbs_table(declared.spec)
@@ -437,14 +438,16 @@ def schema(args: argparse.Namespace) -> Envelope:
                     " A job's tool plugins add verbs of their own, known with its "
                     "folder: `langslice-job FOLDER schema " + " ".join(names) + "`."
                 )
-            return Envelope.failure(RefusalCode.UNKNOWN_VERB, message)
+            return Envelope.failure(
+                RefusalCode.BAD_ARGUMENT, f"{message} List the verbs with `langslice-job ops`."
+            )
         off = [name for name in names if name in verbs and not declared.has(name)]
         if off:
             return Envelope.failure(
-                RefusalCode.VERB_OFF,
-                f"This job's settings have no {', '.join(off)}.",
-                job=declared.folder or "<folder>",
-                verb=off[0],
+                RefusalCode.TOOL_OFF,
+                f"This job's settings have no {', '.join(off)}. "
+                f"`langslice-job {declared.folder or '<folder>'} status` lists the job's verbs "
+                "under `verbs`.",
             )
         nexts: list[str] = []
         if len(names) == 1:
@@ -470,9 +473,9 @@ def schema(args: argparse.Namespace) -> Envelope:
                 },
             }
     except NoJob as exc:
-        return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+        return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
     except (FileNotFoundError, ValueError) as exc:
-        return Envelope.failure(RefusalCode.JOB_UNREADABLE, str(exc), exit=EXIT_REFUSED)
+        return Envelope.failure(RefusalCode.IO_ERROR, str(exc), exit=EXIT_REFUSED)
     except Exception as exc:
         logger.exception("langslice-job schema failed")
         return Envelope.failure(

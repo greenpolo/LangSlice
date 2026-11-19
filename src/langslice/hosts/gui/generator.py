@@ -6,7 +6,7 @@ app, a short request and the job's ``langslice-job FOLDER init`` command,
 which the main agent's ``register-brain`` skill runs. This module gives the
 page what the choices are, so nothing in the form is written by hand twice:
 
-- the tools and their options from
+- the tools from
   :func:`langslice.job.settings.tool_table.catalog` (the scripting verbs left
   out: a script's, never the agent's to lose), each with its people's label
   (:mod:`langslice.job.settings.labels`), so a renamed or removed tool can
@@ -137,7 +137,7 @@ def task_sets() -> list[list[str]]:
 
 def tools() -> list[dict[str, Any]]:
     """The form's tools, in table order: the catalog's (scripting verbs left
-    out), each with its label, its options' names and labels, whether it
+    out), each with its label, whether it
     calls the image model, whether it starts off (``ToolDef.default_off``:
     the job's ``enabled`` switches it on), and ``runs_in``: the task choices
     (comma-joined)
@@ -149,9 +149,6 @@ def tools() -> list[dict[str, Any]]:
         held = tool_table.TOOLS.get(entry["name"])
         if held is not None and held.scripting:
             continue
-        options = [
-            f"{entry['name']}{tool_table.OPTION_SEPARATOR}{option}" for option in entry["options"]
-        ]
         rows.append(
             {
                 "name": entry["name"],
@@ -161,7 +158,6 @@ def tools() -> list[dict[str, Any]]:
                 "needs": entry["needs"],
                 "image_model": held is not None and held.image_model,
                 "default_off": held is not None and held.default_off,
-                "options": [{"name": name, "label": tool_labels.label(name)} for name in options],
                 "runs_in": [
                     ",".join(spec.tasks) for spec in specs if held is None or held.when(spec)
                 ],
@@ -171,7 +167,7 @@ def tools() -> list[dict[str, Any]]:
 
 
 def frozen_off(*properties: str) -> list[str]:
-    """The tools and options a freeze of *properties* on every section
+    """The tools a freeze of *properties* on every section
     switches off in a run of every task
     (:func:`langslice.job.settings.tool_table.off_names`)."""
     plain = JobSpec(image_folder=".", tasks=list(ALL_TASKS)).switched_off

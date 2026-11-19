@@ -114,7 +114,9 @@ ELASTIX_DETAIL = "standard"
 ELASTIX_MIN_REGION_SPAN = 4
 
 
-def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> None:
+def _check_elastix_region(
+    prepared: Any, atlas: Any, include: Sequence[str], instead: str = ""
+) -> None:
     if not include:
         return
     from langslice.core.fits.deformable.plane_images import (
@@ -130,9 +132,9 @@ def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> 
     span = (int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1) if xs.size else (0, 0)
     if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN**2:
         raise Refused(
-            RefusalCode.REGION_TOO_SMALL,
-            "Region is too small for elastix. Select a larger region"
-            "[[?interactive_transform  or use interactive_transform]]; no fit was run. "
+            RefusalCode.BAD_ARGUMENT,
+            f"Region is too small for elastix. Select a larger region{instead}; "
+            "no fit was run. "
             f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.",
         )
 
@@ -200,6 +202,7 @@ def elastix_affine(
     section_image: str = "preprocessed",
     edges: bool = True,
     section_weights: np.ndarray | None = None,
+    instead: str = "",
 ) -> ElastixFit:
     """Refine one section's placement with an Elastix intensity affine.
 
@@ -215,7 +218,9 @@ def elastix_affine(
     affine from the identity. *section_weights* (float, the fit grid's ``(H,
     W)``; a section mask's weights) narrow the section's mask: pixels under 0.5
     are left out. *edges* False drops the edge channel pair. Raises on a
-    placement, region or engine failure.
+    placement, region or engine failure. *instead* is what a refusal for a
+    region too small adds after "Select a larger region" (another way the
+    caller offers, such as " or use interactive_transform").
     """
     from dataclasses import replace
 
@@ -233,7 +238,7 @@ def elastix_affine(
         elastix_settings(include, exclude, atlas_image, ctx.brain_scale, edges),
         section_weights=section_weights,
     )
-    _check_elastix_region(prepared, ctx.atlas, include)
+    _check_elastix_region(prepared, ctx.atlas, include, instead)
     assert prepared.inputs is not None
     result = fit_elastix_affine(prepared.inputs)
     mm = grid.placement.section_mm_per_px
@@ -279,6 +284,7 @@ def fit_elastix(
     section_image: str = "preprocessed",
     edges: bool = True,
     section_weights: np.ndarray | None = None,
+    instead: str = "",
 ) -> FittedAffine | Refused:
     """``elastix_affine`` for one positioned section.
 
@@ -286,7 +292,8 @@ def fit_elastix(
     numbers, or the identity without a transform) by :func:`elastix_affine`:
     the fitted affine (a ``regions`` report when regions were given), or the
     section's refusal, which names it (``id``): the fit's own code
-    (regions too small, a side it lacks) or ``FIT_FAILED``.
+    (regions too small, a side it lacks) or ``FIT_FAILED``. *instead* is as
+    for :func:`elastix_affine`.
     """
     rendered = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
     stored = None if section.transform is None else section.transform.params
@@ -313,6 +320,7 @@ def fit_elastix(
             section_image=section_image,
             edges=edges,
             section_weights=section_weights,
+            instead=instead,
         )
     except Refused as refusal:
         return Refused(refusal.code, id=section.id, message=refusal.message)

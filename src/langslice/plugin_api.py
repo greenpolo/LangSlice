@@ -1,8 +1,8 @@
 """The tool plugin API: what a plugin module imports (``docs/developers/plugins.md``).
 
 A plugin adds tools to a job's toolbox. It declares each tool with a
-:class:`ToolSpec` (a stub whose signature and docstring are the tool's
-declaration, a handler, and what the tool reads and writes) and returns them
+:class:`ToolSpec` (a stub whose signature, and docstring or ``description``,
+are the tool's declaration, a handler, and what the tool reads and writes) and returns them
 from a factory function; the handler gets a :class:`ToolContext` to read the
 job and to write through; a handler refuses a call with :class:`ToolError`
 and a :class:`RefusalCode` (or a code of its own). Only the names here are
@@ -26,6 +26,7 @@ from langslice.doors.plugins import (
     ToolContext,
     ToolError,
     ToolResult,
+    ToolsOn,
     ToolSpec,
     TransformProposal,
     WriteResult,
@@ -53,6 +54,7 @@ __all__ = [
     "ToolError",
     "ToolResult",
     "ToolSpec",
+    "ToolsOn",
     "TransformProposal",
     "WriteResult",
     "flag_words",

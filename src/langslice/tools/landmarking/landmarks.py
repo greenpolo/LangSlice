@@ -19,7 +19,6 @@ from langslice.core.pictures.drawn import collecting
 from langslice.core.pictures.landmarks import pair_picture
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.landmarks import Endpoint, Landmarks, Pair
-from langslice.job.settings.needs import render
 from langslice.tools.looking.look import Looked, save_pictures
 from langslice.tools.refusal import check_frozen, unknown_sections
 from langslice.tools.run import Run, pictured
@@ -53,7 +52,7 @@ def landmark_section(job: Job, section: str) -> Section:
     Raises
     ------
     Refused
-        ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` or ``FROZEN`` (its
+        ``NOT_FOUND``; ``BUSY`` or ``FROZEN`` (its
         deformation), as :func:`langslice.tools.refusal.check_frozen`.
     """
     record = job.state.resolve(section)
@@ -95,39 +94,39 @@ def _endpoint(
     here = f"{label}, {role} endpoint"
     if not isinstance(point, dict):
         raise Refused(
-            RefusalCode.BAD_ARGS, message=f"{here}: an endpoint is an object with picture, x and y."
+            RefusalCode.BAD_ARGUMENT,
+            message=f"{here}: an endpoint is an object with picture, x and y.",
         )
     try:
         seq, x, y = int(point["picture"]), float(point["x"]), float(point["y"])
         given = (x, y)
     except (KeyError, TypeError, ValueError):
         raise Refused(
-            RefusalCode.BAD_ARGS, message=f"{here}: an endpoint needs picture, x and y in pixels."
+            RefusalCode.BAD_ARGUMENT,
+            message=f"{here}: an endpoint needs picture, x and y in pixels.",
         ) from None
     if point.get("picture") != seq or isinstance(point.get("picture"), bool):
         raise Refused(
-            RefusalCode.BAD_ARGS, message=f"{here}: picture is a whole saved picture number."
+            RefusalCode.BAD_ARGUMENT, message=f"{here}: picture is a whole saved picture number."
         )
     if set(point) - {"picture", "x", "y"}:
         raise Refused(
-            RefusalCode.BAD_ARGS, message=f"{here}: an endpoint accepts picture, x and y only."
+            RefusalCode.BAD_ARGUMENT, message=f"{here}: an endpoint accepts picture, x and y only."
         )
     picture = job.views.lookup(seq)
     if picture is None:
         raise Refused(
-            RefusalCode.UNKNOWN_PICTURE,
+            RefusalCode.NOT_FOUND,
             picture=seq,
-            message=render(
-                f"{here}: there is no saved picture {seq}"
-                + (
-                    f" (the newest is {newest.seq})"
-                    if (newest := job.views.latest(exclude_tool=None))
-                    else ""
-                )
-                + ". Use the picture number a look[[?zoom  or zoom]] "
-                "reply gave.",
-                job.spec.switched_off,
-            ),
+            message=f"{here}: there is no saved picture {seq}"
+            + (
+                f" (the newest is {newest.seq})"
+                if (newest := job.views.latest(exclude_tool=None))
+                else ""
+            )
+            + ". Use the picture number a look"
+            + job.spec.tools_on.say("zoom", " or zoom")
+            + " reply gave.",
         )
     recipe = picture.recipe or {}
     frame = source_frame(recipe)
@@ -138,7 +137,7 @@ def _endpoint(
     if not panels:
         others = sorted({str(p.get("section")) for p in every})
         raise Refused(
-            RefusalCode.BAD_LANDMARK_PICTURE,
+            RefusalCode.BAD_ARGUMENT,
             picture=seq,
             message=(
                 f"{here}: picture {seq} has no {role} geometry for {record.id}"
@@ -160,11 +159,13 @@ def _endpoint(
     ]
     if not eligible or not np.isfinite([x, y]).all():
         raise Refused(
-            RefusalCode.BAD_LANDMARK_POINT,
+            RefusalCode.BAD_ARGUMENT,
             picture=seq,
             message=(
                 f"{here}: the point {where} is outside the image content (in a caption/gutter, "
-                f"or off the picture); {_content(seq, panels, frame)}. Choose a point inside it."
+                f"or off the picture); {_content(seq, panels, frame)}. Choose a point inside it"
+                + job.spec.tools_on.say("zoom", " (on a zoom, the numbers its grid prints)")
+                + "."
             ),
         )
     panel = eligible[0]
@@ -173,7 +174,7 @@ def _endpoint(
         now = geometry.plane_context(job.state, record)
         if held.get("plane") != now:
             raise Refused(
-                RefusalCode.STALE_LANDMARK_PLANE,
+                RefusalCode.STALE_INPUT,
                 picture=seq,
                 message=(
                     f"{here}: picture {seq} was drawn at the atlas plane "
@@ -195,7 +196,7 @@ def _endpoint(
                 warp = None
             if warp is None:
                 raise Refused(
-                    RefusalCode.LANDMARK_WARP_UNAVAILABLE,
+                    RefusalCode.IO_ERROR,
                     picture=seq,
                     message=f"{here}: the warped view in picture {seq} needs its stored "
                     "inverse mapping, which is gone; draw the section again with look.",
@@ -204,7 +205,7 @@ def _endpoint(
         limits = np.ones(2)
     if not np.isfinite(canonical).all() or np.any(canonical < 0) or np.any(canonical >= limits):
         raise Refused(
-            RefusalCode.BAD_LANDMARK_POINT,
+            RefusalCode.BAD_ARGUMENT,
             picture=seq,
             message=(
                 f"{here}: the point {where} lies outside the {role} image; "
@@ -250,7 +251,7 @@ INSIDE_MARGIN_PX = 1.5
 def _refuse_outside(
     job: Job, workspace: Workspace, plane: dict[str, Any], placed: Sequence[tuple[str, Pair]]
 ) -> None:
-    """Refuse the call (``ATLAS_ENDPOINT_OUTSIDE``, nothing written) when an
+    """Refuse the call (``BAD_ARGUMENT``, nothing written) when an
     atlas endpoint of *placed* (``(label, pair)``) lies outside the atlas on
     *plane*, naming for each the nearest point inside it in the numbers it
     was given in (a zoom's: the whole picture's)."""
@@ -301,10 +302,11 @@ def _refuse_outside(
             sentence += f"; the nearest point inside it is ({px:.0f}, {py:.0f}) in picture {seq}"
         sentences.append(sentence + ".")
     raise Refused(
-        RefusalCode.ATLAS_ENDPOINT_OUTSIDE,
+        RefusalCode.BAD_ARGUMENT,
         pairs=[label for label, _pair in outside],
-        message=" ".join(sentences) + " Nothing was written. For a pair on "
-        "the outline, put the atlas endpoint on the drawn border or just "
+        message=" ".join(sentences) + " Nothing was written. Send the pairs "
+        "again with each atlas endpoint at the point inside the atlas given above; for "
+        "a pair on the outline, put the atlas endpoint on the drawn border or just "
         "inside it.",
     )
 
@@ -441,7 +443,7 @@ def set_landmarks(
         or any(not isinstance(pair_id, str) for pair_id in delete)
     ):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message="pairs is a list of objects; delete is a list of pair IDs.",
         )
     record = landmark_section(job, section)
@@ -452,18 +454,19 @@ def set_landmarks(
         bool(p.get("id")) for p in pairs
     ):
         raise Refused(
-            RefusalCode.BAD_ARGS, message="A pair ID may be edited or deleted only once per batch."
+            RefusalCode.BAD_ARGUMENT,
+            message="A pair ID may be edited or deleted only once per batch.",
         )
     changed: list[str] = []
     placed: list[Pair] = []
     labels: list[str] = []
     deleted = list(by_id) if DELETE_ALL in delete else list(delete)
     if DELETE_ALL in delete and len(delete) > 1:
-        raise Refused(RefusalCode.BAD_ARGS, message=f'delete ["{DELETE_ALL}"] stands alone.')
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=f'delete ["{DELETE_ALL}"] stands alone.')
     for pair_id in deleted:
         if pair_id not in by_id:
             raise Refused(
-                RefusalCode.UNKNOWN_LANDMARK,
+                RefusalCode.NOT_FOUND,
                 id=pair_id,
                 message=(
                     f"{record.id} has no pair {pair_id}; its pairs are "
@@ -476,7 +479,7 @@ def set_landmarks(
         label = f"pairs[{index}] ({pair_id or 'new pair'})"
         if pair_id and pair_id not in by_id:
             raise Refused(
-                RefusalCode.UNKNOWN_LANDMARK,
+                RefusalCode.NOT_FOUND,
                 id=pair_id,
                 message=(
                     f"{label}: {record.id} has no pair {pair_id}; its pairs are "
@@ -485,17 +488,17 @@ def set_landmarks(
             )
         if set(edit) - {"id", "atlas", "section"}:
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message=f"{label}: pair entries accept id, atlas and section only.",
             )
         if not any(role in edit for role in ("atlas", "section")):
             raise Refused(
-                RefusalCode.BAD_ARGS, message=f"{label}: an edit needs at least one endpoint."
+                RefusalCode.BAD_ARGUMENT, message=f"{label}: an edit needs at least one endpoint."
             )
         previous = by_id.get(pair_id)
         if not previous and (not edit.get("atlas") or not edit.get("section")):
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message=f"{label}: a new pair needs explicit atlas and section endpoints.",
             )
         if not pair_id:
@@ -562,7 +565,7 @@ def set_landmarks_tool(
     job, workspace = run.job, run.workspace
     if run.shows(view) and len(pairs) > MAX_PAIR_PICTURES:
         raise Refused(
-            RefusalCode.TOO_MANY_LANDMARK_VIEWS,
+            RefusalCode.BAD_ARGUMENT,
             f"You sent {len(pairs)} pairs with view true, and a call draws one "
             "picture per pair for at most four. Nothing was written. Send "
             f"the same {len(pairs)} pairs again with view false (no pair "

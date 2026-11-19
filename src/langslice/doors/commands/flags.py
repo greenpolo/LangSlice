@@ -107,10 +107,9 @@ FLAGS: dict[str, Flag] = {
     "--disabled": Flag(
         action="append",
         metavar="NAME[,NAME...]",
-        help="Tools and tool options the agent does not get, on top of what "
-        "the tasks give (repeatable): a tool (zoom), or tool:option "
-        "(look:positioning, interactive_transform:flip, which keeps the "
-        "agent from mirroring sections). Valid names: " + ", ".join(valid_names()),
+        help="Tools the agent does not get, on top of what the tasks give "
+        "(repeatable), for example zoom. "
+        "Valid names: " + ", ".join(valid_names()),
     ),
     "--enabled": Flag(
         action="append",

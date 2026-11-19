@@ -37,13 +37,13 @@ class Submitted:
 def clean_breaks(job: Job, values: Any) -> list[int]:
     """The interval breaks *values* name (a list of filenames from a model: a
     trust boundary), as the corrected indices the state keeps.
-    ``UNKNOWN_SLICE_IDS`` for a name that is no section's; ``BAD_ARGS`` for
+    ``NOT_FOUND`` for a name that is no section's; ``BAD_ARGUMENT`` for
     anything but a list."""
     if values is None:
         return []
     if not isinstance(values, (list, tuple)):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message="interval_breaks is a list of filenames.",
         )
     breaks: list[int] = []

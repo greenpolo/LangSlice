@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from langslice.core.fits.deformation import RecordStore
 
 CROP_RENDERER = "crop"
-CROPPED_INSTEAD = (RefusalCode.SECTION_GONE, RefusalCode.UNREADABLE_RECIPE)
+CROPPED_INSTEAD = (RefusalCode.NOT_FOUND, RefusalCode.STALE_INPUT)
 MAX_CROP_ENLARGE = 4.0
 
 
@@ -79,9 +79,11 @@ def box_fractions(box: Sequence[float], shown: Sequence[float]) -> tuple[float, 
     try:
         values = [float(v) for v in box]
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_BOX, "box must be four numbers [x0, y0, x1, y1]") from None
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, "box must be four numbers [x0, y0, x1, y1]"
+        ) from None
     if len(values) != 4:
-        raise Refused(RefusalCode.BAD_BOX, "box must be four numbers [x0, y0, x1, y1]")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "box must be four numbers [x0, y0, x1, y1]")
     width, height = max(float(shown[0]), 1.0), max(float(shown[1]), 1.0)
     x0, x1 = sorted((values[0], values[2]))
     y0, y1 = sorted((values[1], values[3]))
@@ -93,9 +95,10 @@ def box_fractions(box: Sequence[float], shown: Sequence[float]) -> tuple[float, 
     )
     if (out[2] - out[0]) * width < 2 or (out[3] - out[1]) * height < 2:
         raise Refused(
-            RefusalCode.EMPTY_BOX,
+            RefusalCode.BAD_ARGUMENT,
             f"box {values} has no area inside the picture "
-            f"({int(width)} x {int(height)} px above its caption)",
+            f"({int(width)} x {int(height)} px above its caption): give a box with area "
+            "inside the picture, [x0, y0, x1, y1] in its pixels",
         )
     return out
 
@@ -119,7 +122,7 @@ def _shown(recipe: dict[str, Any] | None, picture: Image.Image | None) -> tuple[
     if held:
         return float(held[0]), float(held[1])
     if picture is None:
-        raise Refused(RefusalCode.NO_PICTURE, "no picture to read the box on")
+        raise Refused(RefusalCode.NOT_FOUND, "no picture to read the box on")
     return float(picture.width), float(picture.height)
 
 
@@ -173,10 +176,10 @@ def redraw(
     """
     renderer = (recipe or {}).get("renderer")
     if not isinstance(region, str):
-        raise Refused(RefusalCode.BAD_ARGS, "region must be one atlas acronym or numeric id.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "region must be one atlas acronym or numeric id.")
     region = region.strip()
     if region and box:
-        raise Refused(RefusalCode.BAD_ARGS, "Give either box or region, not both.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "Give either box or region, not both.")
     window = None
     if region:
         if (
@@ -186,7 +189,7 @@ def redraw(
             or (recipe.get("args") or {}).get("mode") != "overlay"
         ):
             raise Refused(
-                RefusalCode.BAD_REGION_PICTURE,
+                RefusalCode.BAD_ARGUMENT,
                 "region needs an overlay picture; give an overlay's picture number.",
             )
         recipe, window = looks.overlay_region_window(workspace, state, recipe, region, store=store)
@@ -232,7 +235,7 @@ def redraw(
         )
     if source is None:
         raise Refused(
-            RefusalCode.NO_PICTURE,
+            RefusalCode.NOT_FOUND,
             "this picture cannot be redrawn and no saved copy was given to crop",
         )
     return _crop(
