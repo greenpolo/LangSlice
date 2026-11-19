@@ -16,13 +16,17 @@ tool writes the section properties named in its
 property the job does not freeze. A plugin's files go under
 :meth:`ToolContext.work_dir` and nowhere else.
 
-The plugin API is flat: one public method per call, on one class. The class
-is assembled from one class per family of methods, each in its own module
-and each built on the one below: ``reads.py`` (the footing and a section's
-reads), ``frames.py`` (atlas planes and points), ``proposals.py`` (a
-method's result as LangSlice stores it), ``fits.py`` (outside and native
-engines), ``writes.py`` and ``pictures.py``. This module adds the job and
-background work.
+A context holds its parts as named attributes, each a plain class that is
+given what it needs: ``reads`` (:class:`~langslice.plugins.reads.Reads`: the
+job's sections, atlas and images), ``frames``
+(:class:`~langslice.plugins.frames.Frames`: atlas planes and points),
+``proposals`` (:class:`~langslice.plugins.proposals.Proposals`: a method's
+result as LangSlice stores it), ``fits`` (:class:`~langslice.plugins.fits.Fits`:
+outside files and the native engines), ``writes``
+(:class:`~langslice.plugins.writes.Writes`) and ``pictures``
+(:class:`~langslice.plugins.pictures.Pictures`). The context itself has what
+is about the call: ``tool``, ``spec``, ``job_dir``, ``call``, ``work_dir``,
+``task_on`` and ``start_work``.
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ import copy
 import types
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
@@ -39,18 +43,53 @@ from PIL import Image
 from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import ToolError, ToolResult
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.doors.plugins.fits import ContextFits
-from langslice.doors.plugins.pictures import ContextPictures
-from langslice.doors.plugins.writes import ContextWrites
+from langslice.plugins.caller import Call, Caller
+from langslice.plugins.fits import Fits
+from langslice.plugins.frames import Frames, Grids
+from langslice.plugins.pictures import Pictures
+from langslice.plugins.proposals import Proposals
+from langslice.plugins.reads import Reads, Records
+from langslice.plugins.writes import Writes
+
+if TYPE_CHECKING:
+    from langslice.tools.run import Run
 
 
 def _not_for_scripts(what: str) -> ToolError:
     return ToolError(RefusalCode.TOOL_OFF, what)
 
 
-class ToolContext(ContextFits, ContextWrites, ContextPictures):
+class ToolContext:
     """What one plugin tool call, or a script, can read and write (see the
-    module text)."""
+    module text).
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    caller
+        Who the context works for, a plugin tool or a script.
+    call
+        The call's id, which the layers and records it makes keep.
+    """
+
+    def __init__(self, run: Run, caller: Caller, call: str) -> None:
+        self._run = run
+        self._caller = caller
+        self._call = Call(caller, call)
+        self._records = Records(run, caller)
+        grids = Grids(run, self._records)
+        self.reads = Reads(run, self._records)
+        self.frames = Frames(run, self._records, grids, self.reads)
+        self.proposals = Proposals(run, self._call, self._records, grids)
+        self.fits = Fits(run, self._records, grids, self.frames, self.proposals)
+        self.writes = Writes(run, self._call, self._records, self.proposals)
+        self.pictures = Pictures(run, self._records, self.proposals)
+
+    @property
+    def call(self) -> str:
+        """The call's id."""
+        return self._call.id
 
     @property
     def tool(self) -> str:
@@ -93,7 +132,7 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
         and return its id at once (``w3``); the tool returns meanwhile.
 
         On a work thread ``land(ctx)`` computes and writes through *ctx*, a
-        context of its own for the same tool (``with ctx.writing():`` makes
+        context of its own for the same tool (``with ctx.writes.writing():`` makes
         its writes one undo step; pass ``expect=`` digests taken at the
         start, as a long tool does). Its :class:`ToolResult` is the work's
         notice: ``reply["notice"]`` (one paragraph) its text, the reply its
@@ -111,7 +150,7 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
                 "a script runs its own computation: compute, then write with expect="
             )
         job = self._run.job
-        ids = [self._record(section).id for section in sections]
+        ids = [self._records.get(section).id for section in sections]
         busy = job.busy_refusal(ids)
         if busy is not None:
             raise busy

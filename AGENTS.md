@@ -10,21 +10,25 @@ has an `AGENTS.md` twin: edit one, then `cp CLAUDE.md AGENTS.md` in that folder.
 
 ## Layers
 
-`core` < `job` < `tools` < `doors` < `hosts`; each layer imports only the
-layers below it. `providers/` (model access) sits beside them and imports
-`core` only; core, job and tools never import it, nor `google.*`,
-`litellm`, `openai` or `mcp`; an image model is passed in as an argument.
-`engines/` (the in-tree engines' tools: DeepSlice, Brainways, STalign,
-SPOmiAlign, emlddmm) sits beside `hosts` and imports the plugin API only. import-linter enforces this (`[tool.importlinter]` in
-`pyproject.toml`, run by `tests/test_import_layers.py` and CI) with no
-exceptions: a violation is fixed by moving code.
+`core` < `job` < `tools` < `plugins` < `engines` < `doors` < `hosts`; each
+layer imports only the layers below it. `plugins/` is the tool-plugin
+machinery and `engines/` the in-tree engines' tools (DeepSlice, Brainways,
+STalign, SPOmiAlign, emlddmm), first-party code written against it.
+`providers/` (model access) sits beside them and imports `core` only; core,
+job, tools, plugins and engines never import it, nor `google.*`, `litellm`,
+`openai` or `mcp`; an image model is passed in as an argument. import-linter
+enforces this (`[tool.importlinter]` in `pyproject.toml`, run by
+`tests/test_import_layers.py` and CI) with no exceptions: a violation is
+fixed by moving code.
 
 | Package | Role | Guide |
 |---|---|---|
 | `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; `refusal.py` (the one `Refused` and its `RefusalCode`s); of a job's settings only the `ImageSettings` the workspace carries | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
 | `job/` | the `Job`: state, undo, checkpoint (`state_file.py`, format 5 read as 6), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the form `JobSpec`, a frozen Pydantic model that defines every setting once; `walk.py` and `defaults.py` that every door's flags and defaults come from, `frozen.py`, the tool table `tool_table.py`, the tools a job has on `tools_on.py`, the tool labels); the plugin registry (`plugins.py`) | `job/CLAUDE.md` |
 | `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; `run.py`, `arguments.py`, `reply.py`; `descriptions/` (the declarations, the job statement) | `tools/CLAUDE.md` |
-| `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the library (`library/`), plugins (`plugins/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |
+| `plugins/` | the tool-plugin machinery: loads a plugin, gives each handler its `ToolContext` (parts `reads`, `frames`, `proposals`, `fits`, `writes`, `pictures`), builds a plugin tool's body and provenance; `declared.py` builds an engine tool's `ToolSpec` from its row of the tool table; the public facade is `langslice/plugin_api.py` | `docs/developers/plugins.md` |
+| `engines/` | the in-tree engines' tools: DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm (`<name>/plugin.py` binds each tool to its handler) | `docs/developers/plugins.md` |
+| `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the library (`library/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth` (`oauth/`), `none`; no task logic | |
 | `hosts/` | host code in LangSlice's own environment: the `gui` command, the LangSlice window (`gui/`) | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md` |
 
@@ -57,7 +61,8 @@ and `environment.yml` hold the source installation.
   switches its tools on or off whole. Sections are named by filename only.
 - The in-tree engines (`langslice/engines/`) are tools of every job on every
   door (`init`, `linear run`, MCP, the library): rows of
-  `job/settings/tool_table.py` (`ToolDef.engine`), listed after the other
+  `job/settings/tool_table.py` (`ToolDef.engine`; the row is the tool's one
+  declaration, the engine's `ToolSpec` is built from it), listed after the other
   tools, switched off by `disabled` like any tool. An engine's module is
   imported only for a run that has one of its tools. Three tools start off
   (`ToolDef.default_off`: `trace_borders`, `deepslice_place`, `brainways_ap`)
@@ -108,7 +113,7 @@ and `environment.yml` hold the source installation.
   never added: the code is changed until the tool has nothing to report.
   Related constants are grouped in a frozen dataclass whose docstring
   explains them, never listed bare under a paragraph. Vendored code
-  (`src/langslice_vendor/`) stays as published.
+  (`src/langslice/_vendor/`: STalign and emlddmm) stays as published.
 - No Markdown file is written unless the owner asked for that file: no
   notes, plans, summaries or reports in the repository. The kinds that
   exist are listed in `tests/test_markdown_files.py`, which fails on any

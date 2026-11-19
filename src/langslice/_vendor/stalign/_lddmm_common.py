@@ -599,7 +599,9 @@ def run_lddmm(problem, draw='end', num_threads=None, backend='auto'):
     The result holds the last evaluated pair: 'A' and 'v' are the affine and the velocity
     used by the last iteration's forward pass, 'WM', 'WB', 'WA' the weights after the last
     iteration and, in 3D, 'Xs' the sample points of that forward pass.  With niter=0 it is
-    the initial state.  Tensors are on the requested device and dtype.
+    the initial state.  Tensors are on the requested device and dtype.  'Esave' is the energy
+    per iteration (total, matching, regularization[, landmarks]) the progress figures plot,
+    so a caller that draws nothing (draw=False) still has it.
     '''
     unset = [k for k in SETTINGS if getattr(problem, k) is None]
     if unset:
@@ -639,6 +641,8 @@ def _result(problem, snap):
            'WM': snap['WM'], 'WB': snap['WB'], 'WA': snap['WA']}
     if problem.dim == 3:
         out['Xs'] = snap['Xs']
+    if 'Esave' in snap:
+        out['Esave'] = snap['Esave']
     return {k: ([_tensor(x, problem) for x in val] if k == 'xv' else _tensor(val, problem)) for k, val in out.items()}
 
 

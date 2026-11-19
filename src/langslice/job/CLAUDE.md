@@ -83,7 +83,8 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`,
   asked by the code that words a text (`has`, `has_all`, `has_any`, `say`,
   `say_all`, `say_any`, `listed`), so a text names only a tool that is on.
   The in-tree engines' tools are rows too: `ToolDef.engine` is the
-  reference of the engine that declares and runs the tool (`ENGINES`,
+  reference of the engine that runs the tool (`ENGINES`; the row is the tool's one
+  declaration, with `tasks` and `limits`, and the engine builds its `ToolSpec` from it;
   `engines_on(spec)`: the engines a run has a tool of), `atlases` / `planes`
   the jobs it is offered on (`ToolDef.fits`), `default_off` a tool that is
   off unless `JobSpec.enabled` names it (`default_off_names`,
@@ -133,7 +134,7 @@ tool declaration is refused), `tool_def` (a plugin tool as a `ToolDef`:
 `not_offered` names the tools they exclude, which `tool_table.off_names`
 counts as switched off so no text names them) and the registry of loaded
 plugins (`LoadedPlugin`, `loaded`, `of_spec`, `tool_defs`, `tool_specs`;
-`set_loader` is how `doors/plugins` registers the code that imports a
+`set_loader` is how `langslice/plugins` registers the code that imports a
 plugin: nothing here imports one by name). `JobSpec.plugins` /
 `plugin_config` are validated by loading (`tool_table.tools_for`), so a bad
 plugin is refused when the spec is made.
@@ -392,7 +393,7 @@ longer exist be taken over by the images it is opened with.
   `layers` (the state: undo hides it, the files stay); `read_manifest`,
   `layer_rows`, `export_layers` (copies the shown layers to
   `exports/plugins/<tool>/`, called by `tools.exports`). `job.json`'s `plugins`
-  (the provenance `doors/plugins` records) is written with `write_job_file`.
+  (the provenance `langslice/plugins` records) is written with `write_job_file`.
   `JobLayout.plugins_dir` / `plugin_dir(tool)`. `Job.pushed` counts undo steps
   and `Job.merge_steps(mark)` makes the steps since `mark` one (a plugin tool's
   call is one step however many operations it ran).

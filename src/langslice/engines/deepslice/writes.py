@@ -12,15 +12,15 @@ from __future__ import annotations
 import enum
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import cast
 
+from langslice.engines._positioning import Clamped, clamped_rows, row_errors
 from langslice.engines.deepslice.engine import EngineRun
 from langslice.engines.deepslice.proposal import (
     Plane,
     ProposalRow,
     in_plane_params,
 )
-from langslice.plugin_api import RefusalCode, ToolContext, WriteResult
+from langslice.plugin_api import ToolContext, WriteResult
 
 TRANSFORM_NOTE = "DeepSlice in-plane fit"
 NO_PIXEL_SIZE = "not written (no pixel size)"
@@ -89,7 +89,7 @@ class Written:
     refused
         A write refused whole, as ``CODE: message``; empty when none was.
     clamped
-        Each position the atlas range held: id, asked and used mm.
+        Each position the atlas range held.
     params
         The in-plane numbers read for each section (None without a pixel
         size).
@@ -101,7 +101,7 @@ class Written:
     transform_errors: dict[str, str] = field(default_factory=dict)
     angles_written: bool = False
     refused: str = ""
-    clamped: list[tuple[str, float, float]] = field(default_factory=list)
+    clamped: list[Clamped] = field(default_factory=list)
     params: dict[str, tuple[float, ...] | None] = field(default_factory=dict)
 
 
@@ -138,7 +138,7 @@ def proposed(
     for row in rows:
         if row.final is None or row.refused is not None:
             continue
-        angles = stack if stack else context.section(row.id).angles
+        angles = stack if stack else context.reads.section(row.id).angles
         planes[row.id] = (row.final.position_mm, angles)
     return Written(params=in_plane_params(context, run, planes))
 
@@ -181,7 +181,7 @@ def write(
     if AnswerPart.ANGLES in choice.parts and stack is not None:
         angles = {"pitch_deg": stack[0], "yaw_deg": stack[1]}
 
-    with context.writing():
+    with context.writes.writing():
         written = _write_positions(context, position_rows, angles)
         if AnswerPart.TRANSFORM in choice.parts:
             written = _write_transforms(context, run, rows, written)
@@ -196,7 +196,7 @@ def _write_positions(
     """Write the positions and the stack's angles, or the positions alone."""
     if not position_rows and angles is None:
         return Written()
-    result = context.set_positions(position_rows, cutting_angles=angles)
+    result = context.writes.set_positions(position_rows, cutting_angles=angles)
     if result.ok:
         landed = result.details.get("cutting_angles") is not None
         return _positions_written(result, angles_written=angles is not None and landed)
@@ -204,7 +204,7 @@ def _write_positions(
     refused = f"{result.error}: {result.message}"
     if angles is None or not position_rows:
         return Written(refused=refused)
-    result = context.set_positions(position_rows)
+    result = context.writes.set_positions(position_rows)
     if not result.ok:
         return Written(refused=refused)
     return replace(_positions_written(result, angles_written=False), refused=refused)
@@ -212,21 +212,11 @@ def _write_positions(
 
 def _positions_written(result: WriteResult, *, angles_written: bool) -> Written:
     """Return what a position write that was not refused whole did."""
-    rows = cast("list[dict[str, str | float]]", result.rows)
-    clamped = [
-        (
-            str(row["id"]),
-            float(row["clamped_from_mm"]),
-            float(row["position_mm"]),
-        )
-        for row in rows
-        if "clamped_from_mm" in row
-    ]
     return Written(
         positions=frozenset(result.written),
-        position_errors=_row_errors(result),
+        position_errors=row_errors(result),
         angles_written=angles_written,
-        clamped=clamped,
+        clamped=clamped_rows(result),
     )
 
 
@@ -239,7 +229,7 @@ def _write_transforms(
     """Write each in-plane transform, read at the plane it now holds."""
     planes: dict[str, Plane] = {}
     for row in rows:
-        here = context.section(row.id)
+        here = context.reads.section(row.id)
         if row.refused is None:
             planes[row.id] = (here.position_mm, here.angles)
     params = in_plane_params(context, run, planes)
@@ -252,7 +242,7 @@ def _write_transforms(
     if not transform_rows:
         return replace(written, params=params, transform_errors=errors)
 
-    done = context.set_transforms(transform_rows)
+    done = context.writes.set_transforms(transform_rows)
     if not done.ok:
         refused = written.refused or f"{done.error}: {done.message}"
         return replace(written, params=params, transform_errors=errors, refused=refused)
@@ -260,16 +250,5 @@ def _write_transforms(
         written,
         params=params,
         transforms=frozenset(done.written),
-        transform_errors={**errors, **_row_errors(done)},
+        transform_errors={**errors, **row_errors(done)},
     )
-
-
-def _row_errors(result: WriteResult) -> dict[str, str]:
-    """Return each section a write left out, with its code."""
-    rows = cast("list[dict[str, str]]", result.rows)
-    landed = set(result.written)
-    return {
-        row["id"]: str(row.get("error", RefusalCode.PRECONDITION))
-        for row in rows
-        if row["id"] not in landed
-    }

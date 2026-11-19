@@ -4,7 +4,10 @@ A LangSlice engine (`docs/developers/plugins.md` in LangSlice) that offers SPOmi
 (Wang et al. 2026, Brief Bioinform) to the registration agent as one tool,
 `spomialign(sections, fit, rigid, section_image, atlas_image, mask, smoothness_um, matches, view)`.
 
-- `plugin.py`: the adapter (imports `langslice.plugin_api` and the two modules below).
+- `plugin.py`: the adapter (binds the tool its row of the tool table declares).
+- `settings.py` (constants, options), `declarations.py` (the description and stub the model sees),
+  `canvas.py` (a section and its atlas plane on one canvas), `landing.py` (a call's run and each
+  result written).
 - `matching.py`: RoMa's matches as SPOmiAlign takes them (the grid, the edge weighting, the
   suppression, the ranking).
 - `engine.py`: the fits on the matched pairs, and one call's run in the machine's GPU queue.
@@ -18,7 +21,7 @@ vendors (0.1.2, its model code unchanged), installed with LangSlice's `engines` 
 pip install "langslice[engines]"
 ```
 
-torch, SimpleITK and OpenCV are LangSlice's own dependencies. RoMa and torch are imported
+torch and OpenCV are LangSlice's own dependencies. RoMa and torch are imported
 only when a call runs; a call without RoMa installed is refused `ENGINE_UNAVAILABLE`, naming the
 extra.
 
@@ -29,8 +32,8 @@ extra.
 
 Its tool is on in every job; `--disabled spomialign` switches it off. Its options are the entry of the job's `plugin_config`
 under `langslice.engines.spomialign.plugin:tools`.
-Option (`--plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `device` (a
-torch device name; default the first GPU when torch sees one, else the CPU). A call, the
+Option (`--plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `device` (`auto`:
+the first GPU when torch sees one, else the CPU; `cpu`, `cuda` or a numbered GPU such as `cuda:1`). A call, the
 matcher's loading included, holds a slot of the machine's GPU queue (the core's `gpu_turn`,
 which FireANTs, STalign and emlddmm take too; `LANGSLICE_GPU_SLOTS` fits at once, else the
 GPU's memory over 2 GB), and lets the matcher go before it gives the slot back. RoMa's weights
@@ -60,7 +63,7 @@ another `fit` is refused `BAD_ARGUMENT`.
    Nissl `ccfv3augmented_nissl` where the job offers it, on an Allen CCFv3 atlas, else
    `template`, which on `ccfv3augmented_mouse` is already the averaged Nissl; Nash
    2026-10-19) is rendered as SPOmiAlign's published reference looks, a brightfield Nissl plate: white background, dense tissue dark. This is
-   the same rendering as the method-alone arm (`comparators/rigid/spomialign_runner.py`).
+   that is the rendering SPOmiAlign's published reference uses.
 4. **Matching.** SPOmiAlign's own steps: both images resized to 1152 x 864, RoMa outdoor
    matches (coarse resolution 560, upsampled to the grid), edge weighting (constants as the
    authors fixed them), 3 x 3 grid NMS. RoMa's optional fused local-correlation CUDA kernel

@@ -1,10 +1,9 @@
-"""The reads of a plugin context: sections, their images and layers.
+"""The reads of a plugin context (``ctx.reads``): sections, their images and layers.
 
-:class:`ContextReads` is the base of
-:class:`langslice.doors.plugins.context.ToolContext`: it holds the run, the
-caller and the call, finds a section by filename, and reads what the job
-holds of it (:class:`SectionView`, the images by name, a
-:class:`SectionRaster`, the layers).
+:class:`Reads` reads what the job holds of a section
+(:class:`SectionView`, the images by name, a :class:`SectionRaster`, the
+layers). :class:`Records` is how every part of a context finds a section by
+filename.
 """
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.space import Plane
 from langslice.core.stack.section import Section
-from langslice.doors.plugins.caller import Caller
 from langslice.job.settings import frozen as freeze
+from langslice.plugins.caller import Caller
 from langslice.tools.refusal import unknown_sections
 from langslice.tools.stale import section_inputs
 
@@ -149,17 +148,12 @@ class LayerRef:
     file: str
 
 
-class ContextReads:
-    """Read the job's sections for one plugin call or script.
+class Records:
+    """Finds the job's sections by filename for one caller.
 
-    The classes stacked on this one (frames, proposals, pictures, writes,
-    fits) share its footing, which they read as their own: ``_run`` (the
-    run: job, workspace, spec), ``_caller``, ``call``, ``_record`` (a
-    section by filename, after ``_fresh``), ``_fresh`` (a script picks up
-    what another writer saved), ``_view``, the per-call caches ``_grids``,
-    and the write bookkeeping ``_depth`` and ``_step`` that ``writes.py``
-    keeps. ``frames.py``'s ``_grid`` is the fit grid the classes above it
-    read too. A private name not listed here is its own class's.
+    Every part of a context that takes a section names it through one
+    :class:`Records`; a script's reads first pick up what another writer
+    saved, a plugin call is inside a tool call that did.
 
     Parameters
     ----------
@@ -167,31 +161,43 @@ class ContextReads:
         The run the call belongs to: its job, workspace and spec.
     caller
         Who the context works for, a plugin tool or a script.
-    call
-        The call's id, which the layers it makes record.
     """
 
-    def __init__(self, run: Run, caller: Caller, call: str) -> None:
+    def __init__(self, run: Run, caller: Caller) -> None:
         self._run = run
         self._caller = caller
-        self.call = call
-        self._grids: dict[tuple[str, str], Any] = {}
-        self._depth: int = 0
-        self._step: tuple[int, int, int] | None = None
 
-    def _fresh(self) -> None:
-        """A script's read first picks up what another writer saved (a plugin
-        call is inside a tool call that did)."""
+    def fresh(self) -> None:
+        """A script's read first picks up what another writer saved."""
         if not self._caller.in_tool_call:
             self._run.job.sync()
 
-    def _record(self, section: object) -> Section:
-        self._fresh()
+    def get(self, section: object) -> Section:
+        """The section named *section* (a filename, the extension may be left
+        off), after :meth:`fresh`; ``unknown_sections`` when it names none."""
+        self.fresh()
         state = self._run.state
         record = state.resolve(section)
         if record is None:
             raise unknown_sections(state, [str(section)])
         return record
+
+
+class Reads:
+    """What the job holds of its sections, the atlas and the section images:
+    ``ctx.reads``.
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    records
+        How a section is found by filename.
+    """
+
+    def __init__(self, run: Run, records: Records) -> None:
+        self._run = run
+        self._records = records
 
     def _view(self, record: Section) -> SectionView:
         from langslice.core.maps.section_maps import render_sizes
@@ -237,12 +243,12 @@ class ContextReads:
 
     def sections(self) -> list[SectionView]:
         """Every section, in stack order."""
-        self._fresh()
+        self._records.fresh()
         return [self._view(record) for record in self._run.state.in_order()]
 
     def section(self, section: object) -> SectionView:
         """One section by filename (the extension may be left off)."""
-        return self._view(self._record(section))
+        return self._view(self._records.get(section))
 
     def atlas(self) -> AtlasView:
         """The job's atlas."""
@@ -260,25 +266,25 @@ class ContextReads:
         """The names of the section's raw channels, in file order (``red``,
         ``green``, ``blue``, or ``gray``, for a colour file; the host's names or
         ``ch1``, ``ch2``... for a multi-page file)."""
-        record = self._record(section)
+        record = self._records.get(section)
         names, _planes = self._run.workspace.section_channels(record.id)
         return tuple(str(name) for name in names)
 
     def image_names(self, section: object) -> tuple[str, ...]:
         """Every section image a fit or a picture can read on the section, by
         name: its raw channels (:meth:`channels`), then ``preprocessed`` and
-        the images made since (``make_image``, :meth:`add_image`)."""
+        the images made since (``make_image``, ``ctx.writes.add_image``)."""
         from langslice.core.sections.images import image_names
 
-        return tuple(image_names(self._run.workspace, self._record(section)))
+        return tuple(image_names(self._run.workspace, self._records.get(section)))
 
     def raw_plane(self, section: object, name: str) -> np.ndarray:
         """Raw channel *name* of the section, ``uint8`` ``(H, W)`` on its working
-        grid in the image file's orientation: the frame :meth:`add_image` takes.
+        grid in the image file's orientation: the frame ``ctx.writes.add_image`` takes.
         ``ToolError`` ``NOT_FOUND`` for a name that is no raw channel."""
         from langslice.core.sections.images import raw_plane
 
-        record = self._record(section)
+        record = self._records.get(section)
         try:
             plane = raw_plane(self._run.workspace, record.id, str(name))
             return np.array(plane)
@@ -288,10 +294,10 @@ class ContextReads:
     def working_rgb(self, section: object) -> np.ndarray:
         """The section's working copy as read, ``uint8`` ``(H, W, 3)`` in the image
         file's orientation (a colour file's red, green and blue: what a colour
-        deconvolution reads): the frame :meth:`add_image` takes."""
+        deconvolution reads): the frame ``ctx.writes.add_image`` takes."""
         from langslice.core.sections.reading import read_working_image
 
-        record = self._record(section)
+        record = self._records.get(section)
         workspace = self._run.workspace
         image, _factor = read_working_image(workspace.image_path(record.id))
         width, height = workspace.working_source(record.id)[0].size
@@ -300,9 +306,9 @@ class ContextReads:
         return np.asarray(image.convert("RGB")).copy()
 
     def working_grid(self, section: object) -> tuple[int, int]:
-        """``(H, W)`` of the section's working grid: the shape :meth:`add_image`
+        """``(H, W)`` of the section's working grid: the shape ``ctx.writes.add_image``
         takes, the file's orientation."""
-        record = self._record(section)
+        record = self._records.get(section)
         width, height = self._run.workspace.working_source(record.id)[0].size
         return height, width
 
@@ -315,7 +321,7 @@ class ContextReads:
         the mask was made."""
         from langslice.tools.changing import masks as ops_masks
 
-        record = self._record(section)
+        record = self._records.get(section)
         view = ops_masks.read(self._run.job, record, str(name))
         if view.stale:
             raise ToolError(
@@ -328,7 +334,7 @@ class ContextReads:
         appearance and damage marks; with *deformation* its deformation too).
         Take it before a long computation and hand it back as ``expect=`` to a
         write: a section that changed meanwhile comes back ``STALE_INPUT``."""
-        return section_inputs(self._run.state, self._record(section), deformation=deformation)
+        return section_inputs(self._run.state, self._records.get(section), deformation=deformation)
 
     def section_image(
         self,
@@ -338,9 +344,9 @@ class ContextReads:
         images: Sequence[str] | None = None,
         raw: bool = False,
     ) -> np.ndarray:
-        """The pixels of :meth:`section_raster`. Their frame is NOT the image
+        """The pixels of ``ctx.reads.section_raster``. Their frame is NOT the image
         file's (turned and flipped as the orientation sets it, and reduced):
-        convert coordinates with :meth:`section_raster`'s methods before they
+        convert coordinates with ``ctx.reads.section_raster``'s methods before they
         go in a ``section_px`` layer."""
         return self.section_raster(section, level=level, images=images, raw=raw).array
 
@@ -356,7 +362,7 @@ class ContextReads:
         never larger than the source) with the frame it is in
         (:class:`SectionRaster`). *level* is the long edge in pixels, or ``low`` /
         ``medium`` / ``high`` / ``auto`` (the job's picture size). *images*: one
-        section image by name (:meth:`image_names`; gray, three equal planes),
+        section image by name (``ctx.reads.image_names``; gray, three equal planes),
         or several raw channels drawn together in their colours; None is the
         ``preprocessed`` image, what the fits read by default.
 
@@ -373,7 +379,7 @@ class ContextReads:
         from langslice.core.sections.images import kind_of
         from langslice.core.sections.renders import render_slice
 
-        record = self._record(section)
+        record = self._records.get(section)
         workspace = self._run.workspace
         if isinstance(level, int):
             edge = int(level)
@@ -426,7 +432,7 @@ class ContextReads:
 
     def layers(self, section: object) -> list[LayerRef]:
         """The layers the section shows now."""
-        record = self._record(section)
+        record = self._records.get(section)
         return [
             LayerRef(
                 id=ref.id,

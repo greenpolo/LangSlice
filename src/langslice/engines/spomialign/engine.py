@@ -32,7 +32,9 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from langslice.engines._outside import untyped
+from langslice.core.failures import ENGINE_FAILURES
+from langslice.core.outside import untyped
+from langslice.engines._devices import AUTO
 from langslice.engines.spomialign.matching import (
     GPU_DEVICE,
     H,
@@ -40,9 +42,9 @@ from langslice.engines.spomialign.matching import (
     W,
     load_matcher,
     ranked_matches,
-    resolve_device,
+    torch_device,
 )
-from langslice.plugin_api import ENGINE_FAILURES, gpu_turn, out_of_memory
+from langslice.plugin_api import gpu_turn, out_of_memory
 
 if TYPE_CHECKING:
     import torch
@@ -51,7 +53,6 @@ CORNER = np.array([[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
 MODES = ("rigid", "affine", "warp", "affine_warp")
 RIGID, AFFINE, WARP, AFFINE_WARP = MODES
 INPAINT_RADIUS = 3
-N_PROBES = 500
 OOM_RETRIES = 4
 OOM_WAIT_S = 5.0
 
@@ -83,11 +84,9 @@ class EngineAnswer:
     ``matrix`` (2 x 3) takes source canvas px to target canvas px: the
     linear part, the identity for ``warp``; ``residual`` (h x w x 2, the
     warp modes) is the full map minus the linear part at every source
-    canvas pixel, target canvas px; ``sitk_max_px`` is the largest
-    difference between that field and SimpleITK's own ``TransformPoint``.
-    ``used`` and ``dropped_pairs`` are rows atlas x, y, section x, y in
-    canvas px and confidence: the pairs fitted, and those passed over to
-    reach them. ``error`` says why the section failed, empty when it did
+    canvas pixel, target canvas px. ``used`` and ``dropped_pairs`` are rows
+    atlas x, y, section x, y in canvas px and confidence: the pairs fitted,
+    and those passed over to reach them. ``error`` says why the section failed, empty when it did
     not; ``oom_retries`` counts the runs again after the GPU ran out of
     memory.
     """
@@ -99,7 +98,6 @@ class EngineAnswer:
     dropped_pairs: npt.NDArray[np.float32] | None = None
     matrix: npt.NDArray[np.float64] | None = None
     residual: npt.NDArray[np.float32] | None = None
-    sitk_max_px: float = 0.0
     error: str = ""
     oom_retries: int = 0
 
@@ -116,7 +114,7 @@ class EngineRun:
 
 
 def fit_pairs(
-    pairs: list[EnginePair], *, mode: str, top_k: int, device_name: str = ""
+    pairs: list[EnginePair], *, mode: str, top_k: int, device_name: str = AUTO
 ) -> EngineRun:
     """Match and fit every section's pair with one load of the matcher.
 
@@ -132,8 +130,8 @@ def fit_pairs(
     top_k
         How many of the most confident pairs each fit uses.
     device_name
-        The torch device to run on; empty means the first GPU when torch
-        sees one, else the CPU.
+        The torch device to run on: ``auto`` (the first GPU when torch sees
+        one, else the CPU), ``cpu``, ``cuda`` or a numbered GPU.
 
     Returns
     -------
@@ -143,12 +141,9 @@ def fit_pairs(
     """
     import torch
 
-    device = resolve_device(device_name)
-    queue_device = "cpu"
-    if device.type == GPU_DEVICE:
-        queue_device = GPU_DEVICE
+    device = torch_device(device_name)
 
-    with gpu_turn(queue_device) as turn:
+    with gpu_turn(str(device)) as turn:
         try:
             build = functools.partial(load_matcher, device)
             model, _ = _retried(device, build)
@@ -166,16 +161,16 @@ def _retried(device: torch.device, call: Callable[[], Result]) -> tuple[Result, 
     """
     import torch
 
-    for attempt in range(OOM_RETRIES + 1):
+    attempt = 0
+    while True:
         try:
             return call(), attempt
-        except Exception as error:
-            last = attempt == OOM_RETRIES
-            if device.type != GPU_DEVICE or last or not out_of_memory(error):
+        except ENGINE_FAILURES as error:
+            if device.type != GPU_DEVICE or attempt == OOM_RETRIES or not out_of_memory(error):
                 raise
             torch.cuda.empty_cache()
-            time.sleep(OOM_WAIT_S * (attempt + 1))
-    raise AssertionError("unreachable")
+            attempt += 1
+            time.sleep(OOM_WAIT_S * attempt)
 
 
 def _fit_one(
@@ -242,8 +237,8 @@ def fit_pair(
     moved = (linear_raw @ np.hstack([section_grid, ones]).T).T
     displacement = smoothed_field(moved, atlas_grid, pair.smoothing_px)
     affine_raw = homogeneous(linear_raw) @ to_grid
-    residual, sitk_max_px = field_on_canvas(displacement, affine_raw, from_grid, matrix, (w, h))
-    return chosen.answer(matrix=matrix, residual=residual, sitk_max_px=sitk_max_px)
+    residual = field_on_canvas(displacement, affine_raw, from_grid, matrix, (w, h))
+    return chosen.answer(matrix=matrix, residual=residual)
 
 
 def resize_map(size_from: tuple[int, int], size_to: tuple[int, int]) -> npt.NDArray[np.float64]:
@@ -305,7 +300,6 @@ class ChosenPairs:
         *,
         matrix: npt.NDArray[np.float64] | None = None,
         residual: npt.NDArray[np.float32] | None = None,
-        sitk_max_px: float = 0.0,
         error: str = "",
     ) -> EngineAnswer:
         """Make the section's answer from these pairs and what was fitted.
@@ -316,8 +310,6 @@ class ChosenPairs:
             The linear part, source canvas px to target canvas px.
         residual
             The warp's field minus the linear part, target canvas px.
-        sitk_max_px
-            The field's largest difference from SimpleITK's own.
         error
             Why the section failed; empty when it did not.
 
@@ -334,7 +326,6 @@ class ChosenPairs:
             dropped_pairs=self.passed,
             matrix=matrix,
             residual=residual,
-            sitk_max_px=sitk_max_px,
             error=error,
         )
 
@@ -528,7 +519,7 @@ def field_on_canvas(
     from_grid: npt.NDArray[np.float64],
     matrix: npt.NDArray[np.float64],
     size: tuple[int, int],
-) -> tuple[npt.NDArray[np.float32], float]:
+) -> npt.NDArray[np.float32]:
     """Read the grid's field at every canvas pixel, less the linear part.
 
     Parameters
@@ -546,38 +537,15 @@ def field_on_canvas(
 
     Returns
     -------
-    residual : ndarray, shape (h, w, 2)
+    ndarray, shape (h, w, 2)
         The full map minus the linear part, target canvas px.
-    sitk_max_px : float
-        The largest difference at :data:`N_PROBES` random points between
-        this reading and SimpleITK's own displacement-field transform.
     """
-    import SimpleITK as sitk
-
     w, h = size
-    image = sitk.GetImageFromArray(displacement, isVector=True)
-    image.SetSpacing([1.0, 1.0])
-    transform = sitk.DisplacementFieldTransform(image)
-
-    rng = np.random.default_rng(0)
-    probe = np.column_stack((rng.uniform(0, w - 1, N_PROBES), rng.uniform(0, h - 1, N_PROBES)))
-    grid_points = probe @ affine_raw[:2, :2].T + affine_raw[:2, 2]
-    points = cast("list[list[float]]", grid_points.tolist())
-    moved = cast(
-        "list[tuple[float, float]]",
-        [transform.TransformPoint((x, y)) for x, y in points],
-    )
-    own = np.array(moved, dtype=np.float64)
-    own = own @ from_grid[:2, :2].T + from_grid[:2, 2]
-    read = _read_field(displacement, affine_raw, from_grid, probe)
-    sitk_max_px = float(cast(float, np.max(np.abs(own - read))))
-
     xs, ys = np.meshgrid(np.arange(w), np.arange(h))
     canvas = np.column_stack((xs.ravel(), ys.ravel())).astype(np.float64)
     linear = canvas @ matrix[:, :2].T + matrix[:, 2]
     full = _read_field(displacement, affine_raw, from_grid, canvas)
-    residual = (full - linear).reshape(h, w, 2).astype(np.float32)
-    return residual, sitk_max_px
+    return (full - linear).reshape(h, w, 2).astype(np.float32)
 
 
 def _read_field(

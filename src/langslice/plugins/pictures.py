@@ -1,6 +1,7 @@
-"""The pictures of a plugin context: what ``look`` draws, with a proposal drawn.
+"""The pictures of a plugin context (``ctx.pictures``): what ``look`` draws, with a
+proposal drawn.
 
-:class:`ContextPictures` draws a section's overlay and the positioning
+:class:`Pictures` draws a section's overlay and the positioning
 picture as they stand or with a proposal not yet written, and captions a
 picture for the agent. Nothing here is saved or written.
 """
@@ -9,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping, Sequence
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image
 
@@ -17,11 +18,11 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.stack.affine import StoredAffine
-from langslice.doors.plugins.proposals import (
-    ContextProposals,
-    DeformationProposal,
-    TransformProposal,
-)
+from langslice.plugins.proposals import DeformationProposal, Proposals, TransformProposal
+from langslice.plugins.reads import Records
+
+if TYPE_CHECKING:
+    from langslice.tools.run import Run
 
 
 def _no_registration(image: Image.Image) -> None:
@@ -35,8 +36,24 @@ def _no_registration(image: Image.Image) -> None:
         held.extra = {**held.extra, "registrations": {}}
 
 
-class ContextPictures(ContextProposals):
-    """Draw a section's pictures, with a proposal or as they stand."""
+class Pictures:
+    """Draw a section's pictures, with a proposal or as they stand:
+    ``ctx.pictures``.
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    records
+        How a section is found by filename.
+    proposals
+        The context's proposals, which a map or numbers are turned into.
+    """
+
+    def __init__(self, run: Run, records: Records, proposals: Proposals) -> None:
+        self._run = run
+        self._records = records
+        self._proposals = proposals
 
     def overlay_picture(
         self,
@@ -50,12 +67,12 @@ class ContextPictures(ContextProposals):
         ``{"transform": record or params, "position_mm": mm, "angles":
         (pitch, yaw)}``, any of them, or ``{"deformation": proposal or map}``
         alone (a :class:`DeformationProposal`, or the map
-        :meth:`deformation_from_map` takes), drawn on the section's current
+        ``ctx.proposals.deformation_from_map`` takes), drawn on the section's current
         placement. Nothing is saved or written here; the picture is the
         handler's to return."""
         from langslice.core.pictures import look as looks
 
-        record = self._record(section)
+        record = self._records.get(section)
         state = self._run.state
         store = self._run.job.deformations
         if proposal and proposal.get("deformation") is not None:
@@ -67,7 +84,7 @@ class ContextPictures(ContextProposals):
                 )
             warped = proposal["deformation"]
             if not isinstance(warped, DeformationProposal):
-                warped = self.deformation_from_map(record.id, warped)
+                warped = self._proposals.deformation_from_map(record.id, warped)
             elif warped.id != record.id:
                 raise ToolError(
                     RefusalCode.BAD_ARGUMENT, f"the proposal is {warped.id}'s, not {record.id}'s"
@@ -86,7 +103,7 @@ class ContextPictures(ContextProposals):
             if isinstance(transform, TransformProposal):
                 transform = transform.record
             elif transform is not None and not isinstance(transform, Mapping):
-                transform = self.transform_from_params(record.id, transform).affine
+                transform = self._proposals.transform_from_params(record.id, transform).affine
             if isinstance(transform, StoredAffine):
                 held.transform = transform
                 held.deformation = None
@@ -130,12 +147,12 @@ class ContextPictures(ContextProposals):
         from langslice.core.pictures import look as looks
         from langslice.tools.changing.positions import distinct_positions
 
-        names = [self._record(ref).id for ref in ids]
+        names = [self._records.get(ref).id for ref in ids]
         state = self._run.state
         if proposal:
             state = copy.deepcopy(state)
             for ref, change in proposal.items():
-                held = state.by_id(self._record(ref).id)
+                held = state.by_id(self._records.get(ref).id)
                 assert held is not None
                 unknown = set(change) - {"position_mm", "angles"}
                 if unknown:

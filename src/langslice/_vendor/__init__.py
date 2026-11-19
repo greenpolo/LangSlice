@@ -1,4 +1,4 @@
 """Third-party code LangSlice imports, kept as published (each folder says from where).
 
-LangSlice's style and type checks read ``src/langslice`` only, not this package.
+LangSlice's style, type and comment checks skip this package.
 """

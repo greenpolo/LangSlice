@@ -1,6 +1,7 @@
-"""The atlas frames of a plugin context: a section's plane, any plane, points.
+"""The atlas frames of a plugin context (``ctx.frames``): a section's plane, any
+plane, points.
 
-:class:`ContextFrames` adds to the reads the fit grid and the atlas plane a
+:class:`Frames` gives the fit grid and the atlas plane a
 section is placed on (:class:`FitFrame`), an atlas plane at any placement
 (:class:`AtlasPlane`), the whole atlas volume, and section points carried
 to atlas micrometres and back through the section's registration.
@@ -10,15 +11,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.stack.section import Section
-from langslice.doors.plugins.reads import ContextReads
+from langslice.plugins.reads import Reads, Records
 from langslice.tools.stale import section_inputs
+
+if TYPE_CHECKING:
+    from langslice.tools.run import Run
 
 
 @dataclass(frozen=True)
@@ -74,7 +78,7 @@ class FitFrame:
 @dataclass(frozen=True)
 class AtlasPlane:
     """An atlas plane at a placement of your choosing
-    (:meth:`ToolContext.atlas_plane`), on its native grid: ``atlas`` the
+    (``ctx.frames.atlas_plane``), on its native grid: ``atlas`` the
     planes sampled (``annotation`` and the atlas's images asked for), ``plane``
     where it lies in atlas micrometres (as :attr:`FitFrame.plane`:
     ``native_to_um``, ``px_um``, ``shape``, ...), at ``position_mm`` and
@@ -86,22 +90,78 @@ class AtlasPlane:
     plane: dict[str, Any]
 
 
-class ContextFrames(ContextReads):
-    """Read a section's atlas plane, any atlas plane, and points on them."""
+class Grids:
+    """The fit grid of a section, and where the atlas plane lies on it.
 
-    def _grid(self, record: Section) -> Any:
+    One per context: the grid of a section is made once per state of its
+    inputs.
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    records
+        How a section is found by filename.
+    """
+
+    def __init__(self, run: Run, records: Records) -> None:
+        self._run = run
+        self._records = records
+        self._made: dict[tuple[str, str], Any] = {}
+
+    def of(self, record: Section) -> Any:
+        """The fit grid of *record* with no in-plane transform
+        (:func:`langslice.core.fits.deformation.fit_grid`); ``PRECONDITION``
+        when the section cannot have one."""
         from langslice.core.fits import deformation
         from langslice.core.geometry.affine import IDENTITY_PARAMS
 
         key = (record.id, section_inputs(self._run.state, record))
-        if key not in self._grids:
+        if key not in self._made:
             try:
-                self._grids[key] = deformation.fit_grid(
+                self._made[key] = deformation.fit_grid(
                     self._run.state, self._run.workspace, record, params=list(IDENTITY_PARAMS)
                 )
             except ValueError as exc:
                 raise ToolError(RefusalCode.PRECONDITION, f"{record.id}: {exc}") from exc
-        return self._grids[key]
+        return self._made[key]
+
+    def placed(self, record: Section) -> np.ndarray:
+        """3x3: native atlas pixels to fit-grid pixels under the section's
+        current placement (its stored transform, else none);
+        ``PRECONDITION`` when the placement cannot be made."""
+        from langslice.core.fits import deformation
+
+        if not record.transform:
+            return np.asarray(self.of(record).placement.atlas_to_section, dtype=np.float64)
+        try:
+            grid = deformation.fit_grid(self._run.state, self._run.workspace, record)
+        except ValueError as exc:
+            raise ToolError(RefusalCode.PRECONDITION, f"{record.id}: {exc}") from exc
+        return np.asarray(grid.placement.atlas_to_section, dtype=np.float64)
+
+
+class Frames:
+    """A section's atlas plane, any atlas plane, and points on them:
+    ``ctx.frames``.
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    records
+        How a section is found by filename.
+    grids
+        The fit grids of the context's sections.
+    reads
+        The context's reads, for the names of a section's images.
+    """
+
+    def __init__(self, run: Run, records: Records, grids: Grids, reads: Reads) -> None:
+        self._run = run
+        self._records = records
+        self._grids = grids
+        self._reads = reads
 
     def fit_frame(
         self,
@@ -119,7 +179,7 @@ class ContextFrames(ContextReads):
         (:func:`langslice.core.atlas.images.default_image`), under the name
         asked for and under the image's own; a name the atlas does not have is
         skipped. *image* adds that section image on the grid: a raw channel,
-        ``"preprocessed"`` or another made image (:meth:`image_names`);
+        ``"preprocessed"`` or another made image (``ctx.reads.image_names``);
         ``ToolError`` ``NOT_FOUND`` for another. *stain* True is
         ``image="preprocessed"`` and also fills ``stain``."""
         from langslice.core.atlas.brain_size import brain_scale
@@ -137,8 +197,8 @@ class ContextFrames(ContextReads):
         )
         from langslice.core.sections.damage import exclusions
 
-        record = self._record(section)
-        grid = self._grid(record)
+        record = self._records.get(section)
+        grid = self._grids.of(record)
         oriented = grid.image.convert("RGB")
         placement = grid.placement
         workspace = self._run.workspace
@@ -162,17 +222,9 @@ class ContextFrames(ContextReads):
                 )
             planes[asked] = planes[kind]
             resolved_names[asked] = kind
-        placed = None
-        if record.transform:
-            try:
-                placed = np.asarray(
-                    deformation.fit_grid(
-                        self._run.state, workspace, record
-                    ).placement.atlas_to_section,
-                    dtype=np.float64,
-                )
-            except ValueError:
-                placed = None
+        placed = self._grids.placed(record) if record.transform else None
+        plane_frame = _plane_frame(workspace.atlas, placement)
+        margin_mm = float(EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas))
         applied = None
         if record.deformation:
             from langslice.core.fits.deformable.render import (
@@ -191,15 +243,15 @@ class ContextFrames(ContextReads):
             excluded = regions_mask(
                 workspace.atlas, labels, marked, placement_left(workspace.atlas, placement, marked)
             )
-            spacing_mm = float(np.mean(_plane_frame(workspace.atlas, placement)["px_um"])) / 1000.0
-            zone = dilate(excluded, EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas) / spacing_mm)
+            spacing_mm = float(np.mean(plane_frame["px_um"])) / 1000.0
+            zone = dilate(excluded, margin_mm / spacing_mm)
         wanted = "preprocessed" if stain and image is None else image
         picture: np.ndarray | None = None
         reference: dict[str, Any] | None = None
         if wanted is not None:
             from langslice.core.sections.images import read_image
 
-            known = self.image_names(record.id)
+            known = self._reads.image_names(record.id)
             if wanted not in known:
                 raise ToolError(
                     RefusalCode.NOT_FOUND,
@@ -230,14 +282,14 @@ class ContextFrames(ContextReads):
             image=np.asarray(oriented),
             atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
-            plane=_plane_frame(workspace.atlas, placement),
+            plane=plane_frame,
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
             placed_atlas_to_section=placed,
             applied_map=applied,
             excluded=excluded,
             damage_zone=zone,
-            damage_margin_mm=round(float(EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)), 4),
+            damage_margin_mm=round(margin_mm, 4),
             stain=preprocessed,
             section_image=picture,
             section_image_ref=reference,
@@ -378,7 +430,7 @@ class ContextFrames(ContextReads):
         registration, its deformation included; NaN outside the atlas volume."""
         from langslice.tools.looking.points import atlas_points
 
-        record = self._record(section)
+        record = self._records.get(section)
         return self._points(atlas_points, record.id, xy, frame).um
 
     def from_atlas_um(
@@ -396,7 +448,7 @@ class ContextFrames(ContextReads):
         plane each point lies."""
         from langslice.tools.looking.points import section_points
 
-        record = self._record(section)
+        record = self._records.get(section)
         return self._points(section_points, record.id, xyz_um, frame).xy
 
     def plane_distance_um(self, section: object, xyz_um: Any) -> np.ndarray:
@@ -404,7 +456,7 @@ class ContextFrames(ContextReads):
         plane, in micrometres, ``(N,)``."""
         from langslice.tools.looking.points import section_points
 
-        record = self._record(section)
+        record = self._records.get(section)
         return self._points(section_points, record.id, xyz_um, "file").off_plane_um
 
     def region_at(
@@ -419,7 +471,7 @@ class ContextFrames(ContextReads):
         ``{"id", "acronym", "name"}`` per point, None outside the atlas."""
         from langslice.tools.looking.points import atlas_points
 
-        record = self._record(section)
+        record = self._records.get(section)
         found = self._points(atlas_points, record.id, xy, frame)
         structures = self._run.workspace.atlas.structures
         out: list[dict[str, Any] | None] = []

@@ -185,7 +185,7 @@ lists them. For a script:
   step `method` and record engine, and the record's provenance `script`
   (`call`, `note`, `meta`, and `argv0`, the path of the running script); each
   write that lands is a `script_write` line in `logs/events.jsonl`;
-- each outermost write is one undo step; `with job.context.writing():` makes
+- each outermost write is one undo step; `with job.context.writes.writing():` makes
   several one step;
 - each read first picks up what another writer saved (a running agent, a CLI
   call), so `section_inputs` digests are taken from the job as it stands;
@@ -197,7 +197,7 @@ lists them. For a script:
 - `work_dir()` and `start_work()` are refused (`TOOL_OFF`): a script
   keeps its files in `scripts/` and `scratch/` and is its own computation.
 
-A long computation takes `digest = c.section_inputs(id)` first and passes
+A long computation takes `digest = c.reads.section_inputs(id)` first and passes
 `expect={id: digest}` to the write: a section whose placement, made images or
 damage changed meanwhile is that row's `STALE_INPUT`, nothing written for it.
 Without `expect=` the write lands on the section as it now stands.
@@ -226,8 +226,8 @@ import numpy as np, cv2, SimpleITK as sitk, langslice
 
 job = langslice.open_job("/scans/brain1")
 c, sid = job.context, "s07.tif"
-digest = c.section_inputs(sid)                       # taken before computing: for expect=
-f = c.fit_frame(sid, stain=True)                     # the section and its atlas plane
+digest = c.reads.section_inputs(sid)                # taken before computing: for expect=
+f = c.frames.fit_frame(sid, stain=True)             # the section and its atlas plane
 h, w = f.image.shape[:2]
 placed = f.placed_atlas_to_section                   # 3x3: native atlas px -> fit-grid px (current placement)
 atlas_on_grid = cv2.warpAffine(f.atlas["template"], placed[:2], (w, h), flags=cv2.INTER_LINEAR)
@@ -242,11 +242,12 @@ reg.SetShrinkFactorsPerLevel([4, 2, 1]); reg.SetSmoothingSigmasPerLevel([2, 1, 0
 reg.SetInitialTransform(sitk.BSplineTransformInitializer(fixed, [8, 8]), inPlace=True)
 reg.SetInterpolator(sitk.sitkLinear)
 found = reg.Execute(fixed, moving)                   # a B-spline: section point -> placed-atlas point
-native_xy = c.map_from_itk(sid, found)               # the full map: fit-grid px -> native atlas px
+native_xy = c.fits.map_from_itk(sid, found)         # the full map: fit-grid px -> native atlas px
 
 print(c.preview_overlay(sid, {"deformation": native_xy}).path)        # look before writing
-done = c.set_deformations([{"id": sid, "map": native_xy, "note": "SimpleITK B-spline, MI"}],
-                          expect={sid: digest})
+done = c.writes.set_deformations(
+    [{"id": sid, "map": native_xy, "note": "SimpleITK B-spline, MI"}], expect={sid: digest}
+)
 print(done.reply())                                                     # rows: ok with the warp's numbers, or why not
 job.look(mode="overlay", sections=[sid])                                # the written result, numbered
 ```
@@ -262,7 +263,7 @@ a fixed mask (`reg.SetMetricFixedMask`).
 
 ### An outside engine's files
 
-`c.write_frame(id, folder, format="tif")` writes what an engine outside
+`c.fits.write_frame(id, folder, format="tif")` writes what an engine outside
 LangSlice registers: on the fit grid `section` (RGB), `stain` (the
 preprocessed channel the native fits read) and `placed_template` /
 `placed_annotation` (the atlas plane drawn there at the section's current
@@ -272,7 +273,7 @@ placement), on the native atlas grid `template` and `annotation`, and
 `nii.gz`, `nii`, `mha` or `nrrd`; every image has spacing 1 and origin 0, so
 an engine's answer is in pixels.
 
-`c.map_from_itk(id, source, fixed="section", atlas="placed", spacing=1.0)`
+`c.fits.map_from_itk(id, source, fixed="section", atlas="placed", spacing=1.0)`
 reads the answer back as the full map `set_deformations` takes: a
 displacement-field image (`.nii.gz`, `.mha`, `.nrrd`), a transform file
 (`.mat`, `.txt`, `.tfm`, `.h5`, as ANTs and ITK write them), a SimpleITK
@@ -280,45 +281,45 @@ transform or vector image, or a `(H, W, 2)` array of `(dx, dy)` pixels. It is
 read in ITK's convention (a fixed point to its moving point); `fixed="atlas"`
 says the engine had the atlas fixed (the map is inverted on the fit grid),
 `atlas="native"` that it registered against `template` rather than
-`placed_template`. `c.transform_from_itk(id, source, ...)` reads an affine
+`placed_template`. `c.fits.transform_from_itk(id, source, ...)` reads an affine
 (ANTs' `0GenericAffine.mat`, either way round) as a `TransformProposal`;
 a transform that is not affine is `BAD_ARGUMENT`. For Elastix, `transformix
 -def all` writes the deformation field file.
 
 ### Points, regions and atlas planes
 
-`c.to_atlas_um(id, xy, frame="file")` takes `(N, 2)` `[x, y]` pixels of the
+`c.frames.to_atlas_um(id, xy, frame="file")` takes `(N, 2)` `[x, y]` pixels of the
 image file (`frame="fit"`: of the fit grid) to `(N, 3)` atlas micrometres
 through the section's current registration, its deformation included (NaN
-outside the atlas). `c.from_atlas_um(id, xyz_um, frame="file")` goes back,
+outside the atlas). `c.frames.from_atlas_um(id, xyz_um, frame="file")` goes back,
 each atlas point projected onto the section's plane and carried through the
-deformation's inverse; `c.plane_distance_um(id, xyz_um)` says how far off the
-plane each lies. `c.region_at(id, xy, frame="file")` gives `{"id", "acronym",
+deformation's inverse; `c.frames.plane_distance_um(id, xyz_um)` says how far off the
+plane each lies. `c.frames.region_at(id, xy, frame="file")` gives `{"id", "acronym",
 "name"}` under each point, None outside the atlas.
 
-`c.atlas_plane(position_mm, pitch_deg=0, yaw_deg=0, kinds=("template",
+`c.frames.atlas_plane(position_mm, pitch_deg=0, yaw_deg=0, kinds=("template",
 "annotation"))` samples the atlas plane at any placement (an `AtlasPlane`:
 `atlas`, the arrays on the native grid, and `plane`, with `native_to_um`, as
 `fit_frame` gives it), so a script can search positions and angles itself.
-`c.atlas_volume(kind)` is a whole atlas volume (`annotation` or an atlas
+`c.frames.atlas_volume(kind)` is a whole atlas volume (`annotation` or an atlas
 image), read only.
 
 ### The native engines with settings of your own
 
-`c.fit_fireants(id, restrict_to=(), exclude=(), section_image="preprocessed",
+`c.fits.fit_fireants(id, restrict_to=(), exclude=(), section_image="preprocessed",
 atlas_image="nissl", mask="none", smoothness_um=80.0,
 metric="mutual_information", edges=True, detail="standard", start="linear",
 marked=True, note="")` runs FireANTs SyN, the engine `fireants_syn` runs, and
 returns a `DeformationProposal` NOT written. Its settings are `fireants_syn`'s,
 by its names and with its defaults (`restrict_to` fits those regions'
 neighbourhood only; `exclude` adds regions to leave out). `mask` is `"none"` or
-the NAME of a mask of the section that `make_mask` made (`c.mask(id, name)`
+the NAME of a mask of the section that `make_mask` made (`c.reads.mask(id, name)`
 reads one: `NOT_FOUND`, `STALE_INPUT`); an array is refused (`BAD_ARGUMENT`, make
 the mask with `make_mask` so the job holds it). `start="current"` fits on top
 of the applied deformation and the written step keeps the chain; `marked=False`
 keeps the section's marked damage regions in the fit. The proposal's provenance
 holds the fit's `inputs` and `estimated` blocks, as a tool's reply does.
-`c.fit_elastix(id, restrict_to=(), exclude=(), section_image="preprocessed",
+`c.fits.fit_elastix(id, restrict_to=(), exclude=(), section_image="preprocessed",
 atlas_image="nissl", mask="none", edges=True, marked=True, note="")` runs the
 Elastix affine `elastix_affine` runs, with its names and defaults, from the
 current placement, and returns a `TransformProposal` (refused
@@ -328,12 +329,12 @@ FireANTs call's settings as the deformation step's `settings` (what `status`
 and the registration list show) and in the record's provenance, the engine's
 own numbers in its `engine.native_parameters`, the start and runtime in
 provenance `meta`; the Elastix call's settings under the transform record's
-`fit`. `c.image_names(id)` lists the section images a fit can read, and
-`c.fit_frame(id, image="preprocessed")` gives one of them on the fit grid
+`fit`. `c.reads.image_names(id)` lists the section images a fit can read, and
+`c.frames.fit_frame(id, image="preprocessed")` gives one of them on the fit grid
 (`frame.section_image`, and `frame.section_image_ref`: `{name, kind, file,
 digest}`; `stain=True` is the same for `preprocessed`); `atlas=("nissl",)`
 asks for the atlas's Nissl plane.
-`c.deformation_from_map(..., weights=)` stores an engine's own sorting (float
+`c.proposals.deformation_from_map(..., weights=)` stores an engine's own sorting (float
 `(H, W)` on the fit grid) with the record, where `make_mask(source="fit")` finds it;
 `start="current"` marks a map made on top of the held deformation (read
 through `frame.applied_map`), so the written step keeps the section's chain;
@@ -345,11 +346,11 @@ through `frame.applied_map`), so the written step keeps the section's chain;
 
 A script hands the fits and the pictures an image it computed (a colour
 deconvolution of a brightfield stain, a cell-density map, an edge map) with
-`c.add_image(id, name, array, note="")`: `array` is `(H, W)` on the section's
-working grid, `c.working_grid(id)`, in the image file's orientation, before the
-section's quarter turn and flip. Compute it from `c.raw_plane(id, name)` (one raw
-channel, `uint8` `(H, W)`) or `c.working_rgb(id)` (the working copy as read,
-`(H, W, 3)`), which are in that frame; never from `c.section_raster(...)`, which
+`c.writes.add_image(id, name, array, note="")`: `array` is `(H, W)` on the section's
+working grid, `c.reads.working_grid(id)`, in the image file's orientation, before the
+section's quarter turn and flip. Compute it from `c.reads.raw_plane(id, name)` (one raw
+channel, `uint8` `(H, W)`) or `c.reads.working_rgb(id)` (the working copy as read,
+`(H, W, 3)`), which are in that frame; never from `c.reads.section_raster(...)`, which
 is turned and flipped as the section is (a flipped section's raster handed back
 would be a mirror image). It is `uint8`, or floats from 0 to 1. The image is saved as `sections/<stem>/images/<name>.png`
 with `note` as its source, one undo step; then `job.look(mode="section",
@@ -359,15 +360,15 @@ sections=[id], images=[name])` draws it and every fit reads it as
 ```python
 from skimage.color import rgb2hed
 
-rgb = c.working_rgb(sid)                     # the file's orientation, working size
+rgb = c.reads.working_rgb(sid)              # the file's orientation, working size
 hema = rgb2hed(rgb)[..., 0]
 hema = (hema - hema.min()) / (hema.max() - hema.min())
-c.add_image(sid, "hema", hema, note="haematoxylin, skimage rgb2hed")
+c.writes.add_image(sid, "hema", hema, note="haematoxylin, skimage rgb2hed")
 ```
 
 ### Marks of your own on the pictures
 
-`c.add_layer(id, Layer.points(...) | Layer.lines(...) | Layer.labels(...) |
+`c.writes.add_layer(id, Layer.points(...) | Layer.lines(...) | Layer.labels(...) |
 Layer.scalar(...) | Layer.picture(...))` (`from langslice.plugin_api import
 Layer`; [layers](plugins.md#layers)) leaves the script's detections (cells,
 edges, matched points) on a section; its file goes under `plugins/script/`,
@@ -377,13 +378,13 @@ write hides it.
 
 ### Already in reach
 
-A proposal's numbers without writing it: `c.deformation_from_map(id,
+A proposal's numbers without writing it: `c.proposals.deformation_from_map(id,
 xy).summary` (displacement, fold fraction, flags), the same numbers a native
-fit's reply carries. The current composed map: `c.fit_frame(id).applied_map`,
+fit's reply carries. The current composed map: `c.frames.fit_frame(id).applied_map`,
 `job.section_maps(id)`. Raw and preprocessed rasters at any size:
-`c.section_raster(id, level=, images=["preprocessed"])`, `raw=True`. The
-damage masks every native fit leaves out: `c.fit_frame(id).excluded`,
-`.damage_zone`. A registration made elsewhere: `c.read_registration(path)`.
+`c.reads.section_raster(id, level=, images=["preprocessed"])`, `raw=True`. The
+damage masks every native fit leaves out: `c.frames.fit_frame(id).excluded`,
+`.damage_zone`. A registration made elsewhere: `c.fits.read_registration(path)`.
 The atlas object: `job.workspace.atlas`, `langslice.load_atlas(name)`. Run
 notes: `job.note(text=...)`.
 

@@ -2,11 +2,13 @@
 
 It is a tool of every job (its row of the tool table names
 ``langslice.engines.brainways.plugin:tools``).
-Options (``plugin_config``): ``device`` (``auto``, ``cuda`` or ``cpu``;
-``auto`` takes the GPU when torch sees one), ``long_edge`` (the long edge,
-pixels, of the one channel handed to Brainways, which makes its own
-1024-pixel thumbnail; 3072) and ``cache_folder`` (where Brainways' weights
-are kept; empty is ``~/.cache/langslice/brainways``).
+Options (``plugin_config``): ``device`` (``auto``, ``cpu``, ``cuda`` or a
+numbered GPU such as ``cuda:1``; ``auto`` takes the GPU when torch sees
+one), ``long_edge`` (the long edge, pixels, of the one channel handed to
+Brainways, which makes its own 1024-pixel thumbnail; 3072) and
+``cache_folder`` (where Brainways' weights are kept; empty is
+``~/.cache/langslice/brainways``). Any other option is refused when the
+tool is built.
 
 The network runs in LangSlice's process (``network.py`` and ``images.py``
 beside this file: the part of Brainways 0.1.16.3 that finds a position,
@@ -20,26 +22,37 @@ the agent oriented it (quarter turn and flip): the job's first raw channel
 unless the call names another. Brainways gives the position only: no
 angles, no in-plane fit. ``write`` is a list of parts, here only
 ``"positions"``; empty proposes and writes nothing. Every call saves
-``plugins/brainways_ap/calls/<n>/``: the images handed to the network,
+``plugins/brainways_ap/calls/<n>_ap/``: the images handed to the network,
 ``settings.json`` and ``rows.json``.
 """
 
 from __future__ import annotations
 
-import enum
 import functools
 import json
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 from PIL import Image
 
+from langslice.engines import _devices
+from langslice.engines._blocks import call_folder
+from langslice.engines._options import known_options
+from langslice.engines._positioning import (
+    clamped_reply,
+    clamped_rows,
+    listed,
+    long_edge,
+    option,
+    rounded,
+    row_errors,
+    view_note,
+    write_png,
+)
 from langslice.engines.brainways import images, network
-from langslice.engines.brainways.network import Device
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -49,20 +62,18 @@ from langslice.plugin_api import (
     ToolSpec,
     WriteResult,
 )
+from langslice.plugins.declared import engine_tool
 
 PARTS = ("positions",)
 ATLAS = "whs_sd_rat_39um"
 ATLAS_SHAPE = (1024, 512, 512)
 ATLAS_UM = 39.0
 ENGINE_VERSION = "Brainways 0.1.16.3 (1c43b0b), vendored"
-INSTALL = 'pip install "langslice[engines]"'
 OPTIONS = ("device", "long_edge", "cache_folder")
-
-
-class RowStatus(enum.StrEnum):
-    """Name the status of a row ``set_positions`` answers with."""
-
-    OK = "ok"
+PROPOSAL_NOTE = (
+    "view true here draws the proposal; the positioning view of look "
+    "shows the sections at their current positions."
+)
 
 
 @dataclass(frozen=True)
@@ -72,26 +83,26 @@ class Options:
     Attributes
     ----------
     device
-        Where the network runs; ``auto`` takes the GPU when torch sees one.
+        Where the network runs: ``auto`` (the GPU when torch sees one),
+        ``cpu``, ``cuda`` or a numbered GPU such as ``cuda:1``.
     long_edge
         The long edge, pixels, of the channel handed to Brainways.
     cache_folder
         Where Brainways' weights are kept; empty is the default folder.
     """
 
-    device: Device = Device.AUTO
+    device: str = _devices.AUTO
     long_edge: int = 3072
     cache_folder: str = ""
 
     @classmethod
-    def from_configs(cls, configs: Sequence[Mapping[str, str | int]]) -> Options:
+    def from_config(cls, config: Mapping[str, object] | None) -> Options:
         """Read the options a job's ``plugin_config`` gives.
 
         Parameters
         ----------
-        configs
-            The plugin's entry of ``plugin_config``, when the job has one;
-            empty gives the defaults.
+        config
+            The plugin's entry of ``plugin_config``; None gives the defaults.
 
         Returns
         -------
@@ -100,24 +111,19 @@ class Options:
 
         Raises
         ------
+        PluginError
+            For an option the plugin does not take.
         ValueError
-            For an unknown option or a value of the wrong kind.
+            For a value of the wrong kind.
         """
-        given: dict[str, str | int] = {}
-        for config in configs:
-            given.update(config)
-        unknown = sorted(set(given) - set(OPTIONS))
-        if unknown:
-            raise ValueError(
-                f"brainways_ap takes the options {', '.join(OPTIONS)}; got {', '.join(unknown)}"
-            )
-        device = str(given.get("device", Device.AUTO))
-        if device not in tuple(Device):
-            raise ValueError(f"device is one of {', '.join(Device)}; got {device!r}")
+        given = known_options("brainways_ap", config, OPTIONS)
+        device = option(given, "device", cls.device)
+        if not _devices.DEVICE_OPTION.fullmatch(device):
+            raise ValueError(f"device is auto, cpu, cuda or cuda:N; got {device!r}")
         return cls(
-            device=Device(device),
-            long_edge=int(given.get("long_edge", cls.long_edge)),
-            cache_folder=str(given.get("cache_folder", cls.cache_folder)),
+            device=device,
+            long_edge=long_edge(given),
+            cache_folder=option(given, "cache_folder", cls.cache_folder),
         )
 
 
@@ -134,7 +140,7 @@ class Engine:
     planes
         The atlas planes' embeddings, made as the search asks for them.
     folder
-        The call's folder, ``plugins/brainways_ap/calls/<n>/``.
+        The call's folder, ``plugins/brainways_ap/calls/<n>_ap/``.
     """
 
     options: Options
@@ -167,22 +173,25 @@ class Proposal:
 
 
 @dataclass(frozen=True)
-class Clamped:
-    """Hold a written position the atlas range clamped.
+class Arguments:
+    """Hold a call's arguments as given.
 
     Attributes
     ----------
-    id
-        The section's filename.
-    proposed_mm
-        The position proposed, millimetres.
-    used_mm
-        The position written, millimetres.
+    sections
+        The filenames asked for; empty for every section.
+    channel
+        The raw channel asked for; empty for each section's first.
+    write
+        The parts to write; None when not given.
+    view
+        Whether the reply carries the picture.
     """
 
-    id: str
-    proposed_mm: float
-    used_mm: float
+    sections: list[str]
+    channel: str
+    write: list[str] | None
+    view: bool
 
 
 @dataclass(frozen=True)
@@ -192,8 +201,7 @@ class CallRecord:
     Attributes
     ----------
     arguments
-        The call's arguments as given: ``sections``, ``channel``,
-        ``write``, ``view``.
+        The call's arguments as given.
     run
         The sections run, by filename.
     channel_used
@@ -212,11 +220,11 @@ class CallRecord:
         ``model_load_s`` and ``inference_s``, seconds.
     """
 
-    arguments: dict[str, list[str] | str | bool | None]
+    arguments: Arguments
     run: list[str]
     channel_used: dict[str, str]
     proposal_only: bool
-    device: Device
+    device: str
     gpu: str | None
     sha256: str
     torch: str
@@ -312,12 +320,12 @@ def run_brainways_ap(
         ``BAD_ARGUMENT`` for a bad argument, ``ENGINE_UNAVAILABLE`` when the network
         cannot run here, ``FIT_FAILED`` for an atlas it does not fit.
     """
-    prior_mm = {view.id: view.position_mm for view in context.sections()}
+    prior_mm = {view.id: view.position_mm for view in context.reads.sections()}
     run = _sections_to_run(context, sections)
     propose_only = _propose_only(write)
     chosen = {sid: _channel_for(context, sid, channel) for sid in run}
     reference = _reference_volume(context)
-    folder = _call_folder(context)
+    folder = call_folder(context, "ap")
 
     started = time.monotonic()
     device, net = _network(options)
@@ -339,26 +347,19 @@ def run_brainways_ap(
     reply["channel"] = used if len(used) > 1 else used[0]
     if result is not None and not result.ok:
         reply["refused"] = f"{result.error}: {result.message}"
-    clamped = _clamped(result)
+    clamped = clamped_rows(result)
     if clamped:
-        reply["clamped"] = [
-            {"id": row.id, "asked_mm": row.proposed_mm, "used_mm": row.used_mm} for row in clamped
-        ]
+        reply["clamped"] = clamped_reply(clamped)
     if not view:
-        reply["view"] = _view_note(written)
+        reply["view"] = view_note(bool(written), PROPOSAL_NOTE)
 
     record = CallRecord(
-        arguments={
-            "sections": list(sections or []),
-            "channel": channel,
-            "write": _listed(write),
-            "view": view,
-        },
+        arguments=Arguments(list(sections or []), channel, listed(write), view),
         run=run,
         channel_used=chosen,
         proposal_only=propose_only,
         device=device,
-        gpu=network.gpu_name(device),
+        gpu=_devices.gpu_name(device),
         sha256=net.sha256,
         torch=network.torch_version(),
         timings_s={
@@ -371,27 +372,21 @@ def run_brainways_ap(
     return ToolResult(reply, pictures)
 
 
-def _listed(values: Sequence[str] | None) -> list[str] | None:
-    if values is None:
-        return None
-    return list(values)
-
-
 def _write_positions(
     context: ToolContext, proposals: list[Proposal], propose_only: bool
 ) -> WriteResult | None:
     if propose_only:
         return None
     rows = [{"id": row.id, "position_mm": row.position_mm} for row in proposals]
-    with context.writing():
-        return context.set_positions(rows)
+    with context.writes.writing():
+        return context.writes.set_positions(rows)
 
 
 def _sections_to_run(context: ToolContext, sections: Sequence[str] | None) -> list[str]:
     if sections:
-        run = [context.section(name).id for name in sections]
+        run = [context.reads.section(name).id for name in sections]
     else:
-        run = [view.id for view in context.sections()]
+        run = [view.id for view in context.reads.sections()]
     if len(set(run)) != len(run):
         raise ToolError(RefusalCode.BAD_ARGUMENT, "a section is named twice in sections")
     return run
@@ -410,7 +405,7 @@ def _propose_only(write: Sequence[str] | None) -> bool:
 
 
 def _channel_for(context: ToolContext, sid: str, channel: str) -> str:
-    names = context.channels(sid)
+    names = context.reads.channels(sid)
     if not names:
         raise ToolError(RefusalCode.BAD_ARGUMENT, f"{sid} has no raw channel")
     if channel and channel not in names:
@@ -422,7 +417,7 @@ def _channel_for(context: ToolContext, sid: str, channel: str) -> str:
 
 
 def _reference_volume(context: ToolContext) -> network.ReferenceVolume:
-    atlas = context.atlas()
+    atlas = context.reads.atlas()
     shape = tuple(atlas.shape)
     off_grid = any(abs(um - ATLAS_UM) > 1e-6 for um in atlas.resolution_um)
     if atlas.name != ATLAS or shape != ATLAS_SHAPE or off_grid:
@@ -432,32 +427,23 @@ def _reference_volume(context: ToolContext) -> network.ReferenceVolume:
             f"resolution {list(atlas.resolution_um)} um; expected "
             f"{ATLAS} {list(ATLAS_SHAPE)} at {ATLAS_UM} um",
         )
-    return network.ReferenceVolume.from_voxels(context.atlas_volume())
+    return network.ReferenceVolume.from_voxels(context.frames.atlas_volume())
 
 
-def _call_folder(context: ToolContext) -> Path:
-    calls = context.work_dir() / "calls"
-    calls.mkdir(parents=True, exist_ok=True)
-    numbers = [int(p.name) for p in calls.iterdir() if p.name.isdigit()]
-    folder = calls / f"{max(numbers, default=0) + 1:04d}"
-    folder.mkdir()
-    return folder
-
-
-def _network(options: Options) -> tuple[Device, network.Network]:
+def _network(options: Options) -> tuple[str, network.Network]:
     try:
-        device = network.resolve_device(options.device)
+        device = _devices.resolve_device(options.device)
+        gpu_missing = _devices.on_gpu(device) and not _devices.cuda_available()
     except ImportError as error:
         raise ToolError(
             RefusalCode.ENGINE_UNAVAILABLE,
-            f"Brainways cannot run here: torch does not import ({error}); "
-            f"install LangSlice with its engines: {INSTALL}. Use another method, or ask the user "
-            "to install it.",
+            f"Brainways cannot run here: torch does not import ({error}). Use another method, "
+            "or ask the user to install it.",
         ) from error
-    if device == Device.CUDA and not network.cuda_available():
+    if gpu_missing:
         raise ToolError(
             RefusalCode.BAD_ARGUMENT,
-            "Brainways: device cuda was asked for and torch sees no GPU",
+            f"Brainways: device {options.device} was asked for and torch sees no GPU",
         )
     try:
         net = network.load_network(device, cache_folder=options.cache_folder)
@@ -473,12 +459,11 @@ def _network(options: Options) -> tuple[Device, network.Network]:
 
 def _propose(context: ToolContext, engine: Engine, sid: str, channel: str) -> Proposal:
     started = time.monotonic()
-    raster = context.section_raster(sid, level=engine.options.long_edge, raw=True, images=[channel])
+    raster = context.reads.section_raster(
+        sid, level=engine.options.long_edge, raw=True, images=[channel]
+    )
     pixels = np.asarray(raster.array, np.uint8)[:, :, 0]
-    name = sid if sid.lower().endswith(".png") else sid + ".png"
-    path = engine.folder / "images" / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(pixels).save(path)
+    write_png(pixels, engine.folder, sid)
 
     thumbnail = images.section_thumbnail(pixels)
     limits = network.AP_LIMITS[ATLAS]
@@ -501,10 +486,6 @@ def _written_word(written: set[str], propose_only: bool) -> str:
     return "nothing"
 
 
-def _round(value: float, digits: int) -> float:
-    return round(value, digits) + 0.0
-
-
 def _table(
     proposals: list[Proposal],
     prior_mm: dict[str, float],
@@ -512,17 +493,17 @@ def _table(
     propose_only: bool,
 ) -> tuple[list[str], list[list[str | float | None]]]:
     written = _written(result)
-    errors = _row_errors(result)
+    errors = row_errors(result)
     columns = ["section", "position_mm", "change_mm"]
     if not propose_only:
         columns.append("written")
 
     table: list[list[str | float | None]] = []
     for row in proposals:
-        change = _round(row.position_mm - prior_mm[row.id], 3)
+        change = rounded(row.position_mm - prior_mm[row.id], 3)
         cell: list[str | float | None] = [
             row.id,
-            _round(row.position_mm, 3),
+            rounded(row.position_mm, 3),
             change,
         ]
         if propose_only:
@@ -532,45 +513,6 @@ def _table(
         else:
             table.append([*cell, errors.get(row.id, "nothing")])
     return columns, table
-
-
-def _row_errors(result: WriteResult | None) -> dict[str, str]:
-    if result is None or not result.ok:
-        return {}
-    errors: dict[str, str] = {}
-    for row in cast("list[dict[str, object]]", result.rows):
-        if row.get("status") != RowStatus.OK:
-            errors[str(row.get("id"))] = str(row.get("error", RefusalCode.PRECONDITION))
-    return errors
-
-
-def _clamped(result: WriteResult | None) -> list[Clamped]:
-    if result is None or not result.ok:
-        return []
-    return [
-        Clamped(
-            str(row["id"]),
-            _millimetres(row["clamped_from_mm"]),
-            _millimetres(row["position_mm"]),
-        )
-        for row in cast("list[dict[str, object]]", result.rows)
-        if "clamped_from_mm" in row
-    ]
-
-
-def _millimetres(value: object) -> float:
-    if not isinstance(value, (int, float)):
-        raise TypeError(f"a position is a number; got {value!r}")
-    return float(value)
-
-
-def _view_note(written: set[str]) -> str:
-    if written:
-        return "The positioning view of look shows the sections at these positions."
-    return (
-        "view true here draws the proposal; the positioning view of look "
-        "shows the sections at their current positions."
-    )
 
 
 def _pictures(
@@ -583,12 +525,12 @@ def _pictures(
     if not view:
         return []
     if written:
-        ordered = sorted(written, key=lambda sid: context.section(sid).index)
-        return context.positioning_picture(ordered)
+        ordered = sorted(written, key=lambda sid: context.reads.section(sid).index)
+        return context.pictures.positioning_picture(ordered)
     proposal: dict[object, Mapping[str, object]] = {
         row.id: {"position_mm": row.position_mm} for row in proposals
     }
-    return context.positioning_picture([row.id for row in proposals], proposal=proposal)
+    return context.pictures.positioning_picture([row.id for row in proposals], proposal=proposal)
 
 
 def _save_call(
@@ -617,22 +559,21 @@ def _save_call(
     (folder / "rows.json").write_text(json.dumps(rows, indent=1), encoding="utf-8", newline="\n")
 
 
-def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:
+def tools(config: Mapping[str, object] | None = None) -> list[ToolSpec]:
     """Declare ``brainways_ap`` with the job's options.
 
     Parameters
     ----------
-    *config
+    config
         The plugin's entry of the job's ``plugin_config`` (``device``,
-        ``long_edge``, ``cache_folder``), when the job has one; the loader
-        passes it as the one argument.
+        ``long_edge``, ``cache_folder``), when the job has one.
 
     Returns
     -------
     list of ToolSpec
         The one tool.
     """
-    options = Options.from_configs(config)
+    options = Options.from_config(config)
     meta = {
         "method": "Brainways 0.1.16.3",
         "paper": "Kantor et al. 2025, Neuropsychopharmacology",
@@ -642,17 +583,11 @@ def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:
     }
     handler = functools.partial(run_brainways_ap, options=options)
     return [
-        ToolSpec(
+        engine_tool(
             "brainways_ap",
             brainways_ap,
             handler,
             description=_brainways_description,
-            kind="write",
-            group="Positioning",
-            task="position",
-            writes=("position",),
-            atlases=(ATLAS,),
-            planes=("coronal",),
             version="2",
             meta=meta,
         )

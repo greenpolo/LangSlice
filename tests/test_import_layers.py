@@ -1,8 +1,9 @@
 """The layered core's dependency rule, enforced by import-linter.
 
-The contracts are in ``pyproject.toml`` (``[tool.importlinter]``): hosts >
-doors : agent > ops > job > core; core, job and ops import no provider,
-agent framework or model client; and providers import nothing above them.
+The contracts are in ``pyproject.toml`` (``[tool.importlinter]``): hosts > doors >
+engines > plugins > tools > job > core; core, job, tools, plugins and
+engines import no provider, agent framework or model client; and providers
+import nothing above them.
 No contract lists ``ignore_imports``: a violation is fixed by moving
 code, never listed. ``tests/test_core_imports.py`` checks
 the same rule at run time (what a fresh interpreter actually loads).

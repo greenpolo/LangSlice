@@ -40,13 +40,16 @@ import sys
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 
+from langslice.core.failures import ENGINE_FAILURES
+from langslice.core.outside import untyped
 from langslice.engines.deepslice import alignment, network
 from langslice.engines.deepslice.network import Weights
 from langslice.plugin_api import RefusalCode, ToolError
@@ -57,24 +60,6 @@ TARGET = "ABA_Mouse_CCFv3_2017_25um.cutlas"
 ALIGNER = "prerelease_1.0.0"
 VERSION = "1.2.8 (b0d6965)"
 RUN_LOCK = threading.Lock()
-
-
-class _KerasBackend(Protocol):
-    def clear_session(self) -> None: ...
-
-
-class _Keras(Protocol):
-    @property
-    def backend(self) -> _KerasBackend: ...
-
-
-class _DeviceConfig(Protocol):
-    def set_visible_devices(self, devices: list[object], device_type: str) -> None: ...
-
-
-class _TensorFlow(Protocol):
-    @property
-    def config(self) -> _DeviceConfig: ...
 
 
 @dataclass(frozen=True)
@@ -288,16 +273,17 @@ def run_deepslice(request: EngineRequest) -> EngineRun:
     Raises
     ------
     ToolError
-        ``FIT_FAILED`` for anything DeepSlice or TensorFlow raised (its
+        ``FIT_FAILED`` for a failure of DeepSlice or TensorFlow (its
         traceback in the run's ``deepslice_error.log``).
     """
     started = time.monotonic()
     request.out_folder.mkdir(parents=True, exist_ok=True)
     log = io.StringIO()
     with RUN_LOCK, contextlib.redirect_stdout(log):
+        failures = _failures()
         try:
             return _pipeline(request, started)
-        except Exception as error:
+        except failures as error:
             (request.out_folder / "deepslice_error.log").write_text(
                 traceback.format_exc(), encoding="utf-8", newline="\n"
             )
@@ -311,6 +297,17 @@ def run_deepslice(request: EngineRequest) -> EngineRun:
             (request.out_folder / "deepslice_stdout.log").write_text(
                 log.getvalue(), encoding="utf-8", newline="\n"
             )
+
+
+def _failures() -> tuple[type[Exception], ...]:
+    """Name what a DeepSlice run raises: the engines' failures and TensorFlow's own errors
+    (``tensorflow.errors.OpError``, an ``Exception`` of no other family)."""
+    try:
+        hidden_gpus()
+        op_error = cast("type[Exception]", untyped("tensorflow.errors", "OpError"))
+    except ENGINE_FAILURES:
+        return ENGINE_FAILURES
+    return (*ENGINE_FAILURES, op_error)
 
 
 def _pipeline(request: EngineRequest, started: float) -> EngineRun:
@@ -371,8 +368,8 @@ def fresh_keras_session() -> None:
     test stack) and raises nothing.
     """
     os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
-    keras = cast("_Keras", importlib.import_module("tf_keras"))
-    keras.backend.clear_session()
+    clear_session = cast("Callable[[], None]", untyped("tf_keras.backend", "clear_session"))
+    clear_session()
 
 
 def hidden_gpus() -> None:
@@ -385,9 +382,12 @@ def hidden_gpus() -> None:
     """
     os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
-    tensorflow = cast("_TensorFlow", importlib.import_module("tensorflow"))
+    set_visible_devices = cast(
+        "Callable[[list[object], str], None]",
+        untyped("tensorflow.config", "set_visible_devices"),
+    )
     with contextlib.suppress(RuntimeError):
-        tensorflow.config.set_visible_devices([], "GPU")
+        set_visible_devices([], "GPU")
 
 
 def _sorted_table(request: EngineRequest, prediction: network.Prediction) -> _Table:

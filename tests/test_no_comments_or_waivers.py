@@ -3,7 +3,7 @@
 A name says what a line is and a docstring says why. A ``noqa``, a
 ``type: ignore``, a ``pyright: ignore``, a ``pragma`` and a ``fmt`` switch
 are comments too, so one rule covers them all. Code copied from other labs
-(``src/langslice_vendor``) stays as published.
+(``src/langslice/_vendor``) stays as published, so this test skips that folder.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 CHECKED = (REPO / "src" / "langslice", REPO / "tests")
+VENDORED = REPO / "src" / "langslice" / "_vendor"
 
 
 def comments_of(path: Path) -> list[str]:
@@ -30,6 +31,7 @@ def test_no_file_carries_a_comment_or_a_waiver() -> None:
         comment
         for folder in CHECKED
         for path in sorted(folder.rglob("*.py"))
+        if VENDORED not in path.parents
         for comment in comments_of(path)
     ]
     assert not carried, (

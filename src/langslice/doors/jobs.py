@@ -44,7 +44,7 @@ OPEN_MAX_VIEW_EDGE = 1 << 15
 
 VIEWER_KEY = "viewer"
 
-importlib.import_module("langslice.doors.plugins")
+importlib.import_module("langslice.plugins")
 
 
 def job_viewer(layout: JobLayout) -> str:

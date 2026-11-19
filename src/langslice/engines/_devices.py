@@ -1,21 +1,52 @@
-"""Name the torch device an engine fits on in LangSlice's process.
+"""Name the torch device an engine runs on in LangSlice's process.
 
-STalign and emlddmm take a ``device`` option: ``auto`` (the GPU when torch
-sees one, else the CPU), ``cpu``, ``cuda`` or a numbered GPU such as
-``cuda:1``. A fit on a GPU takes the machine's GPU queue
-(``langslice.plugin_api.gpu_turn``).
+STalign, emlddmm and Brainways take a ``device`` option: ``auto`` (the GPU
+when torch sees one, else the CPU), ``cpu``, ``cuda`` or a numbered GPU such
+as ``cuda:1``. A fit on a GPU takes the machine's GPU queue
+(``langslice.plugin_api.gpu_turn``); whether a device is a GPU is the core's
+:func:`~langslice.core.fits.deformable.gpu_queue.on_gpu`.
 """
 
 from __future__ import annotations
+
+import re
+
+from langslice.core.fits.deformable.gpu_queue import on_gpu
+
+__all__ = [
+    "AUTO",
+    "CPU",
+    "DEVICE_OPTION",
+    "FIRST_GPU",
+    "GPU",
+    "cuda_available",
+    "gpu_name",
+    "on_gpu",
+    "resolve_device",
+]
 
 AUTO = "auto"
 GPU = "cuda"
 FIRST_GPU = "cuda:0"
 CPU = "cpu"
+DEVICE_OPTION = re.compile(r"auto|cpu|cuda(:\d+)?")
+
+
+def cuda_available() -> bool:
+    """Say whether torch sees a GPU.
+
+    Returns
+    -------
+    bool
+        True when torch can run on CUDA here.
+    """
+    import torch
+
+    return torch.cuda.is_available()
 
 
 def resolve_device(option: str) -> str:
-    """Resolve a device option to the device a fit runs on.
+    """Resolve a device option to the device a run takes.
 
     Parameters
     ----------
@@ -29,17 +60,15 @@ def resolve_device(option: str) -> str:
         a numbered GPU as given, else the option as given (``cpu`` for
         ``auto`` without a GPU).
     """
-    import torch
-
     if option == AUTO:
-        option = GPU if torch.cuda.is_available() else CPU
+        option = GPU if cuda_available() else CPU
     if option == GPU:
         return FIRST_GPU
     return option
 
 
-def on_gpu(device: str) -> bool:
-    """Return whether a device is a GPU.
+def gpu_name(device: str) -> str | None:
+    """Name the GPU a device runs on.
 
     Parameters
     ----------
@@ -48,7 +77,11 @@ def on_gpu(device: str) -> bool:
 
     Returns
     -------
-    bool
-        True for ``cuda`` and every numbered GPU.
+    str or None
+        The GPU's name for a GPU device; None for the CPU.
     """
-    return device.startswith(GPU)
+    import torch
+
+    if not on_gpu(device):
+        return None
+    return torch.cuda.get_device_name(torch.device(device))

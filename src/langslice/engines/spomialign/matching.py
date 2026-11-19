@@ -29,7 +29,8 @@ import numpy as np
 import numpy.typing as npt
 from PIL import Image
 
-from langslice.engines._outside import untyped
+from langslice.core.outside import untyped
+from langslice.engines._devices import resolve_device
 
 if TYPE_CHECKING:
     import torch
@@ -112,14 +113,14 @@ def weights_missing() -> list[str]:
     return [name for name in WEIGHTS if not (checkpoints / name).exists()]
 
 
-def resolve_device(device_name: str) -> torch.device:
+def torch_device(option: str) -> torch.device:
     """Name the torch device a call runs on, as SPOmiAlign resolves it.
 
     Parameters
     ----------
-    device_name
-        A torch device name (``cuda``, ``cuda:1``, ``cpu``, ``mps``), or
-        empty for the first GPU when torch sees one, else the CPU.
+    option
+        ``auto`` (the first GPU when torch sees one, else the CPU), ``cpu``,
+        ``cuda``, a numbered GPU such as ``cuda:1``, or ``mps``.
 
     Returns
     -------
@@ -133,12 +134,7 @@ def resolve_device(device_name: str) -> torch.device:
     """
     import torch
 
-    if not device_name:
-        if torch.cuda.is_available():
-            return torch.device("cuda:0")
-        return torch.device("cpu")
-
-    device = torch.device(device_name)
+    device = torch.device(resolve_device(option))
     available = True
     if device.type == GPU_DEVICE:
         index = device.index or 0
@@ -147,7 +143,7 @@ def resolve_device(device_name: str) -> torch.device:
     elif device.type == "mps":
         available = torch.backends.mps.is_available()
     if not available:
-        raise RuntimeError(f"Requested device {device_name!r} is not available")
+        raise RuntimeError(f"Requested device {option!r} is not available")
     return device
 
 

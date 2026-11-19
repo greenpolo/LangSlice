@@ -3,7 +3,7 @@
 :func:`build_tools` gathers each tool's body over one
 :class:`~langslice.tools.run.Run` (``<tool>_tool``, a function of the tool's
 module beside its operation that takes the run first, :data:`TOOL_BODIES`;
-a plugin's through :mod:`langslice.doors.plugins.runtime`) and makes each
+a plugin's through :mod:`langslice.plugins.runtime`) and makes each
 one a tool of the pipeline every call goes through
 (:mod:`langslice.tools.pipeline`). It lives at the doors because it
 resolves the run's image model through the providers, which the tools do
@@ -24,10 +24,10 @@ from langslice.core.pictures.sizes import (
     resolution_level,
 )
 from langslice.core.stack.stack import Stack
-from langslice.doors.plugins import provenance, runtime
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
+from langslice.plugins import runtime
 from langslice.providers.connections import resolve_image_model
 from langslice.tools.bookkeeping import exports, history, notes, submit
 from langslice.tools.catalog import enabled, verbs_for
@@ -148,7 +148,7 @@ def build_tools(
     The in-tree engines' tools the run has, and the tools a job's
     ``plugins`` add, follow the others: declared from
     their own stubs, their bodies run by
-    :mod:`langslice.doors.plugins.runtime`, through the same steps; their
+    :mod:`langslice.plugins.runtime`, through the same steps; their
     provenance is recorded in ``job.json`` and kept on the box.
     """
     if job is None:
@@ -203,8 +203,8 @@ def build_tools(
     }
     if variant.plugins:
         bodies.update(runtime.bodies(run, variant))
-        box.plugins = provenance.records(variant)
-        provenance.record(job, box.plugins)
+        box.plugins = runtime.plugin_records(variant)
+        runtime.record_plugins(job, box.plugins)
     box.tools = [
         declared_tool(name, bodies[name], box)
         for name in enabled(spec, scripting=scripting, image_model=image_model_connected)

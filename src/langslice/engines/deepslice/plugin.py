@@ -1,10 +1,11 @@
 """DeepSlice as a LangSlice tool, ``deepslice_place``: the adapter.
 
 It is a tool of every job (its row of the tool table names
-``langslice.engines.deepslice.plugin:tools``);
-it is imported from this package (no ``PYTHONPATH``). Options
-(``plugin_config``): ``ensemble`` (true: the paper's two-network model,
-DeepSlice's own default for mouse), ``long_edge`` (3072: the long edge, in
+``langslice.engines.deepslice.plugin:tools``).
+
+Options (``plugin_config``; any other is refused when the tool is built):
+``ensemble`` (true: the paper's two-network model, DeepSlice's own default
+for mouse), ``long_edge`` (3072: the long edge, in
 pixels, of the image written for DeepSlice; a file of that size or smaller
 goes in with its delivered pixels, and DeepSlice shrinks it to 299 itself)
 and ``cache_folder`` (where its weights are kept; empty is
@@ -21,7 +22,7 @@ flip), the delivered pixels, no preprocessing. Its parts: ``positions``,
 is on (the marks in the description), ``transform``. A call writes the
 parts asked for as one undo step (``writes.py``); an empty ``write``
 proposes and writes nothing. Every call saves
-``plugins/deepslice_place/calls/<n>/``: the images written, DeepSlice's run
+``plugins/deepslice_place/calls/<n>_place/``: the images written, DeepSlice's run
 (``engine/``), ``out.json`` (the run's request and answer),
 ``settings.json`` and ``rows.json`` (``reply.py``).
 
@@ -35,14 +36,21 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
-import numpy as np
 from PIL import Image
 
+from langslice.engines._blocks import call_folder
+from langslice.engines._options import known_options
+from langslice.engines._positioning import (
+    listed,
+    long_edge,
+    option,
+    write_png,
+)
+from langslice.engines._weights import weights_folder
 from langslice.engines.deepslice import engine, reply, writes
 from langslice.engines.deepslice.engine import EngineRequest
-from langslice.engines.deepslice.network import CACHE_FOLDER
+from langslice.engines.deepslice.network import ENGINE
 from langslice.engines.deepslice.proposal import (
     ProposalRow,
     proposal_rows,
@@ -64,9 +72,9 @@ from langslice.plugin_api import (
     ToolsOn,
     ToolSpec,
 )
+from langslice.plugins.declared import engine_tool
 
 OPTIONS = ("ensemble", "long_edge", "cache_folder")
-ConfigValue = bool | int | float | str
 NAMED, MARKED = "named", "marked damage"
 
 
@@ -90,14 +98,13 @@ class Options:
     cache_folder: str = ""
 
     @classmethod
-    def from_configs(cls, configs: Sequence[Mapping[str, ConfigValue]]) -> Options:
+    def from_config(cls, config: Mapping[str, object] | None) -> Options:
         """Read the options a job's ``plugin_config`` gives.
 
         Parameters
         ----------
-        configs
-            The plugin's entry of ``plugin_config``, when the job has one;
-            empty gives the defaults.
+        config
+            The plugin's entry of ``plugin_config``; None gives the defaults.
 
         Returns
         -------
@@ -106,27 +113,22 @@ class Options:
 
         Raises
         ------
-        ValueError
+        PluginError
             For an option the plugin does not take.
+        ValueError
+            For a value of the wrong kind.
         """
-        given: dict[str, ConfigValue] = {}
-        for config in configs:
-            given.update(config)
-        unknown = sorted(set(given) - set(OPTIONS))
-        if unknown:
-            raise ValueError(
-                f"deepslice_place takes the options {', '.join(OPTIONS)}; got {', '.join(unknown)}"
-            )
+        given = known_options("deepslice_place", config, OPTIONS)
         return cls(
-            ensemble=bool(given.get("ensemble", cls.ensemble)),
-            long_edge=int(given.get("long_edge", cls.long_edge)),
-            cache_folder=str(given.get("cache_folder", cls.cache_folder)),
+            ensemble=option(given, "ensemble", cls.ensemble),
+            long_edge=long_edge(given),
+            cache_folder=option(given, "cache_folder", cls.cache_folder),
         )
 
     @property
     def weights_folder(self) -> Path:
         """Return the folder that keeps DeepSlice's weights."""
-        return Path(self.cache_folder) if self.cache_folder else CACHE_FOLDER
+        return weights_folder(ENGINE, self.cache_folder)
 
 
 EVERY_SECTION: list[str] = []
@@ -228,15 +230,14 @@ def deepslice_place(
 ) -> None: ...
 
 
-def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
+def tools(config: Mapping[str, object] | None = None) -> list[ToolSpec]:
     """Return the plugin's one tool, ``deepslice_place``.
 
     Parameters
     ----------
-    *config
+    config
         The plugin's entry of the job's ``plugin_config`` (``ensemble``,
-        ``long_edge``, ``cache_folder``), when the job has one; the loader
-        passes it as the one argument.
+        ``long_edge``, ``cache_folder``), when the job has one.
 
     Returns
     -------
@@ -244,7 +245,7 @@ def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
         The tool, offered on the Allen mouse atlases and the augmented
         CCFv3 atlas, coronal jobs only.
     """
-    options = Options.from_configs(config)
+    options = Options.from_config(config)
     meta = {
         "method": "DeepSlice 1.2.8",
         "commit": "b0d6965",
@@ -253,17 +254,11 @@ def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
         "ensemble": options.ensemble,
     }
     return [
-        ToolSpec(
+        engine_tool(
             "deepslice_place",
             deepslice_place,
             Handler(options),
             description=_deepslice_description,
-            kind="write",
-            group="Positioning",
-            task="angles",
-            writes=("position", "angles", "affine"),
-            atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
-            planes=("coronal",),
             version="1",
             meta=meta,
         )
@@ -317,16 +312,11 @@ class Handler:
         arguments = Arguments(
             sections=list(sections or []),
             order=list(order or []),
-            bad_sections=_listed(bad_sections),
-            write=_listed(write),
+            bad_sections=listed(bad_sections),
+            write=listed(write),
             view=view,
         )
         return place(context, self.options, arguments)
-
-
-def _listed(names: list[str] | None) -> list[str] | None:
-    """Copy a list argument, keeping None as not given."""
-    return None if names is None else list(names)
 
 
 def place(context: ToolContext, options: Options, arguments: Arguments) -> ToolResult:
@@ -354,7 +344,7 @@ def place(context: ToolContext, options: Options, arguments: Arguments) -> ToolR
         for arguments that cannot run; ``FIT_FAILED`` when DeepSlice fails.
     """
     engine.require_engine()
-    views = {section.id: section for section in context.sections()}
+    views = {section.id: section for section in context.reads.sections()}
     run_ids, ordered = _run_and_order(context, arguments)
     choice = _asked(context, views, run_ids, arguments.write)
     bad = _bad_sections(context, run_ids, arguments.bad_sections)
@@ -364,10 +354,8 @@ def place(context: ToolContext, options: Options, arguments: Arguments) -> ToolR
         signed = -interval
 
     weights = engine.fetched_weights(options.weights_folder)
-    folder = _call_folder(context)
-    images = tuple(
-        (section, _write_png(context, section, folder, options.long_edge)) for section in run_ids
-    )
+    folder = call_folder(context, "place")
+    images = tuple((section, _write_png(context, section, folder, options)) for section in run_ids)
     request = EngineRequest(
         images=images,
         order=tuple(ordered),
@@ -415,13 +403,13 @@ def _proposed_order(row: ProposalRow) -> tuple[bool, float, str]:
 
 def _run_and_order(context: ToolContext, arguments: Arguments) -> tuple[list[str], list[str]]:
     """Return the section ids run and the cutting order as ids."""
-    run = [section.id for section in context.sections()]
+    run = [section.id for section in context.reads.sections()]
     if arguments.sections:
-        run = [context.section(name).id for name in arguments.sections]
+        run = [context.reads.section(name).id for name in arguments.sections]
     if len(set(run)) != len(run):
         raise ToolError(RefusalCode.BAD_ARGUMENT, "a section is named twice in sections")
 
-    ordered = [context.section(name).id for name in arguments.order]
+    ordered = [context.reads.section(name).id for name in arguments.order]
     repeated = len(set(ordered)) != len(ordered)
     if ordered and (repeated or set(ordered) != set(run)):
         raise ToolError(
@@ -437,7 +425,7 @@ def _run_and_order(context: ToolContext, arguments: Arguments) -> tuple[list[str
 def _bad_sections(context: ToolContext, run: list[str], names: list[str] | None) -> dict[str, str]:
     """Return the bad sections and why: those named, else the marked."""
     if names is None:
-        bad = {section: MARKED for section in run if context.section(section).damaged_regions}
+        bad = {section: MARKED for section in run if context.reads.section(section).damaged_regions}
     else:
         bad = _named_bad(context, run, names)
     if len(bad) >= len(run):
@@ -450,7 +438,7 @@ def _bad_sections(context: ToolContext, run: list[str], names: list[str] | None)
 
 def _named_bad(context: ToolContext, run: list[str], names: list[str]) -> dict[str, str]:
     """Return the bad sections a call names, each run."""
-    named = [context.section(name).id for name in names]
+    named = [context.reads.section(name).id for name in names]
     outside = [section for section in named if section not in run]
     if outside:
         raise ToolError(
@@ -517,42 +505,22 @@ def is_transform_available(context: ToolContext) -> bool:
     """
     if not context.task_on("transform"):
         return False
-    if "elastix_affine" in _disabled(context):
+    switched_off = frozenset(str(name) for name in context.spec.get("disabled", ()))
+    if not ToolsOn(switched_off).has("elastix_affine"):
         return False
-    return not all("affine" in view.frozen for view in context.sections())
-
-
-def _disabled(context: ToolContext) -> set[str]:
-    """Return the tools the job switches off."""
-    names = cast("list[str] | None", context.spec.get("disabled"))
-    return {str(name) for name in names or []}
+    return not all("affine" in view.frozen for view in context.reads.sections())
 
 
 def _job_interval(context: ToolContext) -> float | None:
     """Return the job's section interval in micrometres, or None."""
-    position = cast("dict[str, float | None]", context.spec["position"])
-    interval = position.get("interval_um")
+    interval = context.spec["position"].get("interval_um")
     return None if interval is None else float(interval)
 
 
-def _call_folder(context: ToolContext) -> Path:
-    """Make the call's folder, the next ``calls/<n>`` of the tool's own."""
-    calls = context.work_dir() / "calls"
-    calls.mkdir(parents=True, exist_ok=True)
-    numbers = [int(path.name) for path in calls.iterdir() if path.is_dir() and path.name.isdigit()]
-    folder = calls / f"{max(numbers, default=0) + 1:04d}"
-    folder.mkdir()
-    return folder
-
-
-def _write_png(context: ToolContext, section: str, folder: Path, long_edge: int) -> Path:
+def _write_png(context: ToolContext, section: str, folder: Path, options: Options) -> Path:
     """Write a section as the agent oriented it, its delivered pixels."""
-    array = context.section_raster(section, level=long_edge, raw=True).array
-    name = section if section.lower().endswith(".png") else f"{section}.png"
-    path = folder / "images" / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.asarray(array, np.uint8)).save(path)
-    return path
+    raster = context.reads.section_raster(section, level=options.long_edge, raw=True)
+    return write_png(raster.array, folder, section)
 
 
 def _pictures(context: ToolContext, answer: Answer, *, view: bool) -> list[Image.Image]:
@@ -566,7 +534,7 @@ def _pictures(context: ToolContext, answer: Answer, *, view: bool) -> list[Image
     if _has_landed(answer.choice, answer.written):
         positions = answer.written.positions
         moved = [row.id for row in answer.rows if row.id in positions]
-        return context.positioning_picture(moved or [row.id for row in answer.rows])
+        return context.pictures.positioning_picture(moved or [row.id for row in answer.rows])
     return _proposal_pictures(context, answer)
 
 
@@ -585,7 +553,7 @@ def _proposal_pictures(context: ToolContext, answer: Answer) -> list[Image.Image
         if angles:
             plane["angles"] = angles
         proposal[row.id] = plane
-    return context.positioning_picture(list(proposal), proposal=proposal)
+    return context.pictures.positioning_picture(list(proposal), proposal=proposal)
 
 
 def _has_landed(choice: PartChoice, written: Written) -> bool:

@@ -1,6 +1,7 @@
-"""The writes of a plugin context: each one undo step through the tools' operations.
+"""The writes of a plugin context (``ctx.writes``): each one undo step through the
+tools' operations.
 
-:class:`ContextWrites` writes positions, transforms, deformations, damage
+:class:`Writes` writes positions, transforms, deformations, damage
 marks, made images and layers through the operations the native tools use,
 refusing a frozen property (``FROZEN``) and a section changed since its
 digest (``STALE_INPUT``), and returns a :class:`WriteResult`.
@@ -9,7 +10,7 @@ digest (``STALE_INPUT``), and returns a :class:`WriteResult`.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Self, cast
 
@@ -20,23 +21,15 @@ from langslice.core.plugins import Layer, ToolError
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.affine import StoredAffine
 from langslice.core.stack.part import Written
-from langslice.doors.plugins.proposals import (
-    ContextProposals,
-    DeformationProposal,
-)
-from langslice.doors.plugins.reads import (
-    LayerRef,
-    unorient_raster,
-)
-from langslice.tools.refusal import (
-    refused_row,
-    section_refusal,
-    unknown_sections,
-)
+from langslice.plugins.caller import Call
+from langslice.plugins.proposals import DeformationProposal, Proposals
+from langslice.plugins.reads import LayerRef, Records, unorient_raster
+from langslice.tools.refusal import refused_row, section_refusal, unknown_sections
 from langslice.tools.stale import section_inputs, stale_refusal
 
 if TYPE_CHECKING:
     from langslice.tools.changing.warps import WarpApplied
+    from langslice.tools.run import Run
 
 
 @dataclass
@@ -93,18 +86,39 @@ class WriteResult:
         return {"written": list(self.written), "rows": [dict(row) for row in self.rows]}
 
 
-class ContextWrites(ContextProposals):
-    """Write a section's properties, made images and layers."""
+class Writes:
+    """Write a section's properties, made images and layers, each one undo step:
+    ``ctx.writes``.
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    call
+        The call: who it works for, its id and its write bookkeeping.
+    records
+        How a section is found by filename.
+    proposals
+        The context's proposals, which a row given as numbers or a map is
+        turned into.
+    """
+
+    def __init__(self, run: Run, call: Call, records: Records, proposals: Proposals) -> None:
+        self._run = run
+        self._call = call
+        self._caller = call.caller
+        self._records = records
+        self._proposals = proposals
 
     def add_image(self, section: object, name: str, array: Any, note: str = "") -> dict[str, Any]:
         """Register *array* as the section's made image *name*, made by this
         script (*note* says how; it is recorded as the image's source): a
         ``(H, W)`` array on the section's working grid in the image FILE's
         orientation, before the section's quarter turn and flip, as
-        :meth:`raw_plane` and :meth:`working_rgb` give the section (never
-        :meth:`section_raster`, whose pixels are turned and flipped as the
-        section is: a flipped section's raster handed back here would be a
-        mirror image); ``uint8``, or floats from 0 to 1. Saved as
+        ``ctx.reads.raw_plane`` and ``ctx.reads.working_rgb`` give the section
+        (never ``ctx.reads.section_raster``, whose pixels are turned and
+        flipped as the section is: a flipped section's raster handed back here
+        would be a mirror image); ``uint8``, or floats from 0 to 1. Saved as
         ``sections/<stem>/images/<name>.png``, one undo step; every fit and
         ``look`` can then read it by name. Returns its entry (``source``,
         ``file``, ``digest``). ``ToolError`` ``BAD_ARGUMENT`` for a raw channel's
@@ -112,7 +126,7 @@ class ContextWrites(ContextProposals):
         from langslice.tools.changing import images as ops_images
 
         self._require()
-        record = self._record(section)
+        record = self._records.get(section)
         with self.writing():
             live = self._run.state.by_id(record.id) or record
             given = cast("object", array)
@@ -144,21 +158,63 @@ class ContextWrites(ContextProposals):
         A long tool computes first and applies inside, passing ``expect=``
         to the writes so a section that changed meanwhile is refused."""
         job = self._run.job
-        with job.writing():
-            outermost = self._depth == 0
-            mark = job.pushed
-            if outermost and self._step is not None and self._caller.merge_calls:
-                start, pushed, top = self._step
-                if job.pushed == pushed and job.undo_stack and job.undo_stack[-1].step == top:
-                    mark = start
-            self._depth += 1
-            try:
-                yield self
-            finally:
-                self._depth -= 1
-                job.merge_steps(mark)
-                if outermost and job.pushed > mark and job.undo_stack:
-                    self._step = (mark, job.pushed, job.undo_stack[-1].step)
+        call = self._call
+        outer = call.depth == 0
+        if outer:
+            call.begin()
+        try:
+            with job.writing():
+                mark = job.pushed
+                if outer and call.step is not None and self._caller.merge_calls:
+                    start, pushed, top = call.step
+                    if job.pushed == pushed and job.undo_stack and job.undo_stack[-1].step == top:
+                        mark = start
+                call.depth += 1
+                try:
+                    yield self
+                finally:
+                    call.depth -= 1
+                    job.merge_steps(mark)
+                    if outer and job.pushed > mark and job.undo_stack:
+                        call.step = (mark, job.pushed, job.undo_stack[-1].step)
+        finally:
+            if outer:
+                call.settle()
+
+    def _logged(
+        self,
+        properties: Sequence[str],
+        run: Callable[[], WriteResult],
+        notes: Callable[[WriteResult], dict[str, str]] | None = None,
+    ) -> WriteResult:
+        """Run one write; a script's write that landed is a ``script_write``
+        event of the job's log."""
+        if not self._caller.is_script:
+            return run()
+        outer = self._call.depth == 0
+        self._call.begin()
+        try:
+            result = run()
+        finally:
+            if outer:
+                self._call.settle()
+        if result.ok and result.written:
+            self._script_event(
+                property=list(properties),
+                sections=list(result.written),
+                notes=notes(result) if notes is not None else {},
+            )
+        return result
+
+    def _script_event(self, **fields: Any) -> None:
+        import sys
+
+        self._run.job.layout.log_event(
+            "script_write",
+            **fields,
+            argv0=str(sys.argv[0]) if sys.argv else "",
+            call=self._call.id,
+        )
 
     def _stale(
         self,
@@ -180,6 +236,43 @@ class ContextWrites(ContextProposals):
                 rows[name] = stale_refusal().payload(section_id=name)
         return rows
 
+    def _screened(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        expect: Mapping[str, str] | None,
+        frozen: str | None = None,
+    ) -> list[tuple[Mapping[str, Any], str, dict[str, Any] | None]]:
+        """Each row of a write with the section it names and why it is
+        refused, if it is: a row naming no section (its key is the name it
+        gave), one whose section changed since its digest in *expect*, or,
+        with *frozen* (a property), one whose section freezes that property.
+        The refusal is None for a row that goes on to be written."""
+        job, state = self._run.job, self._run.state
+        found = [state.resolve(row.get("id")) for row in rows]
+        names = [record.id if record is not None else "" for record in found]
+        stale = self._stale([name for name in names if name], expect)
+        out: list[tuple[Mapping[str, Any], str, dict[str, Any] | None]] = []
+        for row, name in zip(rows, names, strict=True):
+            if not name:
+                ref = str(row.get("id"))
+                unknown = unknown_sections(state, [ref]).payload(section_id=ref)
+                out.append((row, ref, unknown))
+            elif name in stale:
+                out.append((row, name, stale[name]))
+            elif frozen is not None and (refusal := section_refusal(job, name, frozen)):
+                out.append((row, name, refusal.payload(section_id=name)))
+            else:
+                out.append((row, name, None))
+        return out
+
+    def _cleared(self) -> list[str]:
+        """Outside a tool call (a script), the deformations a placement write
+        made stale, dropped in its undo step (inside one the tool door does
+        it after the call)."""
+        if self._caller.in_tool_call:
+            return []
+        return self._run.job.clear_stale_deformations()
+
     def set_positions(
         self,
         rows: Sequence[Mapping[str, Any]],
@@ -192,6 +285,17 @@ class ContextWrites(ContextProposals):
         *cutting_angles* (``{"pitch_deg", "yaw_deg"}``), the stack's angles.
         The stack then runs in the order of the positions. Needs ``position``
         (and ``angles``) in the tool's ``writes``."""
+        return self._logged(
+            ["position", *(["angles"] if cutting_angles is not None else [])],
+            lambda: self._set_positions(rows, cutting_angles, expect),
+        )
+
+    def _set_positions(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        cutting_angles: Mapping[str, float] | None,
+        expect: Mapping[str, str] | None,
+    ) -> WriteResult:
         from langslice.tools.changing import positions
 
         self._require("position", *(["angles"] if cutting_angles is not None else []))
@@ -199,18 +303,11 @@ class ContextWrites(ContextProposals):
         with self.writing():
             out: dict[str, dict[str, Any]] = {}
             todo: list[Mapping[str, Any]] = []
-            ids = [self._resolve_id(row.get("id")) for row in rows]
-            stale = self._stale([name for name in ids if name], expect)
-            for row, name in zip(rows, ids, strict=True):
-                if not name:
-                    ref = str(row.get("id"))
-                    out[ref] = self._unknown(ref).payload(section_id=ref)
-                elif name in stale:
-                    out[name] = stale[name]
-                elif frozen := section_refusal(job, name, "position"):
-                    out[name] = frozen.payload(section_id=name)
-                else:
+            for row, key, refusal in self._screened(rows, expect, "position"):
+                if refusal is None:
                     todo.append(row)
+                else:
+                    out[key] = refusal
             try:
                 done = (
                     positions.position_sections(job, workspace, todo, cutting_angles)
@@ -233,22 +330,6 @@ class ContextWrites(ContextProposals):
             reply.details["deformation_cleared"] = cleared
         return reply
 
-    def _cleared(self) -> list[str]:
-        """Outside a tool call (a script), the deformations a placement write
-        made stale, dropped in its undo step (inside one the tool door does
-        it after the call)."""
-        if self._caller.in_tool_call:
-            return []
-        return self._run.job.clear_stale_deformations()
-
-    def _resolve_id(self, ref: object) -> str:
-        record = self._run.state.resolve(ref)
-        return record.id if record is not None else ""
-
-    def _unknown(self, ref: str) -> Refused:
-        """Return the refusal of a write row whose ``id`` names no section."""
-        return unknown_sections(self._run.state, [ref])
-
     def set_transforms(
         self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
     ) -> WriteResult:
@@ -258,22 +339,31 @@ class ContextWrites(ContextProposals):
         a transform that would turn over a section whose orientation is
         frozen, comes back as that section's row (``FROZEN``); the others are
         written as one undo step. Needs ``affine`` in the tool's ``writes``."""
+
+        def notes(result: WriteResult) -> dict[str, str]:
+            out: dict[str, str] = {}
+            for row in rows:
+                record = self._run.state.resolve(row.get("id"))
+                text = str(row.get("note") or (row.get("transform") or {}).get("note") or "")
+                if record is not None and record.id in result.written and text:
+                    out[record.id] = text
+            return out
+
+        return self._logged(["affine"], lambda: self._set_transforms(rows, expect), notes)
+
+    def _set_transforms(
+        self, rows: Sequence[Mapping[str, Any]], expect: Mapping[str, str] | None
+    ) -> WriteResult:
         from langslice.tools.changing import transforms
 
         self._require("affine")
         job = self._run.job
         with self.writing():
             out: dict[str, dict[str, Any]] = {}
-            ids = [self._resolve_id(row.get("id")) for row in rows]
-            stale = self._stale([name for name in ids if name], expect)
             written: list[str] = []
-            for row, name in zip(rows, ids, strict=True):
-                if not name:
-                    ref = str(row.get("id"))
-                    out[ref] = self._unknown(ref).payload(section_id=ref)
-                    continue
-                if name in stale:
-                    out[name] = stale[name]
+            for row, name, refusal in self._screened(rows, expect):
+                if refusal is not None:
+                    out[name] = refusal
                     continue
                 record = row.get("transform")
                 try:
@@ -283,7 +373,9 @@ class ContextWrites(ContextProposals):
                                 RefusalCode.BAD_ARGUMENT, "a row is {id, transform} or {id, params}"
                             )
                         note = str(row.get("note") or "")
-                        stored = self.transform_from_params(name, row["params"], note=note).affine
+                        stored = self._proposals.transform_from_params(
+                            name, row["params"], note=note
+                        ).affine
                     else:
                         stored = StoredAffine.from_json(cast("JsonObject", record))
                     assert stored is not None
@@ -304,7 +396,7 @@ class ContextWrites(ContextProposals):
         self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
     ) -> WriteResult:
         """Set deformations. A row is ``{"id", "map": native_xy, "note"?,
-        "meta"?}`` (the full map :meth:`deformation_from_map` takes) or
+        "meta"?}`` (the full map :meth:`Proposals.deformation_from_map` takes) or
         ``{"id", "deformation": proposal}`` (:meth:`DeformationProposal.row`).
         Each is stored as the deformation a native fit applies is (one undo
         step for the call; a later change to the section's placement clears
@@ -318,21 +410,35 @@ class ContextWrites(ContextProposals):
         job's write lock is taken, so a long tool holds it only to write.
         The ok rows carry the numbers ``DeformationProposal.summary`` has.
         Needs ``deformation`` in the tool's ``writes``."""
+
+        def notes(result: WriteResult) -> dict[str, str]:
+            out: dict[str, str] = {}
+            for row in rows:
+                record = self._run.state.resolve(row.get("id"))
+                held = row.get("deformation")
+                text = str(
+                    row.get("note")
+                    or (held.warp.step.get("note") if isinstance(held, DeformationProposal) else "")
+                    or ""
+                )
+                if record is not None and record.id in result.written and text:
+                    out[record.id] = text
+            return out
+
+        return self._logged(["deformation"], lambda: self._set_deformations(rows, expect), notes)
+
+    def _set_deformations(
+        self, rows: Sequence[Mapping[str, Any]], expect: Mapping[str, str] | None
+    ) -> WriteResult:
         from langslice.tools.changing import warps
 
         self._require("deformation")
         job = self._run.job
         out: dict[str, dict[str, Any]] = {}
         proposals: list[DeformationProposal] = []
-        for row in rows:
-            name = self._resolve_id(row.get("id"))
-            if not name:
-                ref = str(row.get("id"))
-                out[ref] = self._unknown(ref).payload(section_id=ref)
-                continue
-            frozen = section_refusal(job, name, "deformation")
-            if frozen is not None:
-                out[name] = frozen.payload(section_id=name)
+        for row, name, refusal in self._screened(rows, None, "deformation"):
+            if refusal is not None:
+                out[name] = refusal
                 continue
             proposal = row.get("deformation")
             try:
@@ -342,7 +448,7 @@ class ContextWrites(ContextProposals):
                             RefusalCode.BAD_ARGUMENT,
                             "a row is {id, map, note?, meta?} or {id, deformation}",
                         )
-                    proposal = self.deformation_from_map(
+                    proposal = self._proposals.deformation_from_map(
                         name, row["map"], note=str(row.get("note") or ""), meta=row.get("meta")
                     )
                 elif not isinstance(proposal, DeformationProposal) or proposal.id != name:
@@ -372,6 +478,19 @@ class ContextWrites(ContextProposals):
     ) -> WriteResult:
         """Mark atlas regions a section has lost (``rows``: ``{"id", "regions",
         "note"?}``; empty regions clear the marks), as ``mark_damage`` does."""
+        return self._logged(
+            ["damage"],
+            lambda: self._mark_damage(rows, expect),
+            lambda result: {
+                str(row.get("id")): str(row.get("note"))
+                for row in rows
+                if row.get("note") and str(row.get("id")) in result.written
+            },
+        )
+
+    def _mark_damage(
+        self, rows: Sequence[Mapping[str, Any]], expect: Mapping[str, str] | None
+    ) -> WriteResult:
         from langslice.tools.changing import damage
 
         self._require()
@@ -379,15 +498,9 @@ class ContextWrites(ContextProposals):
         with self.writing():
             out: list[dict[str, Any]] = []
             written: list[str] = []
-            for row in rows:
-                name = self._resolve_id(row.get("id"))
-                if not name:
-                    ref = str(row.get("id"))
-                    out.append(self._unknown(ref).payload(section_id=ref))
-                    continue
-                stale = self._stale([name], expect)
-                if name in stale:
-                    out.append(stale[name])
+            for row, name, refusal in self._screened(rows, expect):
+                if refusal is not None:
+                    out.append(refusal)
                     continue
                 try:
                     done = damage.mark_damage(
@@ -419,25 +532,36 @@ class ContextWrites(ContextProposals):
         the section's state, so undoing the call (a script's: the write)
         that made it hides it. A layer of the same name on the section
         replaces the earlier one. Only a ``write`` tool leaves layers."""
+        outer = self._call.depth == 0
+        self._call.begin()
+        try:
+            ref = self._add_layer(section, layer)
+        finally:
+            if outer:
+                self._call.settle()
+        if self._caller.is_script:
+            self._script_event(property=["layer"], sections=[ref.section], notes={}, layer=ref.name)
+        return ref
+
+    def _add_layer(self, section: object, layer: Layer) -> LayerRef:
         from langslice.job.plugin_store import register_layer
 
         self._require()
         layer.check()
-        record_id = self._record(section).id
+        held = self._records.get(section)
         job = self._run.job
         if layer.frame == "oriented":
-            held = self._record(section)
             layer = replace(
                 layer,
                 frame="section_px",
                 raster=unorient_raster(np.asarray(layer.raster), held.rotation_deg, held.flip),
             )
         with self.writing():
-            record = self._run.state.by_id(record_id)
+            record = self._run.state.by_id(held.id)
             assert record is not None
             before = job.snapshot()
             ref = register_layer(
-                job.layout, record, self._caller.name, self.call, layer, persist=job.persist
+                job.layout, record, self._caller.name, self._call.id, layer, persist=job.persist
             )
             job.commit(before)
         return LayerRef(

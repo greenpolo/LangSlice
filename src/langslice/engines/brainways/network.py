@@ -31,42 +31,27 @@ SHA-256 (:func:`fetch_weights`).
 
 from __future__ import annotations
 
-import enum
 import functools
-import hashlib
-import logging
 import math
 import os
-import shutil
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import numpy.typing as npt
 
+from langslice.engines._weights import fetch, weights_folder
 from langslice.engines.brainways.images import plane_input, section_input
 
 if TYPE_CHECKING:
     import torch
 
-logger = logging.getLogger(__name__)
-
-
-class Device(enum.StrEnum):
-    """Name where the network runs: ``auto`` is the GPU when torch sees one."""
-
-    AUTO = "auto"
-    CUDA = "cuda"
-    CPU = "cpu"
-
-
 REPOSITORY = "brainways/siamese"
 REVISION = "a0f3b1957b59b2ca2c02f7d094725c6dcb77783d"
 MODEL_ID = "5redxpw6"
 WEIGHTS_SHA256 = "a3835674e54dac85b4a89533405a8ad7a90ca6f862599423c58747871689f0fd"
-DEFAULT_CACHE = Path("~/.cache/langslice/brainways")
+ENGINE = "brainways"
 DOWNLOAD_TIMEOUT_S = 120
 AP_LIMITS = {"whs_sd_rat_39um": (122, 800)}
 BN_EPS = 1e-3
@@ -93,13 +78,13 @@ class Network:
     weights
         The checkpoint's tensors by their names in it, on ``device``.
     device
-        The torch device the network runs on, ``cuda`` or ``cpu``.
+        The torch device the network runs on, such as ``cuda:0`` or ``cpu``.
     sha256
         The checkpoint file's SHA-256.
     """
 
     weights: dict[str, torch.Tensor] = field(repr=False)
-    device: Device
+    device: str
     sha256: str
 
 
@@ -153,61 +138,6 @@ class ReferenceVolume:
         return np.asarray(divided, dtype=np.float32)
 
 
-def resolve_device(option: Device) -> Device:
-    """Choose the torch device for a ``device`` option.
-
-    Parameters
-    ----------
-    option
-        ``auto`` takes the GPU when torch sees one, as Brainways does.
-
-    Returns
-    -------
-    Device
-        ``cuda`` or ``cpu``.
-    """
-    import torch
-
-    if option != Device.AUTO:
-        return option
-    if torch.cuda.is_available():
-        return Device.CUDA
-    return Device.CPU
-
-
-def cuda_available() -> bool:
-    """Say whether torch sees a GPU.
-
-    Returns
-    -------
-    bool
-        True when torch can run on CUDA here.
-    """
-    import torch
-
-    return torch.cuda.is_available()
-
-
-def gpu_name(device: Device) -> str | None:
-    """Name the GPU a device runs on.
-
-    Parameters
-    ----------
-    device
-        The torch device the network runs on.
-
-    Returns
-    -------
-    str or None
-        The first GPU's name for ``cuda``; None for ``cpu``.
-    """
-    import torch
-
-    if device != Device.CUDA:
-        return None
-    return torch.cuda.get_device_name(0)
-
-
 def torch_version() -> str:
     """Give the version of torch the network runs on.
 
@@ -239,41 +169,17 @@ def fetch_weights(cache_folder: Path) -> Path:
     ------
     ValueError
         When the file fetched is not the checkpoint (its digest differs).
+    OSError
+        When the file cannot be fetched or written.
     """
-    path = cache_folder.expanduser() / REVISION / MODEL_ID / "state_dict.pt"
-    if path.is_file() and _sha256(path) == WEIGHTS_SHA256:
-        return path
-
+    path = cache_folder / REVISION / MODEL_ID / "state_dict.pt"
     endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
     url = f"{endpoint}/{REPOSITORY}/resolve/{REVISION}/{MODEL_ID}/state_dict.pt"
-    logger.info("Fetching Brainways' weights from %s", url)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_suffix(".part")
-    opened = cast("IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S))
-    with opened as response, partial.open("wb") as out:
-        shutil.copyfileobj(response, out, 1 << 20)
-
-    digest = _sha256(partial)
-    if digest != WEIGHTS_SHA256:
-        partial.unlink()
-        raise ValueError(
-            f"the file fetched from {url} has SHA-256 {digest}, not "
-            f"Brainways' checkpoint {WEIGHTS_SHA256}"
-        )
-    partial.replace(path)
-    return path
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(1 << 20):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return fetch(url, WEIGHTS_SHA256, path, timeout_s=DOWNLOAD_TIMEOUT_S)
 
 
 @functools.lru_cache(maxsize=2)
-def load_network(device: Device, *, cache_folder: str = "") -> Network:
+def load_network(device: str, *, cache_folder: str = "") -> Network:
     """Load Brainways' network, fetching its weights on first use.
 
     The network stays loaded for the life of the process, one per device
@@ -282,7 +188,7 @@ def load_network(device: Device, *, cache_folder: str = "") -> Network:
     Parameters
     ----------
     device
-        The torch device to run it on, ``cuda`` or ``cpu``.
+        The torch device to run it on, as ``_devices.resolve_device`` names it.
     cache_folder
         The folder that keeps the checkpoint; empty is
         ``~/.cache/langslice/brainways``.
@@ -299,7 +205,7 @@ def load_network(device: Device, *, cache_folder: str = "") -> Network:
     """
     import torch
 
-    path = fetch_weights(Path(cache_folder or DEFAULT_CACHE))
+    path = fetch_weights(weights_folder(ENGINE, cache_folder))
     state = cast(
         "dict[str, torch.Tensor]",
         torch.load(path, map_location="cpu", weights_only=True),

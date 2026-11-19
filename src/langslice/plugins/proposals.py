@@ -1,9 +1,9 @@
-"""The proposals of a plugin context: a method's result as LangSlice stores it.
+"""The proposals of a plugin context (``ctx.proposals``): a method's result as
+LangSlice stores it.
 
-:class:`ContextProposals` turns a method's answer into the transform or
+:class:`Proposals` turns a method's answer into the transform or
 deformation the job would store (:class:`TransformProposal`,
-:class:`DeformationProposal`) without writing it, and reads a linear
-registration file made elsewhere as placements for the job's sections.
+:class:`DeformationProposal`) without writing it.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import copy
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -26,11 +25,14 @@ from langslice.core.stack.affine import (
     StoredAffine,
 )
 from langslice.core.stack.deformation import DeformationRef
-from langslice.doors.plugins.frames import ContextFrames
+from langslice.plugins.caller import Call
+from langslice.plugins.frames import Grids
+from langslice.plugins.reads import Records
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformation import Grid
     from langslice.tools.changing.warps import MappedWarp
+    from langslice.tools.run import Run
 
 
 @dataclass(frozen=True)
@@ -38,7 +40,7 @@ class TransformProposal:
     """A transform a method found, in the forms LangSlice stores it:
     ``params`` are the six normalized numbers, ``knobs`` the same transform as
     ``interactive_transform`` takes it about ``pivot``, ``record`` the stored
-    record. :meth:`row` is a row for :meth:`ToolContext.set_transforms`."""
+    record. :meth:`row` is a row for ``ctx.writes.set_transforms``."""
 
     id: str
     params: tuple[float, ...]
@@ -56,11 +58,11 @@ class TransformProposal:
 @dataclass(frozen=True)
 class DeformationProposal:
     """A deformation a method found, as LangSlice stores it, not written yet
-    (:meth:`ToolContext.deformation_from_map`): ``summary`` holds its numbers
+    (``ctx.proposals.deformation_from_map``): ``summary`` holds its numbers
     (``displacement_mm`` max and median over the placed atlas footprint, in
     millimetres, ``fold_fraction``, ``flags``) and ``inverse_consistency_mm``
     how well the inverse LangSlice computed undoes it. :meth:`row` is a row
-    for :meth:`ToolContext.set_deformations`;
+    for ``ctx.writes.set_deformations``;
     ``overlay_picture(id, proposal={"deformation": proposal})`` draws it."""
 
     id: str
@@ -86,8 +88,36 @@ class DeformationProposal:
         )
 
 
-class ContextProposals(ContextFrames):
-    """Make transforms and deformations to write, and read placements."""
+DEGENERATE_DET = 1e-9
+
+
+def is_invertible(matrix: Any) -> bool:
+    """Whether the 2x2 or 3x3 *matrix* is finite and has a determinant
+    (of its 2x2 block) of at least :data:`DEGENERATE_DET`."""
+    m = np.asarray(matrix, dtype=np.float64)
+    return bool(np.isfinite(m).all() and abs(np.linalg.det(m[:2, :2])) >= DEGENERATE_DET)
+
+
+class Proposals:
+    """A method's result as LangSlice stores it, not written: ``ctx.proposals``.
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    call
+        The call: who it works for and its id, which a record keeps.
+    records
+        How a section is found by filename.
+    grids
+        The fit grids of the context's sections.
+    """
+
+    def __init__(self, run: Run, call: Call, records: Records, grids: Grids) -> None:
+        self._run = run
+        self._call = call
+        self._records = records
+        self._grids = grids
 
     def transform_from_matrix(
         self, section: object, matrix: Any, *, note: str = ""
@@ -99,10 +129,10 @@ class ContextProposals(ContextFrames):
         placement exactly as an Elastix fit is, in the six normalized numbers
         and the knobs about the section's stored pivot (else the canvas
         centre). ``ToolError`` ``BAD_ARGUMENT`` for a degenerate map."""
-        record = self._record(section)
-        grid = self._grid(record)
+        record = self._records.get(section)
+        grid = self._grids.of(record)
         m = np.vstack([np.asarray(matrix, dtype=np.float64).reshape(2, 3), [0.0, 0.0, 1.0]])
-        if not np.isfinite(m).all() or abs(np.linalg.det(m[:2, :2])) < 1e-9:
+        if not is_invertible(m):
             raise ToolError(RefusalCode.BAD_ARGUMENT, "the map is degenerate or not finite")
         step = np.asarray(grid.placement.atlas_to_section, dtype=np.float64) @ m
         params = cast("Grid", grid).params_after(IDENTITY_PARAMS, step)
@@ -126,7 +156,7 @@ class ContextProposals(ContextFrames):
             render_slice,
         )
 
-        record = self._record(section)
+        record = self._records.get(section)
         values = [float(v) for v in params]
         if len(values) != 6 or not np.isfinite(values).all():
             raise ToolError(
@@ -172,7 +202,7 @@ class ContextProposals(ContextFrames):
             pivot=pivot,
         )
         affine = StoredAffine(
-            kind=self._caller.label,
+            kind=self._call.caller.label,
             params=tuple(values),
             physical=physical,
             calibration=Calibration(section_um_per_px=scale, source=source),
@@ -237,7 +267,8 @@ class ContextProposals(ContextFrames):
 
         from langslice.tools.changing import warps
 
-        record = self._record(section)
+        self._call.begin()
+        record = self._records.get(section)
         try:
             plain_meta = to_jsonable(dict(meta or {}), strict=True)
             json.dumps(plain_meta)
@@ -252,10 +283,10 @@ class ContextProposals(ContextFrames):
             self._run.workspace,
             record.id,
             native_xy,
-            method=self._caller.label,
+            method=self._call.caller.label,
             step={"note": text} if text else {},
             provenance={
-                **self._caller.provenance(self.call, text, plain_meta),
+                **self._call.caller.provenance(self._call.id, text, plain_meta),
                 "input": "full map: fit-grid pixel centres to native atlas pixels",
                 **given,
             },
@@ -273,100 +304,3 @@ class ContextProposals(ContextFrames):
             inverse_consistency_mm={k: round(float(v), 4) for k, v in consistency.items()},
             warp=warp,
         )
-
-    def read_registration(
-        self,
-        path: str | Path,
-        *,
-        sections: Sequence[str] = (),
-        at: Mapping[object, Mapping[str, Any]] | None = None,
-        registered_on: str = "file",
-    ) -> dict[str, Any]:
-        """A linear registration file made elsewhere (QuickNII or VisuAlign
-        JSON/XML, DeepSlice CSV/JSON/XML, a LangSlice ``registration.json``)
-        as placements for this job's sections. Nothing is written. Returns
-        ``{"placements": [...], "refused": {id: reason}, "missing": [id],
-        "unmatched": [file names]}``; a placement is ``{"id", "position_mm",
-        "pitch_deg", "yaw_deg", "rotation_deg", "flip", "params",
-        "pixel_size_um", "pixel_size_source", "out_of_plane_um",
-        "in_plane"}``.
-
-        Each section is read in its CURRENT orientation (quarter turn and flip
-        as the agent set them), so ``rotation_deg`` and ``flip`` are the
-        section's own and ``params`` (six normalized numbers ``[a, b, tx, c, d,
-        ty]``) are for the oriented render: pass them to :meth:`set_transforms`
-        as ``{"id", "params"}`` (or :meth:`transform_from_params`) once the
-        section holds the placement they were read at. ``in_plane`` reads them
-        as rotation, scales and shear on that render
-        (:func:`~langslice.core.geometry.affine.decompose_affine`). *at*
-        ``{section: {"position_mm", "angles": (pitch, yaw)}}`` reads the file's
-        map on a plane of your choosing (the section's final position and
-        angles, e.g. a stack's propagated angle): ``params`` are then the
-        file's map projected onto that plane and ``out_of_plane_um`` is how far
-        the map lies off it; without *at* the file's own plane is used and
-        ``out_of_plane_um`` is about 0. ``params`` is None, with the reason in
-        ``params_note``, when the job has no pixel size for the section (the
-        six numbers are relative to a pixel size, so they mean nothing to a job
-        that would calibrate otherwise).
-
-        *registered_on* is the image the file's entries were made on:
-        ``"file"`` (default) the image file as stored, ``"oriented"`` the
-        section as its orientation turns and flips it, which is what a method
-        sees when the plugin hands it :meth:`section_raster`; the six numbers
-        are for the oriented render either way."""
-        from langslice.job.imports.placements import import_placements
-
-        self._fresh()
-        state = self._run.state
-        names = [self._record(ref).id for ref in sections] or [r.id for r in state.slices]
-        planes: dict[str, tuple[float, float, float]] = {}
-        for ref, plane in (at or {}).items():
-            name = self._record(ref).id
-            record = state.by_id(name)
-            assert record is not None
-            position = plane.get("position_mm", record.position_mm)
-            angles = plane.get("angles") or (record.pitch_deg, record.yaw_deg)
-            planes[name] = (float(position), float(angles[0]), float(angles[1]))
-        result = import_placements(
-            Path(path),
-            self._run.workspace,
-            section_ids=names,
-            orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices},
-            planes=planes,
-            registered_on=registered_on,
-        )
-        rows = []
-        for p in result.placements:
-            calibrated = p.pixel_size_source != "imported"
-            rows.append(
-                {
-                    "id": p.section_id,
-                    "position_mm": round(float(p.position_mm), 4),
-                    "pitch_deg": round(float(p.pitch_deg), 3),
-                    "yaw_deg": round(float(p.yaw_deg), 3),
-                    "rotation_deg": int(p.rotation_deg),
-                    "flip": bool(p.flip),
-                    "params": [float(v) for v in p.params] if calibrated else None,
-                    **(
-                        {}
-                        if calibrated
-                        else {
-                            "params_note": "the job has no pixel size for this section; the file's "
-                            "numbers imply one, which this job would not use"
-                        }
-                    ),
-                    "pixel_size_um": float(p.pixel_size_um),
-                    "pixel_size_source": p.pixel_size_source,
-                    "out_of_plane_um": round(float(p.placement.out_of_plane_um), 3),
-                    "in_plane": {
-                        k: (round(float(v), 5) if isinstance(v, float) else v)
-                        for k, v in p.placement.in_plane.items()
-                    },
-                }
-            )
-        return {
-            "placements": rows,
-            "refused": dict(result.refused),
-            "missing": list(result.missing),
-            "unmatched": list(result.unmatched),
-        }
