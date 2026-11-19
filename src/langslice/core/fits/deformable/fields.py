@@ -134,9 +134,7 @@ def mesh_fields(
     return (forward - points) * mm_per_px, (inverse - points) * mm_per_px
 
 
-def sample_field(
-    field_mm: np.ndarray, coordinates_px: np.ndarray
-) -> np.ndarray:
+def sample_field(field_mm: np.ndarray, coordinates_px: np.ndarray) -> np.ndarray:
     """Sample a field bilinearly at any pixel positions of its own grid.
 
     Parameters
@@ -154,17 +152,12 @@ def sample_field(
     """
     rows, cols = coordinates_px[..., 1], coordinates_px[..., 0]
     channels = [
-        _map_coordinates(
-            field_mm[..., k], [rows, cols], order=1, mode="nearest"
-        )
-        for k in range(2)
+        _map_coordinates(field_mm[..., k], [rows, cols], order=1, mode="nearest") for k in range(2)
     ]
     return np.stack(channels, axis=-1).astype(np.float32)
 
 
-def compose_forward(
-    step_mm: np.ndarray, previous_mm: np.ndarray, mm_per_px: float
-) -> np.ndarray:
+def compose_forward(step_mm: np.ndarray, previous_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
     """Compose a step's forward field onto the record it was fitted on.
 
     Section point p goes to p + w(p) in the previous frame, then on by the

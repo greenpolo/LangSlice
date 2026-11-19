@@ -94,8 +94,10 @@ def plane_angles(normal: np.ndarray, atlas: Any, plane: Plane) -> tuple[float, f
         unit = -unit
     tilt = math.degrees(math.acos(min(1.0, float(unit[normal_axis]))))
     if tilt > MAX_TILT_DEG:
-        raise ValueError(f"the registered plane is tilted {tilt:.1f} degrees from a "
-                         f"{plane} section (at most {MAX_TILT_DEG:.0f})")
+        raise ValueError(
+            f"the registered plane is tilted {tilt:.1f} degrees from a "
+            f"{plane} section (at most {MAX_TILT_DEG:.0f})"
+        )
     axes = np.eye(3)
     s_row = float(np.cross(axes[col_axis], axes[normal_axis])[row_axis])
     s_col = float(np.cross(axes[row_axis], axes[normal_axis])[col_axis])
@@ -110,8 +112,7 @@ def plane_angles(normal: np.ndarray, atlas: Any, plane: Plane) -> tuple[float, f
     return pitch, yaw
 
 
-def plane_position_mm(origin_um: np.ndarray, normal: np.ndarray, atlas: Any,
-                      plane: Plane) -> float:
+def plane_position_mm(origin_um: np.ndarray, normal: np.ndarray, atlas: Any, plane: Plane) -> float:
     """The position (atlas-native mm along the normal axis) at which the plane
     through *origin_um* with physical *normal* crosses the volume's in-plane
     centre, the point
@@ -122,8 +123,10 @@ def plane_position_mm(origin_um: np.ndarray, normal: np.ndarray, atlas: Any,
     res = np.asarray(context.resolution_um, dtype=np.float64)
     shape = context.shape
     n = np.asarray(normal, dtype=np.float64)
-    centre = (n[row_axis] * (shape[row_axis] - 1) / 2.0 * res[row_axis]
-              + n[col_axis] * (shape[col_axis] - 1) / 2.0 * res[col_axis])
+    centre = (
+        n[row_axis] * (shape[row_axis] - 1) / 2.0 * res[row_axis]
+        + n[col_axis] * (shape[col_axis] - 1) / 2.0 * res[col_axis]
+    )
     along = (float(n @ np.asarray(origin_um, dtype=np.float64)) - centre) / n[normal_axis]
     return along / 1000.0
 
@@ -178,13 +181,17 @@ class RecoveredPlacement:
 
         width, height = self.render_size
         matrix = denormalized_affine(self.params, self.render_size)
-        return {**physical_params(matrix, pivot=(width / 2.0, height / 2.0),
-                                  um_per_px=self.render_um_per_px),
-                "pivot": [0.5, 0.5]}
+        return {
+            **physical_params(
+                matrix, pivot=(width / 2.0, height / 2.0), um_per_px=self.render_um_per_px
+            ),
+            "pivot": [0.5, 0.5],
+        }
 
 
-def _native_to_um(atlas: Any, position_mm: float, plane: Plane, pitch: float,
-                  yaw: float) -> np.ndarray:
+def _native_to_um(
+    atlas: Any, position_mm: float, plane: Plane, pitch: float, yaw: float
+) -> np.ndarray:
     res = np.asarray(atlas_space_context(atlas).resolution_um, dtype=np.float64)
     return np.diag(res) @ plane_index_affine(atlas, position_mm, plane, pitch, yaw)
 
@@ -230,21 +237,30 @@ def placement_from_pixel_map(
     else:
         pitch, yaw = float(at[1]), float(at[2])
     normal_axis, row_axis, col_axis = plane_axes(atlas, plane)
-    exact_normal = build_rotation_matrix(pitch, yaw, row_axis=row_axis,
-                                         col_axis=col_axis)[:, normal_axis]
-    position = (plane_position_mm(matrix[:, 2], exact_normal, atlas, plane) if at is None
-                else float(at[0]))
+    exact_normal = build_rotation_matrix(pitch, yaw, row_axis=row_axis, col_axis=col_axis)[
+        :, normal_axis
+    ]
+    position = (
+        plane_position_mm(matrix[:, 2], exact_normal, atlas, plane) if at is None else float(at[0])
+    )
     native_to_um = _native_to_um(atlas, position, plane, pitch, yaw)
 
     basis = native_to_um[:, :2]
     pinv = np.linalg.pinv(basis)
     linear = pinv @ matrix[:, :2]
     offset = pinv @ (matrix[:, 2] - native_to_um[:, 2])
-    file_to_native_rc = np.array([[*linear[0], offset[0]], [*linear[1], offset[1]],
-                                  [0.0, 0.0, 1.0]])
+    file_to_native_rc = np.array(
+        [[*linear[0], offset[0]], [*linear[1], offset[1]], [0.0, 0.0, 1.0]]
+    )
     width, height = sizes.file_size
-    corners = np.array([[-0.5, -0.5, 1.0], [-0.5, width - 0.5, 1.0],
-                        [height - 0.5, -0.5, 1.0], [height - 0.5, width - 0.5, 1.0]]).T
+    corners = np.array(
+        [
+            [-0.5, -0.5, 1.0],
+            [-0.5, width - 0.5, 1.0],
+            [height - 0.5, -0.5, 1.0],
+            [height - 0.5, width - 0.5, 1.0],
+        ]
+    ).T
     drawn = native_to_um @ file_to_native_rc @ corners
     given = matrix @ corners
     out_of_plane = float(np.abs(exact_normal @ (given - drawn)).max())
@@ -258,8 +274,9 @@ def placement_from_pixel_map(
     def candidate(rotation: int, flip: bool) -> tuple[np.ndarray, tuple[int, int], Any]:
         render_size = (unturned[1], unturned[0]) if rotation % 180 == 90 else unturned
         if render_size not in geometries:
-            geometries[render_size] = canvas_geometry(render_size, render_um, atlas, position,
-                                                      plane, pitch, yaw)
+            geometries[render_size] = canvas_geometry(
+                render_size, render_um, atlas, position, plane, pitch, yaw
+            )
         geometry = geometries[render_size]
         atlas_to_frame = geometry.atlas_to_section_frame()
         file_to_render = orientation_matrix(unturned, rotation, flip) @ file_to_unturned
@@ -276,28 +293,34 @@ def placement_from_pixel_map(
         for flip in (False, True):
             for rotation in ROTATIONS:
                 placed, render_size, _geometry = candidate(rotation, flip)
-                parts = decompose_affine(normalized_affine(placed[:2], render_size),
-                                         render_size)
-                scored.append((bool(parts["mirrored"]), abs(float(parts["rotation_deg"])),
-                               rotation, flip))
+                parts = decompose_affine(normalized_affine(placed[:2], render_size), render_size)
+                scored.append(
+                    (bool(parts["mirrored"]), abs(float(parts["rotation_deg"])), rotation, flip)
+                )
         _mirrored, _turn, rotation, flip = min(scored)
         chosen = (rotation, flip)
     placed, render_size, _geometry = candidate(*chosen)
     a, b, tx, c, d, ty = normalized_affine(placed[:2], render_size)
     params = (a, b, tx, c, d, ty)
 
-    atlas_to_render, _ = linear_placement_matrix(render_size, render_um, atlas, position,
-                                                 plane, pitch, yaw, params)
+    atlas_to_render, _ = linear_placement_matrix(
+        render_size, render_um, atlas, position, plane, pitch, yaw, params
+    )
     file_to_render = orientation_matrix(unturned, chosen[0], chosen[1]) @ file_to_unturned
     back = SWAP @ np.linalg.inv(atlas_to_render) @ file_to_render @ SWAP
     in_plane_error = float(np.abs(back @ corners - file_to_native_rc @ corners).max())
     native_px_in_file = float(np.sqrt(abs(np.linalg.det(np.linalg.inv(linear)))))
     return RecoveredPlacement(
-        position_mm=float(position), pitch_deg=float(pitch), yaw_deg=float(yaw),
-        rotation_deg=int(chosen[0]), flip=bool(chosen[1]),
+        position_mm=float(position),
+        pitch_deg=float(pitch),
+        yaw_deg=float(yaw),
+        rotation_deg=int(chosen[0]),
+        flip=bool(chosen[1]),
         params=params,
-        file_um_per_px=float(file_um_per_px), render_um_per_px=render_um,
-        out_of_plane_um=out_of_plane, in_plane_error_px=in_plane_error * native_px_in_file,
+        file_um_per_px=float(file_um_per_px),
+        render_um_per_px=render_um,
+        out_of_plane_um=out_of_plane,
+        in_plane_error_px=in_plane_error * native_px_in_file,
         in_plane=decompose_affine(list(params), render_size),
         render_size=(int(render_size[0]), int(render_size[1])),
     )

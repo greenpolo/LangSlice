@@ -48,9 +48,7 @@ _FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def describe_step(
-    old: Mapping[str, Any], new: Mapping[str, Any]
-) -> HistoryStep:
+def describe_step(old: Mapping[str, Any], new: Mapping[str, Any]) -> HistoryStep:
     """The step that took state *old* to state *new* (both ``to_dict``
     snapshots): the sections it touched and the field groups it changed. A
     deformation that a placement or transform change cleared is part of that
@@ -62,23 +60,13 @@ def describe_step(
         before = held.get(row["id"])
         if before is None:
             continue
-        changed = [
-            name
-            for name, keys in _FIELDS
-            if any(before.get(k) != row.get(k) for k in keys)
-        ]
+        changed = [name for name, keys in _FIELDS if any(before.get(k) != row.get(k) for k in keys)]
         if changed:
             sections.append(row["id"])
             groups += [name for name in changed if name not in groups]
-    if (
-        old.get("interval_breaks") != new.get("interval_breaks")
-        and "placement" not in groups
-    ):
+    if old.get("interval_breaks") != new.get("interval_breaks") and "placement" not in groups:
         groups.append("placement")
-    if (
-        old.get("cutting_angles_deg") != new.get("cutting_angles_deg")
-        and "placement" not in groups
-    ):
+    if old.get("cutting_angles_deg") != new.get("cutting_angles_deg") and "placement" not in groups:
         groups.append("placement")
     if old.get("notes") != new.get("notes") and not groups:
         groups = ["notes"]
@@ -188,9 +176,7 @@ def _step_count(steps: object) -> int:
     except (OverflowError, ValueError):
         count = 0
     if count < 1 or count != steps:
-        raise Refused(
-            RefusalCode.BAD_ARGS, "steps is a whole number, 1 or more."
-        )
+        raise Refused(RefusalCode.BAD_ARGS, "steps is a whole number, 1 or more.")
     return count
 
 

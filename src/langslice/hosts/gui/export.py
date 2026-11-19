@@ -109,9 +109,7 @@ def _quint(folder: Path, kind: str) -> Written:
         files = [Path(path) for path in job.export_stack()]
     named = [path for path in files if path.name == QUINT_FILES[kind]]
     if not named:
-        raise Refused(
-            RefusalCode.NOTHING_EXPORTED, "no section has a placement to write"
-        )
+        raise Refused(RefusalCode.NOTHING_EXPORTED, "no section has a placement to write")
     count = sum(1 for path in files if path.suffix == ".png")
     return Written(str(named[0]), f"{count} sections", 0)
 
@@ -179,9 +177,7 @@ class Exports:
         with self._lock:
             return self._states.get(Path(folder), ExportState())
 
-    def start(
-        self, folder: Path, kind: str, *, landmarks: int = MAX_POINTS
-    ) -> ExportState:
+    def start(self, folder: Path, kind: str, *, landmarks: int = MAX_POINTS) -> ExportState:
         """Start an export of *kind* for the job in *folder*.
 
         Parameters
@@ -207,19 +203,13 @@ class Exports:
         if kind not in FORMATS:
             raise ExportError(f"LangSlice cannot export {kind!r}")
         if not MIN_LANDMARKS <= landmarks <= MAX_POINTS:
-            raise ExportError(
-                f"A warp takes {MIN_LANDMARKS} to {MAX_POINTS} landmarks."
-            )
+            raise ExportError(f"A warp takes {MIN_LANDMARKS} to {MAX_POINTS} landmarks.")
         folder = Path(folder)
         with self._lock:
             last = self._states.get(folder)
             if last is not None and last.state == ExportStatus.RUNNING:
-                raise ExportError(
-                    "An export of this job is still being written."
-                )
-            running = ExportState(
-                state=ExportStatus.RUNNING, format=kind, started=time.time()
-            )
+                raise ExportError("An export of this job is still being written.")
+            running = ExportState(state=ExportStatus.RUNNING, format=kind, started=time.time())
             self._states[folder] = running
         threading.Thread(
             target=self._work,
@@ -242,15 +232,11 @@ class Exports:
             )
         except IMAGE_FAILURES as exc:
             message = str(exc) or type(exc).__name__
-            done = ExportState(
-                state=ExportStatus.FAILED, format=kind, message=message
-            )
+            done = ExportState(state=ExportStatus.FAILED, format=kind, message=message)
         seconds = round(time.perf_counter() - started, 1)
         with self._lock:
             began = self._states[folder].started
-            self._states[folder] = replace(
-                done, started=began, seconds=seconds
-            )
+            self._states[folder] = replace(done, started=began, seconds=seconds)
 
 
 def reveal(folder: Path) -> None:
@@ -270,9 +256,7 @@ def reveal(folder: Path) -> None:
     if not target.is_dir():
         raise ExportError("Nothing has been exported from this job yet.")
     if sys.platform == "win32":
-        os.startfile(target)  # noqa: S606
+        os.startfile(target)
         return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
-    subprocess.Popen(  # noqa: S603
-        [opener, str(target)], stdin=subprocess.DEVNULL
-    )
+    subprocess.Popen([opener, str(target)], stdin=subprocess.DEVNULL)

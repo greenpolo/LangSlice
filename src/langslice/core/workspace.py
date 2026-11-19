@@ -82,19 +82,18 @@ class Workspace:
     render_scale: dict[tuple[str, bool, int, int, str], float] = field(
         default_factory=dict, repr=False
     )
-    source_cache: dict[str, tuple[Image.Image, float]] = field(
-        default_factory=dict, repr=False
-    )
+    source_cache: dict[str, tuple[Image.Image, float]] = field(default_factory=dict, repr=False)
     channel_cache: dict[str, tuple[tuple[str, ...], list[Any]]] = field(
         default_factory=dict, repr=False
     )
     intensity_cache: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
     frame_cache: OrderedDict[str, tuple[tuple[Any, ...], Any]] = field(
-        default_factory=OrderedDict, repr=False)
+        default_factory=OrderedDict, repr=False
+    )
     plane_cache: OrderedDict[tuple[float, str, float, float, bool], Image.Image] = field(
-        default_factory=OrderedDict, repr=False)
-    image_cache: OrderedDict[tuple[str, str], Any] = field(
-        default_factory=OrderedDict, repr=False)
+        default_factory=OrderedDict, repr=False
+    )
+    image_cache: OrderedDict[tuple[str, str], Any] = field(default_factory=OrderedDict, repr=False)
     job_folder: str | None = None
     _atlas: Any = field(default=None, repr=False)
     _range: tuple[float, float] | None = field(default=None, repr=False)
@@ -160,17 +159,13 @@ class Workspace:
     @property
     def position_range(self) -> tuple[float, float]:
         if self._range is None:
-            self._range = get_position_range_mm(
-                self.atlas, plane=self.settings.plane
-            )
+            self._range = get_position_range_mm(self.atlas, plane=self.settings.plane)
         return self._range
 
     @property
     def axis_ends(self) -> tuple[str, str]:
         """(low, high) anatomical ends of this run's slicing axis."""
-        return slice_axis_ends(
-            atlas_space_context(self.atlas), self.settings.plane
-        )
+        return slice_axis_ends(atlas_space_context(self.atlas), self.settings.plane)
 
     def calibration(self, slice_id: str) -> tuple[float | None, str]:
         """``(micrometres per pixel of the FILE, source)`` for one section.
@@ -183,8 +178,7 @@ class Workspace:
         "")`` when nothing says; the caller then reports the section as
         uncalibrated.
         """
-        host = self.settings.file_pixel_sizes_um.get(
-            slice_id, self.settings.stack_pixel_size_um)
+        host = self.settings.file_pixel_sizes_um.get(slice_id, self.settings.stack_pixel_size_um)
         if host is not None:
             return host, "host"
         if slice_id not in self._pixel_sizes:

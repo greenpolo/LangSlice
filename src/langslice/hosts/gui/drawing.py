@@ -89,9 +89,7 @@ def draw_thumb(opened: Opened, section: Section, edge: int) -> Image.Image:
     return render_slice(opened.workspace, section, long_edge=edge, look=raw)
 
 
-def draw_overlay(
-    opened: Opened, state: Stack, section: Section, edge: int
-) -> Image.Image:
+def draw_overlay(opened: Opened, state: Stack, section: Section, edge: int) -> Image.Image:
     """Draw a section under its current registration.
 
     Parameters
@@ -121,9 +119,7 @@ def draw_overlay(
     return content(pictures[0])
 
 
-def draw_atlas(
-    opened: Opened, state: Stack, position_mm: float, edge: int
-) -> Image.Image:
+def draw_atlas(opened: Opened, state: Stack, position_mm: float, edge: int) -> Image.Image:
     """Draw the atlas plane at a position, at the stack's view angles.
 
     Parameters
@@ -142,9 +138,7 @@ def draw_atlas(
     Image.Image
         The atlas template there.
     """
-    request = LookRequest(
-        mode="atlas", positions_mm=(position_mm,), long_edge=edge
-    )
+    request = LookRequest(mode="atlas", positions_mm=(position_mm,), long_edge=edge)
     return content(look(opened.workspace, state, request)[0])
 
 

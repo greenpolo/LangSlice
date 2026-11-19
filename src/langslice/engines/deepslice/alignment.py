@@ -97,17 +97,11 @@ def propagated(
     for _ in range(2):
         good = _rows(anchorings[~bad])
         depths = [_center_depth(row) for row in good]
-        dv_angle = _mean_angle(
-            [_angle(row, DORSOVENTRAL) for row in good], depths
-        )
-        ml_angle = _mean_angle(
-            [_angle(row, MEDIOLATERAL) for row in good], depths
-        )
+        dv_angle = _mean_angle([_angle(row, DORSOVENTRAL) for row in good], depths)
+        ml_angle = _mean_angle([_angle(row, MEDIOLATERAL) for row in good], depths)
         votes.append((dv_angle, ml_angle))
         turned = [
-            _turned(
-                _turned(row, DORSOVENTRAL, dv_angle), MEDIOLATERAL, ml_angle
-            )
+            _turned(_turned(row, DORSOVENTRAL, dv_angle), MEDIOLATERAL, ml_angle)
             for row in _rows(anchorings)
         ]
         anchorings = np.array(turned)
@@ -177,9 +171,7 @@ def _floats(values: npt.NDArray[np.float64]) -> list[float]:
     return cast("list[float]", values.tolist())
 
 
-def _average(
-    values: npt.NDArray[np.float64], weights: Sequence[float]
-) -> float:
+def _average(values: npt.NDArray[np.float64], weights: Sequence[float]) -> float:
     """Return numpy's weighted average (a float64 numpy leaves untyped)."""
     return float(cast("np.float64", np.average(values, weights=weights)))
 
@@ -198,9 +190,7 @@ def _center_depth(section: Anchorings) -> float:
     """Return the plane's depth at the middle of the brain's other axes."""
     plane = _plane(section)
     width, height = 456, 320
-    linear_point = (
-        ((width / 2) * plane.nx) + ((height / 2) * plane.nz) + plane.k
-    )
+    linear_point = ((width / 2) * plane.nx) + ((height / 2) * plane.nz) + plane.k
     return float(-(linear_point / plane.ny))
 
 
@@ -249,9 +239,7 @@ def _angle(section: Anchorings, direction: str) -> float:
 def _gaussian_weights(size: int) -> npt.NDArray[np.float64]:
     """Return DeepSlice's weights over ``size`` depths, peaked mid-brain."""
     x = np.linspace(-np.pi, np.pi, size)
-    weights = cast(
-        "npt.NDArray[np.float64]", np.exp(-(x**2) / 2) / np.sqrt(2 * np.pi)
-    )
+    weights = cast("npt.NDArray[np.float64]", np.exp(-(x**2) / 2) / np.sqrt(2 * np.pi))
     weights[weights > size - 1] = size - 1
     weights[weights < 0] = 0
     return weights
@@ -275,9 +263,7 @@ def _turned(section: Anchorings, direction: str, mean: float) -> Anchorings:
     return _rotated(section, -difference, direction)
 
 
-def _rotated(
-    section: Anchorings, degrees: float, direction: str
-) -> Anchorings:
+def _rotated(section: Anchorings, degrees: float, direction: str) -> Anchorings:
     """Rotate a plane about the axis DeepSlice picks through the volume."""
     plane = _plane(section)
     points = _absolute(section)
@@ -318,9 +304,7 @@ def _section_plane(plane: _Plane) -> tuple[int, tuple[float, float, float]]:
     return nearest, candidates[nearest]
 
 
-def _axis(
-    translated: Anchorings, plane: _Plane, nearest: int, direction: str
-) -> Anchorings:
+def _axis(translated: Anchorings, plane: _Plane, nearest: int, direction: str) -> Anchorings:
     """Return the axis a plane turns about (DeepSlice's ``get_axis``)."""
     tx, ty, tz = _at(translated, 0), _at(translated, 1), _at(translated, 2)
     hx, hy, hz = tx / 2, ty / 2, tz / 2

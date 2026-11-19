@@ -66,23 +66,31 @@ def resolution_range(opened: Any) -> dict[str, int]:
         PICTURE_EDGES,
     )
 
-    return {"min": MIN_RESOLUTION, "max": int(opened.max_view_edge),
-            "default": PICTURE_EDGES[AUTO_RESOLUTION][1]}
+    return {
+        "min": MIN_RESOLUTION,
+        "max": int(opened.max_view_edge),
+        "default": PICTURE_EDGES[AUTO_RESOLUTION][1],
+    }
 
 
 def facts(opened: Any) -> dict[str, Any]:
     """The CLI job's viewer, ``look`` resolution range and image model, as
     ``init`` reports them."""
     state = image_model_state(opened.spec, connected=opened.image_model_connected)
-    return {"viewer": opened.viewer or "claude", "resolution": resolution_range(opened),
-            **({"image_model": state} if state is not None else {})}
+    return {
+        "viewer": opened.viewer or "claude",
+        "resolution": resolution_range(opened),
+        **({"image_model": state} if state is not None else {}),
+    }
 
 
 def role_line(folder: str) -> str:
     """The launch prompt's first line."""
-    return (f"Register the brain in job folder {folder}. Call "
-            f'start_job(image_folder="{folder}") first: it opens the job and gives you '
-            "its tools.")
+    return (
+        f"Register the brain in job folder {folder}. Call "
+        f'start_job(image_folder="{folder}") first: it opens the job and gives you '
+        "its tools."
+    )
 
 
 def scripting_prompt(
@@ -126,8 +134,7 @@ def scripting_prompt(
     return mcp_prompt(job_folder, atlas_loader, scripting=paragraph)
 
 
-def mcp_prompt(job_folder: Path, atlas_loader: Any = None, *,
-               scripting: str = "") -> str:
+def mcp_prompt(job_folder: Path, atlas_loader: Any = None, *, scripting: str = "") -> str:
     """The ``register`` prompt for the job in *job_folder*; the MCP package is
     needed (``ImportError`` when it is missing). *scripting*: the paragraph
     on scripts (:func:`scripting_prompt`)."""
@@ -157,8 +164,9 @@ def save(layout: Any, role: str, prompt: str) -> Path:
     """Save *prompt* exactly in ``logs/launches/<next six-digit number>_<role>.md``."""
     folder: Path = layout.launches_dir
     folder.mkdir(parents=True, exist_ok=True)
-    taken = [int(match.group(1)) for path in folder.iterdir()
-             if (match := _NUMBERED.match(path.name))]
+    taken = [
+        int(match.group(1)) for path in folder.iterdir() if (match := _NUMBERED.match(path.name))
+    ]
     number = max(taken, default=0) + 1
     while True:
         path = folder / f"{number:06d}_{role}.md"

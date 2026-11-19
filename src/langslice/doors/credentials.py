@@ -36,8 +36,9 @@ def _key_file_present(provider: str) -> bool:
     if provider != "anthropic-api":
         return False
     try:
-        return bool((Path.home() / ".langslice" / "anthropic_api_key")
-                    .read_text(encoding="utf-8").strip())
+        return bool(
+            (Path.home() / ".langslice" / "anthropic_api_key").read_text(encoding="utf-8").strip()
+        )
     except OSError:
         return False
 
@@ -68,8 +69,10 @@ def _read_keys() -> dict[str, str]:
         if provider in _KEY_ENV and isinstance(key, str) and key.strip():
             keys[provider] = key
         else:
-            logger.warning("Skipping the saved API-key entry %r: not a provider key this "
-                           "version uses.", provider)
+            logger.warning(
+                "Skipping the saved API-key entry %r: not a provider key this version uses.",
+                provider,
+            )
     return keys
 
 
@@ -126,8 +129,7 @@ def image_model_connected(provider: str) -> bool:
     return bool(_api_status(canonical, keys)["configured"])
 
 
-SAVED_IMAGE_PROVIDERS: tuple[str, ...] = (
-    "openai-oauth", "openai-api", "gemini-api")
+SAVED_IMAGE_PROVIDERS: tuple[str, ...] = ("openai-oauth", "openai-api", "gemini-api")
 
 
 def saved_image_provider() -> str | None:
@@ -144,8 +146,7 @@ def saved_image_provider() -> str | None:
         The provider's name; None when no sign-in or key is saved.
     """
     chosen = user_settings.read().get("connection")
-    order = [name for name in (chosen, *SAVED_IMAGE_PROVIDERS)
-             if name in SAVED_IMAGE_PROVIDERS]
+    order = [name for name in (chosen, *SAVED_IMAGE_PROVIDERS) if name in SAVED_IMAGE_PROVIDERS]
     for provider in dict.fromkeys(order):
         if image_model_connected(provider):
             return provider

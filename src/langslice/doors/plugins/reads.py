@@ -122,8 +122,7 @@ class SectionRaster:
 
         height, width = self.array.shape[:2]
         fractions = (np.asarray(xy, dtype=np.float64) + 0.5) / np.array(self.file_size)
-        return transform(np.linalg.inv(self._matrix()), fractions) * np.array(
-            [width, height]) - 0.5
+        return transform(np.linalg.inv(self._matrix()), fractions) * np.array([width, height]) - 0.5
 
     def mask_to_section_px(self, raster: Any) -> np.ndarray:
         """A raster in ``array``'s orientation as one in the file's."""
@@ -209,22 +208,33 @@ class ContextReads:
             affine = AffineView(
                 kind=transform.kind,
                 matrix=tuple(float(v) for v in params) if params else None,
-                knobs=knobs, mirrored=transform.mirrored)
+                knobs=knobs,
+                mirrored=transform.mirrored,
+            )
         size = render_sizes(workspace, record.id).file_size
         pixel_size, source = workspace.calibration(record.id)
         held = None if record.deformation is None else deformation_to_json(record.deformation)
         return SectionView(
-            id=record.id, index=int(record.index_corrected), file_size=(size[0], size[1]),
-            pixel_size_um=pixel_size, pixel_size_source=source,
-            position_mm=record.position_mm, angles=record.angles, flip=bool(record.flip),
-            rotation_deg=int(record.rotation_deg), affine=affine,
-            deformation=None if held is None else {
-                key: copy.deepcopy(held[key]) for key in ("key", "kind", "steps")
-                if key in held},
-            damaged_regions=tuple(record.damaged_regions), damage_note=record.damage_note,
+            id=record.id,
+            index=int(record.index_corrected),
+            file_size=(size[0], size[1]),
+            pixel_size_um=pixel_size,
+            pixel_size_source=source,
+            position_mm=record.position_mm,
+            angles=record.angles,
+            flip=bool(record.flip),
+            rotation_deg=int(record.rotation_deg),
+            affine=affine,
+            deformation=None
+            if held is None
+            else {key: copy.deepcopy(held[key]) for key in ("key", "kind", "steps") if key in held},
+            damaged_regions=tuple(record.damaged_regions),
+            damage_note=record.damage_note,
             layers=tuple(ref.name for ref in record.layers),
-            frozen=tuple(name for name in freeze.PROPERTIES
-                         if name in self._run.spec.frozen_for(record.id)))
+            frozen=tuple(
+                name for name in freeze.PROPERTIES if name in self._run.spec.frozen_for(record.id)
+            ),
+        )
 
     def sections(self) -> list[SectionView]:
         """Every section, in stack order."""
@@ -244,7 +254,8 @@ class ContextReads:
             orientation=str(getattr(atlas, "orientation", "")),
             species=self._run.workspace.species,
             plane=self._run.state.plane,
-            shape=tuple(int(v) for v in np.shape(atlas.annotation)))
+            shape=tuple(int(v) for v in np.shape(atlas.annotation)),
+        )
 
     def channels(self, section: object) -> tuple[str, ...]:
         """The names of the section's raw channels, in file order (``red``,
@@ -311,8 +322,9 @@ class ContextReads:
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         if view.stale:
-            raise ToolError(RefusalCode.STALE_MASK, ops_masks.stale_mask(
-                self._run.job, record.id, str(name)))
+            raise ToolError(
+                RefusalCode.STALE_MASK, ops_masks.stale_mask(self._run.job, record.id, str(name))
+            )
         return view
 
     def section_inputs(self, section: object, *, deformation: bool = False) -> str:
@@ -322,17 +334,28 @@ class ContextReads:
         write: a section that changed meanwhile comes back ``STALE_INPUT``."""
         return section_inputs(self._run.state, self._record(section), deformation=deformation)
 
-    def section_image(self, section: object, *, level: str | int = "auto",
-                      images: Sequence[str] | None = None, raw: bool = False) -> np.ndarray:
+    def section_image(
+        self,
+        section: object,
+        *,
+        level: str | int = "auto",
+        images: Sequence[str] | None = None,
+        raw: bool = False,
+    ) -> np.ndarray:
         """The pixels of :meth:`section_raster`. Their frame is NOT the image
         file's (turned and flipped as the orientation sets it, and reduced):
         convert coordinates with :meth:`section_raster`'s methods before they
         go in a ``section_px`` layer."""
         return self.section_raster(section, level=level, images=images, raw=raw).array
 
-    def section_raster(self, section: object, *, level: str | int = "auto",
-                       images: Sequence[str] | None = None, raw: bool = False,
-                       ) -> SectionRaster:
+    def section_raster(
+        self,
+        section: object,
+        *,
+        level: str | int = "auto",
+        images: Sequence[str] | None = None,
+        raw: bool = False,
+    ) -> SectionRaster:
         """The section as its orientation sets it (RGB ``uint8`` ``array``,
         never larger than the source) with the frame it is in
         (:class:`SectionRaster`). *level* is the long edge in pixels, or ``low`` /
@@ -363,45 +386,62 @@ class ContextReads:
         elif level in PICTURE_EDGES:
             edge = PICTURE_EDGES[level][1]
         else:
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            f"level is a pixel size or one of "
-                            f"{', '.join(PICTURE_EDGES)}; got {level!r}")
+            raise ToolError(
+                RefusalCode.BAD_ARGS,
+                f"level is a pixel size or one of {', '.join(PICTURE_EDGES)}; got {level!r}",
+            )
         names = [str(name) for name in images or ()]
         known = self.image_names(record.id)
         unknown = [name for name in names if name not in known]
         if unknown:
-            raise ToolError(RefusalCode.UNKNOWN_IMAGE,
-                            f"{record.id} has no section image "
-                            f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
+            raise ToolError(
+                RefusalCode.UNKNOWN_IMAGE,
+                f"{record.id} has no section image "
+                f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}",
+            )
         look: Any = None
         if raw:
             if len(names) > 1 or (names and kind_of(workspace, record, names[0]) != "raw"):
-                raise ToolError(RefusalCode.BAD_ARGS,
-                                "raw takes no image (the file as it is) or one "
-                                "raw channel name")
+                raise ToolError(
+                    RefusalCode.BAD_ARGS,
+                    "raw takes no image (the file as it is) or one raw channel name",
+                )
             look = {"image": names[0]} if names else {"file": True}
         elif len(names) == 1:
             look = {"image": names[0]}
         elif names:
             if any(kind_of(workspace, record, name) != "raw" for name in names):
-                raise ToolError(RefusalCode.BAD_ARGS,
-                                "several images are drawn together only when all "
-                                "are raw channels")
+                raise ToolError(
+                    RefusalCode.BAD_ARGS,
+                    "several images are drawn together only when all are raw channels",
+                )
             look = {"overlay": names}
         try:
             image = render_slice(workspace, record, long_edge=edge, look=look)
         except ValueError as exc:
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         return SectionRaster(
-            id=record.id, array=np.asarray(image.convert("RGB")),
+            id=record.id,
+            array=np.asarray(image.convert("RGB")),
             file_size=render_sizes(workspace, record.id).file_size,
-            rotation_deg=int(record.rotation_deg), flip=bool(record.flip))
+            rotation_deg=int(record.rotation_deg),
+            flip=bool(record.flip),
+        )
 
     def layers(self, section: object) -> list[LayerRef]:
         """The layers the section shows now."""
         record = self._record(section)
-        return [LayerRef(id=ref.id, section=record.id, name=ref.name, kind=ref.kind,
-                         frame=ref.frame, file=ref.file) for ref in record.layers]
+        return [
+            LayerRef(
+                id=ref.id,
+                section=record.id,
+                name=ref.name,
+                kind=ref.kind,
+                frame=ref.frame,
+                file=ref.file,
+            )
+            for ref in record.layers
+        ]
 
 
 def as_tool_error(refusal: Refused) -> ToolError:
@@ -418,5 +458,8 @@ def as_tool_error(refusal: Refused) -> ToolError:
         The same code, the refusal's message first and its other facts
         after it.
     """
-    return ToolError(refusal.code, str(refusal), **{
-        key: value for key, value in refusal.facts.items() if key != "message"})
+    return ToolError(
+        refusal.code,
+        str(refusal),
+        **{key: value for key, value in refusal.facts.items() if key != "message"},
+    )

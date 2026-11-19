@@ -77,8 +77,8 @@ and `environment.yml` hold the source installation.
   (`tool` or `tool:option`; `job/settings/tool_table.py` lists the valid names, the
   spec refuses an unknown name or a list that cannot work). Every sentence
   that names a tool or an option is written with what it needs
-  (`job/settings/needs.py`), so no model-facing text names what the job disables;
-  `tests/test_disabled_tools.py` checks it. A new tool or option is a row in
+  (`job/settings/needs.py`), so no model-facing text names what the job disables.
+  A new tool or option is a row in
   `job/settings/tool_table.py`, and its text carries its marks.
 - ABBA, QuickNII, VisuAlign and DMC-BrainMap are file exports: LangSlice
   writes the file and the program opens it. Nothing drives another program
@@ -87,41 +87,27 @@ and `environment.yml` hold the source installation.
   pictures and maps are derived from it and never read back.
 - Positions are atlas millimetres from the anterior edge of the volume; axis
   conventions are centralized in `core/space.py`.
-- Model-facing text (tool descriptions, job statements, refusals) is pinned
-  by a text snapshot (`tests/test_agent_text_snapshot.py`,
-  `tests/snapshots/agent_text/`); an intended change regenerates it with
-  `LANGSLICE_UPDATE_SNAPSHOT=1` and the diff is reviewed. A change meant to
-  alter no output is checked by the golden test
-  (`python -m pytest -m golden`, `tests/test_golden_outputs.py`), which pins
-  a scripted run's pictures, files and replies on this machine; a change
-  meant to alter pictures is judged by looking (below).
+- A change is checked by `python -m pytest` (`tests/test_smoke.py`: one
+  registration from start to export on a small synthetic brain; it pins no
+  pixel and no wording) and, where it alters pictures or model-facing text,
+  by running a real brain and looking (below).
 - Image-model prompts live in `core/fits/trace/prompts.py`; every sentence of an
   edit is audited for a second reading, and no border line is made conditional
   on visibility (`src/langslice/core/fits/trace/CLAUDE.md`).
 - Judge image output by looking at it: open the raw output, describe what is
   anatomically right and wrong, and report a disagreement between the picture
   and a metric as a finding. Metrics are secondary diagnostics.
-- New code follows `STYLE.md`, enforced by `tools/stylecheck` against a
-  baseline (`tools/stylecheck/baseline.json`) that only shrinks. A failing
-  check is fixed in the code, never by adding a baseline entry or loosening
-  a setting in `pyproject.toml` (CI refuses both); after fixing baselined
-  errors run `python -m tools.stylecheck --prune` and commit the smaller
-  file; `--explain NAME` says what a rule wants. basedpyright's baseline
-  only shrinks too: never run `basedpyright --writebaseline`
-  (`CONTRIBUTING.md`).
-- No code comments and no waivers (`STYLE.md` 7.1, the checker's `comment`,
-  `constant-comment`, `except-comment` and `directive` rules): only docstrings stay. A name says what a line or
-  a constant is and the docstring says why; no `#` line, no end-of-line
-  note, no `#:` line. A `# noqa`, `# type: ignore`, `# pyright: ignore` or
-  `# pragma` is never added: the code is changed until the tool has nothing
-  to report, and a handler names the exceptions it expects
-  (`core/failures.py` lists what image work and a fit engine raise; anything
-  else reaches the one guard around a tool call, `tools/pipeline.py`). The tests carry
-  no comments either (`tests/test_test_comments.py`). A library that
-  publishes no types is described once: wholly in a stub under `typings/`
-  (`typings/itk/`), or name by name through `core/outside.py` (`untyped`,
-  cast to its shape where it is fetched; `engines/_outside.py` for the
-  engines). Vendored code
+- New code follows `STYLE.md`. ruff (100 columns), basedpyright (standard
+  mode) and import-linter run with no baseline: a finding is fixed in the
+  code, never waived and never answered with a new lint rule where the
+  design is what is wrong.
+- No code comments and no waivers (`tests/test_no_comments_or_waivers.py`,
+  over `src/langslice` and `tests`): only docstrings stay. A name says what
+  a line or a constant is and the docstring says why. A `# noqa`,
+  `# type: ignore`, `# pyright: ignore`, `# pragma` or `# fmt` switch is
+  never added: the code is changed until the tool has nothing to report.
+  Related constants are grouped in a frozen dataclass whose docstring
+  explains them, never listed bare under a paragraph. Vendored code
   (`src/langslice_vendor/`) stays as published.
 - No Markdown file is written unless the owner asked for that file: no
   notes, plans, summaries or reports in the repository. The kinds that
@@ -182,9 +168,9 @@ pass 260 characters) and Developer Mode lets the tests make symlinks.
 
 ```bash
 source .venv/bin/activate     # Windows: .venv\Scripts\activate
-python -m pytest              # in parallel (pytest-xdist); `slow` is deselected by default
+python -m pytest              # the smoke run and the rule tests, a few seconds
 python -m ruff check .
-python -m tools.stylecheck    # STYLE.md; the baseline only shrinks
+python -m ruff format --check .
 python -m basedpyright
 lint-imports                  # the layer contracts
 langslice version

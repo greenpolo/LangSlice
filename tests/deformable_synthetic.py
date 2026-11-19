@@ -10,7 +10,7 @@ documented convention: section pixel p shows the placed-atlas point
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 import cv2
 import numpy as np
@@ -48,23 +48,45 @@ class SyntheticAtlas:
         self.annotation = np.repeat(plane[None], 6, axis=0)
         self.template = np.repeat(template[None], 6, axis=0).astype(np.float32)
         self.reference = self.template
-        colors = {1: (200, 200, 200), CTX: (50, 160, 60), STR: (120, 160, 220),
-                  TH: (240, 120, 120), HY: (230, 80, 200), VS: (170, 170, 170),
-                  VL: (150, 150, 150)}
-        paths = {1: [1], CTX: [1, CTX], STR: [1, STR], TH: [1, TH], HY: [1, HY],
-                 VS: [1, VS], VL: [1, VS, VL]}
+        colors = {
+            1: (200, 200, 200),
+            CTX: (50, 160, 60),
+            STR: (120, 160, 220),
+            TH: (240, 120, 120),
+            HY: (230, 80, 200),
+            VS: (170, 170, 170),
+            VL: (150, 150, 150),
+        }
+        paths = {
+            1: [1],
+            CTX: [1, CTX],
+            STR: [1, STR],
+            TH: [1, TH],
+            HY: [1, HY],
+            VS: [1, VS],
+            VL: [1, VS, VL],
+        }
         acronyms = {1: "root", CTX: "CTX", STR: "STR", TH: "TH", HY: "HY", VS: "VS", VL: "VL"}
         self.structures = {
-            uid: {"id": uid, "acronym": acronyms[uid], "name": acronyms[uid],
-                  "structure_id_path": paths[uid], "rgb_triplet": list(colors[uid])}
+            uid: {
+                "id": uid,
+                "acronym": acronyms[uid],
+                "name": acronyms[uid],
+                "structure_id_path": paths[uid],
+                "rgb_triplet": list(colors[uid]),
+            }
             for uid in paths
         }
 
 
 def placement() -> Placement:
     return Placement(
-        atlas_name=SyntheticAtlas.atlas_name, position_mm=0.1, plane="coronal",
-        pitch_deg=0.0, yaw_deg=0.0, atlas_to_section=ATLAS_TO_SECTION,
+        atlas_name=SyntheticAtlas.atlas_name,
+        position_mm=0.1,
+        plane="coronal",
+        pitch_deg=0.0,
+        yaw_deg=0.0,
+        atlas_to_section=ATLAS_TO_SECTION,
         section_mm_per_px=SECTION_MM_PER_PX,
     )
 
@@ -78,18 +100,21 @@ def bump_field(
     yy, xx = np.indices((height, width), dtype=np.float64)
     field = np.zeros((height, width, 2))
     for cx, cy, sigma, dx, dy in centres:
-        weight = np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * sigma ** 2))
+        weight = np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * sigma**2))
         field[..., 0] += dx * weight
         field[..., 1] += dy * weight
     return field
 
 
-SMOOTH_FIELD: Callable[[], np.ndarray] = lambda: bump_field(  # noqa: E731
-    [(130, 120, 45, 0.09, 0.03), (230, 140, 40, -0.05, -0.07)])
+def SMOOTH_FIELD() -> np.ndarray:
+    return bump_field([(130, 120, 45, 0.09, 0.03), (230, 140, 40, -0.05, -0.07)])
 
 
 def render_section(
-    atlas: SyntheticAtlas, field_mm: np.ndarray, *, remove: np.ndarray | None = None,
+    atlas: SyntheticAtlas,
+    field_mm: np.ndarray,
+    *,
+    remove: np.ndarray | None = None,
     seed: int = 0,
 ) -> tuple[Image.Image, np.ndarray]:
     """(brightfield RGB section, its true leaf labels) under *field_mm*.
@@ -138,12 +163,17 @@ def input_fingerprint(arrays: Sequence[np.ndarray], numbers: str = "") -> tuple[
     release moves a filtered edge channel by ~1e-6 per pixel)."""
     arrays = [np.ascontiguousarray(a) for a in arrays]
     floats = [a.astype(np.float64) for a in arrays if a.dtype.kind == "f"]
-    exact = b"".join(str((a.shape, a.dtype.str)).encode() + (b"" if a.dtype.kind == "f" else a.tobytes())
-                     for a in arrays)
+    exact = b"".join(
+        str((a.shape, a.dtype.str)).encode() + (b"" if a.dtype.kind == "f" else a.tobytes())
+        for a in arrays
+    )
     sums = [s for a in floats for s in (float(a.sum()), float((a * a).sum()))]
     return hashlib.sha1(exact + numbers.encode()).hexdigest()[:16], sums
 
 
 def same_inputs(fingerprint: tuple[str, list[float]], expected: tuple[str, list[float]]) -> bool:
-    return (fingerprint[0] == expected[0] and len(fingerprint[1]) == len(expected[1])
-            and bool(np.allclose(fingerprint[1], expected[1], rtol=1e-5, atol=0, equal_nan=True)))
+    return (
+        fingerprint[0] == expected[0]
+        and len(fingerprint[1]) == len(expected[1])
+        and bool(np.allclose(fingerprint[1], expected[1], rtol=1e-5, atol=0, equal_nan=True))
+    )

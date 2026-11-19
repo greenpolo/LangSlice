@@ -48,9 +48,9 @@ def default_settings(workspace: Workspace) -> FitSettings:
     :class:`~langslice.core.fits.deformable.settings.FitSettings`:
     Nissl, 80 um smoothness, mutual information and edges, standard detail),
     the base a script's ``fit_fireants`` changes."""
-    return deformation.Choice(
-        fit_section=images_.PREPROCESSED, fit_atlas="nissl"
-    ).settings((), (), brain_scale=workspace.brain_scale)
+    return deformation.Choice(fit_section=images_.PREPROCESSED, fit_atlas="nissl").settings(
+        (), (), brain_scale=workspace.brain_scale
+    )
 
 
 def fit_record(
@@ -102,9 +102,7 @@ def fit_record(
             "(engine fireants, section_image stain, labels none).",
         )
     if start not in tuple(deformation.FitStart):
-        raise Refused(
-            RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'."
-        )
+        raise Refused(RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'.")
     refuse_without_engine()
     label = str(mask or ops_masks.NO_MASK).strip()
     weights = ops_masks.section_weights(job, record, label)
@@ -113,9 +111,7 @@ def fit_record(
     except Refused:
         raise
     except (ValueError, OSError) as exc:
-        raise Refused(
-            RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}"
-        ) from exc
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}") from exc
     previous = None
     if start == deformation.FitStart.CURRENT:
         previous = job.deformations.current(job.state, record)
@@ -125,18 +121,14 @@ def fit_record(
                 message=f"{record.id} has no deformation to start from.",
             )
     image_name = check_image(job, workspace, [record], section_image)
-    _kept, dropped = exclusions(
-        record, tuple(str(name) for name in settings.structures)
-    )
+    _kept, dropped = exclusions(record, tuple(str(name) for name in settings.structures))
     if marked:
         settings = replace(
             settings,
             exclude=tuple(dict.fromkeys((*settings.exclude, *dropped))),
         )
     try:
-        image, _look = deformation.section_image(
-            workspace, job.state, grid, image_name
-        )
+        image, _look = deformation.section_image(workspace, job.state, grid, image_name)
         prepared = prepare_fit(
             image,
             workspace.atlas,
@@ -243,17 +235,13 @@ def warp_from_map(
     if record is None:
         raise unknown_sections(job.state, [str(section)])
     if start not in tuple(deformation.FitStart):
-        raise Refused(
-            RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'."
-        )
+        raise Refused(RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'.")
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
     except Refused:
         raise
     except (ValueError, OSError) as exc:
-        raise Refused(
-            RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}"
-        ) from exc
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}") from exc
     previous: deformation.DeformableRecord | None = None
     if start == deformation.FitStart.CURRENT:
         try:
@@ -266,8 +254,7 @@ def warp_from_map(
         if previous is None:
             raise Refused(
                 RefusalCode.BAD_ARGS,
-                message=f"{record.id} holds no deformation to build on: "
-                "start is 'linear'.",
+                message=f"{record.id} holds no deformation to build on: start is 'linear'.",
             )
     parent_key = None
     if previous is not None:
@@ -283,11 +270,7 @@ def warp_from_map(
             "map": hashlib.sha256(array.tobytes()).hexdigest(),
             **({"parent": parent_key} if parent_key else {}),
             **(
-                {
-                    "weights": hashlib.sha256(
-                        stored_weights.tobytes()
-                    ).hexdigest()
-                }
+                {"weights": hashlib.sha256(stored_weights.tobytes()).hexdigest()}
                 if stored_weights is not None
                 else {}
             ),
@@ -328,9 +311,7 @@ def warp_from_map(
     )
 
 
-def _checked_map(
-    section_id: str, native_xy: object, size: tuple[int, int]
-) -> np.ndarray:
+def _checked_map(section_id: str, native_xy: object, size: tuple[int, int]) -> np.ndarray:
     """Return the map as an array.
 
     Refused (``BAD_FIELD``) unless it is a finite float ``(H, W, 2)`` array
@@ -341,8 +322,7 @@ def _checked_map(
     if not np.issubdtype(array.dtype, np.floating):
         raise Refused(
             RefusalCode.BAD_FIELD,
-            message=f"{section_id}: the map is a float array, not "
-            f"{array.dtype}.",
+            message=f"{section_id}: the map is a float array, not {array.dtype}.",
         )
     if array.shape != (height, width, 2):
         raise Refused(
@@ -359,9 +339,7 @@ def _checked_map(
     return array
 
 
-def _stored_weights(
-    section_id: str, weights: object, size: tuple[int, int]
-) -> np.ndarray | None:
+def _stored_weights(section_id: str, weights: object, size: tuple[int, int]) -> np.ndarray | None:
     """Return the engine's weights as stored (float16 in [0, 1]).
 
     Refused (``BAD_FIELD``) unless a finite ``(H, W)`` array; None without
@@ -371,10 +349,7 @@ def _stored_weights(
         return None
     width, height = size
     given = np.asarray(weights)
-    if (
-        given.shape != (height, width)
-        or not np.isfinite(given.astype(np.float64)).all()
-    ):
+    if given.shape != (height, width) or not np.isfinite(given.astype(np.float64)).all():
         raise Refused(
             RefusalCode.BAD_FIELD,
             message=f"{section_id}: weights are a finite (H, W) = "
@@ -432,11 +407,8 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
                 rows.append(WarpApplied(record.id, refusal=frozen))
                 continue
             held = record.deformation
-            if deformation.linear_key(
-                job.state, record
-            ) != warp.linear_key or (
-                warp.parent_key is not None
-                and record.deformation_key != warp.parent_key
+            if deformation.linear_key(job.state, record) != warp.linear_key or (
+                warp.parent_key is not None and record.deformation_key != warp.parent_key
             ):
                 rows.append(WarpApplied(record.id, refusal=stale_refusal()))
                 continue
@@ -444,9 +416,7 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
             try:
                 folder = store.save(record.id, warp.key, warp.record)
             except (OSError, ValueError) as exc:
-                failed = Refused(
-                    RefusalCode.RECORD_WRITE_FAILED, message=str(exc)
-                )
+                failed = Refused(RefusalCode.RECORD_WRITE_FAILED, message=str(exc))
                 rows.append(WarpApplied(record.id, refusal=failed))
                 continue
             record.deformation = deformation.reference(

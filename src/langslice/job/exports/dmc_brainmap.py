@@ -147,10 +147,7 @@ def dmc_frame(
 
     normal = names.index(_NORMAL_AXIS[plane])
     rows, cols = (i for i in range(3) if i != normal)
-    axes = [
-        DmcAxis(names[i], i, int(shape[i]), float(resolution_um[i]))
-        for i in range(3)
-    ]
+    axes = [DmcAxis(names[i], i, int(shape[i]), float(resolution_um[i])) for i in range(3)]
     return DmcFrame(
         atlas=atlas,
         plane=plane,
@@ -161,9 +158,7 @@ def dmc_frame(
     )
 
 
-def dmc_bregma(
-    atlas: str, names: Sequence[str], shape: Sequence[int]
-) -> tuple[int, int, int]:
+def dmc_bregma(atlas: str, names: Sequence[str], shape: Sequence[int]) -> tuple[int, int, int]:
     """Give the bregma voxel DMC uses for an atlas.
 
     Parameters
@@ -255,9 +250,7 @@ def dmc_placement(
 
     in_plane = voxels[:2, :2]
     if abs(cast("float", np.linalg.det(in_plane))) < 1e-9:
-        raise ValueError(
-            "the section's plane contains the atlas plane's normal"
-        )
+        raise ValueError("the section's plane contains the atlas plane's normal")
     slopes = cast("np.ndarray", voxels[2, :2] @ np.linalg.inv(in_plane))
     slope_x, slope_y = cast("list[float]", slopes.tolist())
     x_shift = int(round(slope_x * (size_x / 2 - 1)))
@@ -294,16 +287,12 @@ def _voxel_map(pixel_to_atlas_um: np.ndarray, frame: DmcFrame) -> np.ndarray:
     atlas_rows = cast("list[list[float]]", matrix.tolist())
     rows: list[list[float]] = []
     for axis in (frame.x, frame.y, frame.z):
-        per_um = [
-            value / axis.resolution_um for value in atlas_rows[axis.index]
-        ]
+        per_um = [value / axis.resolution_um for value in atlas_rows[axis.index]]
         rows.append([per_um[1], per_um[0], per_um[2]])
     return np.asarray(rows, dtype=np.float64)
 
 
-def _project(
-    voxels: np.ndarray, cols: np.ndarray, rows: np.ndarray
-) -> list[np.ndarray]:
+def _project(voxels: np.ndarray, cols: np.ndarray, rows: np.ndarray) -> list[np.ndarray]:
     """Map file pixels to DMC's continuous voxel x, y and depth."""
     points = np.stack([cols, rows, np.ones(cols.size)])
     return cast("list[np.ndarray]", list(voxels @ points))
@@ -358,9 +347,7 @@ def dmc_depth(
     normal_z = right[1] * top[2] - right[2] * top[1]
     normal_y = right[2] * top[0] - right[0] * top[2]
     normal_x = right[0] * top[1] - right[1] * top[0]
-    across = -normal_y * (grid_y - size_y / 2) - normal_x * (
-        grid_x - size_x / 2
-    )
+    across = -normal_y * (grid_y - size_y / 2) - normal_x * (grid_x - size_x / 2)
     return across / normal_z + z_voxel
 
 
@@ -372,9 +359,7 @@ def _points(
     Returns the continuous voxel x, y and depth of each pixel that maps onto
     the plane.
     """
-    cols, rows = np.meshgrid(
-        np.linspace(0.0, width - 1.0, n), np.linspace(0.0, height - 1.0, n)
-    )
+    cols, rows = np.meshgrid(np.linspace(0.0, width - 1.0, n), np.linspace(0.0, height - 1.0, n))
     x, y, z = _project(voxels, cols.ravel(), rows.ravel())
     inside = _on_plane(x + 0.5, y + 0.5, frame)
     return x[inside], y[inside], z[inside]
@@ -400,22 +385,13 @@ def _best_centre(
     middle = int(round(float(np.mean(depth - tilt))))
     candidates = range(middle - 2, middle + 3)
     errors = [
-        float(
-            np.mean(
-                np.abs(
-                    np.trunc(dmc_depth(z, x_shift, y_shift, frame, grid))
-                    - depth
-                )
-            )
-        )
+        float(np.mean(np.abs(np.trunc(dmc_depth(z, x_shift, y_shift, frame, grid)) - depth)))
         for z in candidates
     ]
     return candidates[int(np.argmin(errors))]
 
 
-def _check_inside(
-    z_voxel: int, x_shift: int, y_shift: int, frame: DmcFrame
-) -> None:
+def _check_inside(z_voxel: int, x_shift: int, y_shift: int, frame: DmcFrame) -> None:
     """Refuse a plane DMC refuses.
 
     That is a plane whose depth leaves the volume anywhere on DMC's atlas
@@ -449,9 +425,7 @@ def _pairs(
         cols, rows = cols.ravel(), rows.ravel()
         x, y, _depth = _project(voxels, cols, rows)
         inside = _on_plane(x + 0.5, y + 0.5, frame)
-        if np.count_nonzero(inside) < MIN_PAIRS or not _spread(
-            cols[inside], rows[inside]
-        ):
+        if np.count_nonzero(inside) < MIN_PAIRS or not _spread(cols[inside], rows[inside]):
             continue
         atlas = np.stack([x[inside] + 0.5, y[inside] + 0.5], axis=1)
         sample = np.stack(
@@ -463,8 +437,7 @@ def _pairs(
             np.round(sample, DECIMALS).tolist(),
         )
     raise ValueError(
-        f"fewer than {MIN_PAIRS} points of the section fall on DMC-BrainMap's "
-        "atlas plane"
+        f"fewer than {MIN_PAIRS} points of the section fall on DMC-BrainMap's atlas plane"
     )
 
 

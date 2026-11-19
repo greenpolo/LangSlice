@@ -15,20 +15,24 @@ from typing import cast
 def add_gui_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = subparsers.add_parser(
         "gui",
-        help="Open the LangSlice window: the agent viewer on job folders as "
-        "their runs write them",
+        help="Open the LangSlice window: the agent viewer on job folders as their runs write them",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
-        "folders", nargs="*", metavar="FOLDER",
+        "folders",
+        nargs="*",
+        metavar="FOLDER",
         help="Job folders (or image folders with a langslice/ job folder) to "
         "show, besides the recently opened jobs",
     )
-    p.add_argument("--port", type=int, default=0,
-                   help="Serve on this local port (0: any free port)")
-    p.add_argument("--no-window", action="store_true",
-                   help="Do not open a window; print the address and keep "
-                   "serving")
+    p.add_argument(
+        "--port", type=int, default=0, help="Serve on this local port (0: any free port)"
+    )
+    p.add_argument(
+        "--no-window",
+        action="store_true",
+        help="Do not open a window; print the address and keep serving",
+    )
     p.add_argument(
         "--tab",
         choices=("viewer", "prompt"),

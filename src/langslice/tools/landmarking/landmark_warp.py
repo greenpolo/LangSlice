@@ -117,9 +117,7 @@ class LandmarksApplied:
 
 def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
     def ids(group: Sequence[int]) -> str:
-        return ", ".join(
-            "a fixed corner" if i < 4 else names[i - 4] for i in group
-        )
+        return ", ".join("a fixed corner" if i < 4 else names[i - 4] for i in group)
 
     groups = "; ".join(ids(group) for group in exc.vertices[:6])
     if "Repeated" in str(exc):
@@ -133,16 +131,11 @@ def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
     )
 
 
-def _folds(
-    mesh: Any, points: np.ndarray, names: Sequence[str]
-) -> dict[str, Any]:
+def _folds(mesh: Any, points: np.ndarray, names: Sequence[str]) -> dict[str, Any]:
     """The warp's folded triangles: the share of the section frame they cover
     and their vertices' pair ids (a fixed corner vertex has none, so a
     triangle at the frame's edge lists fewer than three)."""
-    triangles = [
-        [names[i - 4] for i in sorted(tri) if i >= 4]
-        for tri in mesh.folded_triangles()
-    ]
+    triangles = [[names[i - 4] for i in sorted(tri) if i >= 4] for tri in mesh.folded_triangles()]
     if not triangles:
         return {}
     return {
@@ -156,9 +149,7 @@ def _folds_reply(folds: Mapping[str, Any] | None) -> dict[str, Any]:
     if not folds:
         return {}
     triangles = folds["triangles"]
-    ids = sorted(
-        {i for tri in triangles for i in tri}, key=lambda s: (len(s), s)
-    )
+    ids = sorted({i for tri in triangles for i in tri}, key=lambda s: (len(s), s))
     return {
         "folds": {
             "area_fraction": folds["area_fraction"],
@@ -187,9 +178,7 @@ def _require_applicable(job: Job, record: Section) -> tuple[Pair, ...]:
                 job.spec.switched_off,
             ),
         )
-    stale_ids = [
-        pair.id for pair in pairs if geometry.stale(job.state, record, pair)
-    ]
+    stale_ids = [pair.id for pair in pairs if geometry.stale(job.state, record, pair)]
     if stale_ids:
         raise Refused(
             RefusalCode.STALE_LANDMARK_PLANE,
@@ -219,14 +208,7 @@ def _mesh(
     except DegenerateMesh as exc:
         raise Refused(
             RefusalCode.LANDMARK_TRIANGULATION_FAILED,
-            pairs=sorted(
-                {
-                    names[i - 4]
-                    for group in exc.vertices
-                    for i in group
-                    if i >= 4
-                }
-            ),
+            pairs=sorted({names[i - 4] for group in exc.vertices for i in group if i >= 4}),
             message=_degenerate_words(exc, names),
         ) from exc
 
@@ -291,9 +273,7 @@ def _unchanged(record: Section, pairs: Sequence[Pair]) -> LandmarksApplied:
     )
 
 
-def landmark_triangulation(
-    job: Job, workspace: Workspace, section: str
-) -> LandmarksApplied:
+def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> LandmarksApplied:
     """Apply the complete set, replacing the preceding landmark application."""
     record = landmark_section(job, section)
     pairs = _require_applicable(job, record)
@@ -320,13 +300,8 @@ def landmark_triangulation(
                 RefusalCode.LANDMARK_WARP_UNAVAILABLE,
                 message="The current deformation cannot be read; undo it first.",
             )
-        replacing = (
-            current is not None
-            and current.engine.get("name") == "landmark_triangulation"
-        )
-        previous = (
-            current.parent if replacing and current is not None else current
-        )
+        replacing = current is not None and current.engine.get("name") == "landmark_triangulation"
+        previous = current.parent if replacing and current is not None else current
         baseline_key: str | None = None
         baseline_steps: tuple[JsonObject, ...] = ()
         if replacing and applied_warp is not None:
@@ -348,9 +323,7 @@ def landmark_triangulation(
         )
         if previous is not None:
             assert previous.inverse_field_mm is not None
-            target += (
-                _sample(previous.inverse_field_mm, target) / previous.mm_per_px
-            )
+            target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
         names = [p.id for p in pairs]
         prepared = prepare_warp(
             workspace.atlas,
@@ -394,9 +367,7 @@ def landmark_triangulation(
     except Refused:
         raise
     except (ValueError, OSError) as exc:
-        raise Refused(
-            RefusalCode.LANDMARK_TRIANGULATION_FAILED, message=str(exc)
-        ) from exc
+        raise Refused(RefusalCode.LANDMARK_TRIANGULATION_FAILED, message=str(exc)) from exc
     key = digest(
         {
             "landmarks": revision,

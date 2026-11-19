@@ -35,12 +35,18 @@ Each is loaded on first use, so ``import langslice`` stays light.
 
 from __future__ import annotations
 
+import logging as _logging
 from typing import TYPE_CHECKING, Any
 
 __version__ = "0.2.1"
 __all__ = [
-    "__version__", "coordinate_map", "create_job", "default_prompt", "image_model",
-    "load_atlas", "open_job",
+    "__version__",
+    "coordinate_map",
+    "create_job",
+    "default_prompt",
+    "image_model",
+    "load_atlas",
+    "open_job",
 ]
 
 if TYPE_CHECKING:
@@ -70,9 +76,6 @@ def __getattr__(name: str) -> Any:
         globals()[name] = value
         return value
     raise AttributeError(f"module 'langslice' has no attribute {name!r}")
-
-
-import logging as _logging  # noqa: E402
 
 
 class _GeminiNonTextPartsFilter(_logging.Filter):

@@ -29,7 +29,7 @@ from langslice.doors.plugins.context import ToolContext
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.job import plugins as core
 from langslice.tools.descriptions.description import DescriptionFacts
-from langslice.tools.descriptions.render import context_parameter, declaration
+from langslice.tools.descriptions.render import context_parameter, declaration, signed
 
 if TYPE_CHECKING:
     from langslice.tools.run import Run
@@ -59,7 +59,8 @@ def _check_limit(tool: ToolSpec, arguments: Mapping[str, Any]) -> None:
                 requested=count,
                 message=f"{tool.name} takes at most {cap} sections per call "
                 f"(its plugin's limit); {count} were named. Nothing was done: "
-                "split them over calls.")
+                "split them over calls.",
+            )
 
 
 def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
@@ -69,8 +70,11 @@ def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     ``PLUGIN_FAILED`` when it is no :class:`ToolResult`."""
     if not isinstance(result, ToolResult):
         kind = type(cast("object", result)).__name__
-        raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
-                      message=f"{tool.name}'s handler returned {kind}, not a ToolResult")
+        raise Refused(
+            RefusalCode.PLUGIN_FAILED,
+            tool=tool.name,
+            message=f"{tool.name}'s handler returned {kind}, not a ToolResult",
+        )
     reply = to_jsonable(dict(result.reply))
     out: dict[str, Any] = {"status": "ok", **reply}
     pictures = [_picture(item) for item in result.pictures]
@@ -91,8 +95,7 @@ def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     return out
 
 
-def body(run: Run, tool: ToolSpec,
-         facts: DescriptionFacts) -> Callable[..., Any]:
+def body(run: Run, tool: ToolSpec, facts: DescriptionFacts) -> Callable[..., Any]:
     """The body of *tool* for *run*: takes the arguments its declaration in
     the run of *facts* has, by name."""
 
@@ -111,21 +114,27 @@ def body(run: Run, tool: ToolSpec,
             raise
         except Exception as exc:
             logger.exception("plugin tool %s failed", tool.name)
-            raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
-                          message=f"{type(exc).__name__}: {exc}") from exc
+            raise Refused(
+                RefusalCode.PLUGIN_FAILED, tool=tool.name, message=f"{type(exc).__name__}: {exc}"
+            ) from exc
         return reply_of(tool, result)
 
     declared = declaration(tool.name, facts)
-    answer.__signature__ = declared.signature.replace(  # type: ignore[attr-defined]
-        parameters=[*declared.signature.parameters.values(),
-                    context_parameter(declared.signature)],
-        return_annotation=inspect.Signature.empty)
     answer.__name__ = tool.name
-    return answer
+    return signed(
+        answer,
+        declared.signature.replace(
+            parameters=[
+                *declared.signature.parameters.values(),
+                context_parameter(declared.signature),
+            ],
+            return_annotation=inspect.Signature.empty,
+        ),
+    )
 
 
-def bodies(run: Run,
-           facts: DescriptionFacts) -> dict[str, Callable[..., Any]]:
+def bodies(run: Run, facts: DescriptionFacts) -> dict[str, Callable[..., Any]]:
     """The bodies of every plugin tool the run's job has, by name."""
-    return {name: body(run, tool, facts)
-            for name, (_plugin, tool) in core.tool_specs(run.spec).items()}
+    return {
+        name: body(run, tool, facts) for name, (_plugin, tool) in core.tool_specs(run.spec).items()
+    }

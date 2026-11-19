@@ -35,13 +35,18 @@ _plane_lock = threading.Lock()
 
 
 def atlas_mask(
-    ctx: Workspace, state: Stack, position_mm: float, size: tuple[int, int],
-    *, angles: Angles | None = None,
+    ctx: Workspace,
+    state: Stack,
+    position_mm: float,
+    size: tuple[int, int],
+    *,
+    angles: Angles | None = None,
 ) -> np.ndarray:
     """Binary tissue silhouette of the atlas section, at the plane's angles."""
     pitch, yaw = plane_angles(state, angles)
-    return get_root_mask(ctx.atlas, position_mm, size, plane=state.plane,
-                         pitch_deg=pitch, yaw_deg=yaw)
+    return get_root_mask(
+        ctx.atlas, position_mm, size, plane=state.plane, pitch_deg=pitch, yaw_deg=yaw
+    )
 
 
 def atlas_section(
@@ -81,8 +86,7 @@ def atlas_section(
         try:
             mask = atlas_mask(ctx, state, position_mm, image.size, angles=(pitch, yaw))
         except IMAGE_FAILURES as exc:
-            logger.warning("atlas at %.3f mm: no root mask to frame it by (%s)",
-                           position_mm, exc)
+            logger.warning("atlas at %.3f mm: no root mask to frame it by (%s)", position_mm, exc)
         else:
             box = mask_box(image.size, mask > 0)
             if box:
@@ -104,5 +108,3 @@ def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
     if max(picture.size) <= int(long_edge):
         return picture
     return cropped_geometry(resize_long_edge(picture, int(long_edge)), picture)
-
-

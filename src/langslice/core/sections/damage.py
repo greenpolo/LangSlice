@@ -73,9 +73,7 @@ def normalized_entries(entries: Iterable[str | int]) -> list[str]:
     return list(out.values())
 
 
-def checked_entries(
-    atlas: object, regions: Sequence[str | int], plane: Plane
-) -> list[str]:
+def checked_entries(atlas: object, regions: Sequence[str | int], plane: Plane) -> list[str]:
     """Check region entries against the atlas and return them normalized.
 
     The one check of a section's damage marks, whoever gives them (the
@@ -173,7 +171,8 @@ def side_pair_refusal(
 
 
 def exclusions(
-    record: Section, restrict_to: Sequence[str] = (),
+    record: Section,
+    restrict_to: Sequence[str] = (),
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``(restrict_to, exclude)`` one fit of *record* runs with.
 
@@ -199,7 +198,6 @@ def exclusions(
     return restrict, tuple(excluded)
 
 
-
 def _picture_mask(panel: PanelFrame, native: np.ndarray) -> np.ndarray:
     """*native* (a mask on the atlas plane grid) on the panel's picture
     pixels, nearest neighbour, through the mapping its borders are drawn with
@@ -215,7 +213,7 @@ def _picture_mask(panel: PanelFrame, native: np.ndarray) -> np.ndarray:
     keep_r = (rows >= 0) & (rows < native.shape[0])
     keep_c = (cols >= 0) & (cols < native.shape[1])
     block = native[np.ix_(rows[keep_r], cols[keep_c])]
-    target = out[y0:y0 + len(rows), x0:x0 + len(cols)]
+    target = out[y0 : y0 + len(rows), x0 : x0 + len(cols)]
     target[np.ix_(np.nonzero(keep_r)[0], np.nonzero(keep_c)[0])] = block
     return out
 
@@ -231,8 +229,13 @@ def _hatched(image: Image.Image, mask: np.ndarray) -> Image.Image:
 
 
 def _native_marks(
-    ws: Workspace, panel: PanelFrame, regions: Sequence[tuple[str, frozenset[int]]],
-    position_mm: float, plane: Plane, pitch_deg: float, yaw_deg: float,
+    ws: Workspace,
+    panel: PanelFrame,
+    regions: Sequence[tuple[str, frozenset[int]]],
+    position_mm: float,
+    plane: Plane,
+    pitch_deg: float,
+    yaw_deg: float,
 ) -> np.ndarray:
     """The marked regions on the panel's native atlas plane, sides resolved
     through its placement exactly as ``canvas.physical_views`` resolves them
@@ -242,8 +245,15 @@ def _native_marks(
 
     annotation = np.asarray(panel.geometry.annotation)
     linear = np.asarray(panel.section_matrix, dtype=np.float64)[:2, :2]
-    left = regions_left(ws.atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
-                        np.linalg.inv(linear) * panel.geometry.atlas_scale)
+    left = regions_left(
+        ws.atlas,
+        regions,
+        position_mm,
+        plane,
+        pitch_deg,
+        yaw_deg,
+        np.linalg.inv(linear) * panel.geometry.atlas_scale,
+    )
     native = np.zeros(annotation.shape[:2], dtype=bool)
     for name, ids in regions:
         native |= restrict(np.isin(annotation, list(ids)), split_side(name)[1], left)
@@ -304,23 +314,39 @@ def damage_picture(
 
     entries = list(record.damaged_regions)
     if not entries:
-        raise Refused(RefusalCode.NO_REGIONS,
-                      "The section has no marked regions.")
+        raise Refused(RefusalCode.NO_REGIONS, "The section has no marked regions.")
     resolved = resolve_entries(ws.atlas, entries)
-    regions = tuple((name, ids) for name, (_region, _side, ids) in zip(entries, resolved,
-                                                                     strict=True))
-    base = default_options("overlay") if long_edge is None else default_options(
-        "overlay", long_edge=int(long_edge))
-    options = replace(base, regions=regions, border_color=border_color,
-                      border_thickness=float(border_thickness or DEFAULT_BORDER_THICKNESS))
+    regions = tuple(
+        (name, ids) for name, (_region, _side, ids) in zip(entries, resolved, strict=True)
+    )
+    base = (
+        default_options("overlay")
+        if long_edge is None
+        else default_options("overlay", long_edge=int(long_edge))
+    )
+    options = replace(
+        base,
+        regions=regions,
+        border_color=border_color,
+        border_thickness=float(border_thickness or DEFAULT_BORDER_THICKNESS),
+    )
     position = float(record.position_mm)
     section = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     um_per_px, _source = calibrate(state, ws, record, section)
     params, kind = stored_placement(record, section)
     warp = current_warp(store, state, record) if store is not None else None
     shown = draw_canvas(
-        ws, state, record, section, um_per_px, position, params, options, mode="overlay",
-        label=f"{record.id} damage", warp_record=warp,
+        ws,
+        state,
+        record,
+        section,
+        um_per_px,
+        position,
+        params,
+        options,
+        mode="overlay",
+        label=f"{record.id} damage",
+        warp_record=warp,
         matrix_label=transform_words(record, kind, warp=warp is not None),
     )
     resolved = shown.panels[0].border_color if shown.panels else None
@@ -328,19 +354,31 @@ def damage_picture(
     if resolved is not None:
         atlas_options = replace(atlas_options, border_color=resolved)
     atlas = draw_canvas(
-        ws, state, record, section, um_per_px, position, params,
-        atlas_options, mode="template",
-        label=f"{record.id} damage", matrix_label=transform_words(record, kind),
+        ws,
+        state,
+        record,
+        section,
+        um_per_px,
+        position,
+        params,
+        atlas_options,
+        mode="template",
+        label=f"{record.id} damage",
+        matrix_label=transform_words(record, kind),
     )
     panels = []
     for canvas in (shown, atlas):
         image, panel = canvas.images[0], canvas.panels[0]
-        marks = _native_marks(ws, panel, regions, position, state.plane,
-                              record.pitch_deg, record.yaw_deg)
+        marks = _native_marks(
+            ws, panel, regions, position, state.plane, record.pitch_deg, record.yaw_deg
+        )
         panels.append(_hatched(image, _picture_mask(panel, marks)))
     border_word = shown.images[0].info.get("border_word")
-    text = ("marked damaged (hatched): " + ", ".join(entries)
-            + (f"  note: {record.damage_note}" if record.damage_note else "")
-            + (f"; borders {border_word}" if border_word else "")
-            + "\nleft: the section under its current registration; right: the atlas")
+    text = (
+        "marked damaged (hatched): "
+        + ", ".join(entries)
+        + (f"  note: {record.damage_note}" if record.damage_note else "")
+        + (f"; borders {border_word}" if border_word else "")
+        + "\nleft: the section under its current registration; right: the atlas"
+    )
     return note(caption(beside(*panels), text), sections=(record.id,), mode="damage")

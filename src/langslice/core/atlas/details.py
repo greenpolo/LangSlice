@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from functools import cache
 from pathlib import Path
 
@@ -31,8 +32,9 @@ _KEY = re.compile(r"`([A-Za-z0-9_.\-]+)`")
 def _plain(text: str) -> str:
     """Markdown as plain text: links and badges become their words, spaces collapse."""
     while _LINK.search(text):
-        text = _LINK.sub(lambda match: "" if match.group(0).startswith("!") else match.group(1),
-                         text)
+        text = _LINK.sub(
+            lambda match: "" if match.group(0).startswith("!") else match.group(1), text
+        )
     return re.sub(r"\s+", " ", text.replace(" (see below)", "")).strip()
 
 
@@ -44,12 +46,21 @@ def parse(markdown: str) -> dict[str, str]:
     for section in re.split(r"^#{2,3} ", markdown, flags=re.M)[1:]:
         title, _, body = section.partition("\n")
         lines = body.splitlines()
-        first = next((i for i, line in enumerate(lines)
-                      if line.lstrip().startswith("*") and _KEY.search(line)), None)
+        first = next(
+            (
+                i
+                for i, line in enumerate(lines)
+                if line.lstrip().startswith("*") and _KEY.search(line)
+            ),
+            None,
+        )
         if first is None:
             continue
-        about = [line for line in lines[:first] if not line.rstrip().endswith(":")
-                 or "available" not in line.lower()]
+        about = [
+            line
+            for line in lines[:first]
+            if not line.rstrip().endswith(":") or "available" not in line.lower()
+        ]
         description = f"{_plain(title)}: {_plain(' '.join(about))}"
         for line in lines[first:]:
             keys = _KEY.findall(line)
@@ -57,7 +68,8 @@ def parse(markdown: str) -> dict[str, str]:
                 continue
             _, _, note = _plain(line).partition(" - ")
             out[keys[0].lower()] = description + (
-                f" (This version: {note.strip()}.)" if note.strip() else "")
+                f" (This version: {note.strip()}.)" if note.strip() else ""
+            )
     return out
 
 
@@ -81,7 +93,7 @@ def atlas_description(atlas_name: str) -> str | None:
     return _details().get(atlas_name.lower())
 
 
-def _refresh() -> None:  # pragma: no cover
+def _refresh() -> None:
     from urllib.request import urlopen
 
     latest = f"https://api.github.com/repos/{REPOSITORY}/commits?path={PAGE}&per_page=1"
@@ -89,13 +101,22 @@ def _refresh() -> None:  # pragma: no cover
         commit = json.load(reply)[0]["sha"]
     with urlopen(f"https://raw.githubusercontent.com/{REPOSITORY}/{commit}/{PAGE}") as reply:
         atlases = parse(reply.read().decode("utf-8"))
-    DETAILS_FILE.write_text(json.dumps({
-        "source": f"https://github.com/{REPOSITORY}/blob/{commit}/{PAGE}",
-        "licence": "CC BY 4.0, BrainGlobe",
-        "atlases": dict(sorted(atlases.items())),
-    }, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
-    print(f"{len(atlases)} atlases from {REPOSITORY}@{commit[:10]} -> {DETAILS_FILE}")
+    DETAILS_FILE.write_text(
+        json.dumps(
+            {
+                "source": f"https://github.com/{REPOSITORY}/blob/{commit}/{PAGE}",
+                "licence": "CC BY 4.0, BrainGlobe",
+                "atlases": dict(sorted(atlases.items())),
+            },
+            indent=1,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    sys.stdout.write(f"{len(atlases)} atlases from {REPOSITORY}@{commit[:10]} -> {DETAILS_FILE}\n")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     _refresh()

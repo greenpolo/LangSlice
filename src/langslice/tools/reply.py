@@ -33,14 +33,23 @@ def reply_bytes(items: Sequence[Item]) -> int:
     import base64
     import json
 
-    blocks = [{"type": "text", "text": item} if isinstance(item, str)
-              else {"type": "image", "data": base64.b64encode(item).decode("ascii"),
-                    "mimeType": "image/jpeg"} for item in items]
+    blocks = [
+        {"type": "text", "text": item}
+        if isinstance(item, str)
+        else {
+            "type": "image",
+            "data": base64.b64encode(item).decode("ascii"),
+            "mimeType": "image/jpeg",
+        }
+        for item in items
+    ]
     return len(json.dumps(blocks).encode())
 
 
-def fit_reply(items: Sequence[Item], budget: int = REPLY_BYTES,
-              ) -> tuple[list[Item], tuple[int, int] | None]:
+def fit_reply(
+    items: Sequence[Item],
+    budget: int = REPLY_BYTES,
+) -> tuple[list[Item], tuple[int, int] | None]:
     """*items* within *budget* bytes: as they are when they fit, else every
     picture shrunk together (each to 0.8 of its size a round, re-encoded in
     the doors' JPEG) until they do; nothing is dropped. Returns the items
@@ -66,8 +75,7 @@ def fit_reply(items: Sequence[Item], budget: int = REPLY_BYTES,
                 if max(image.size) <= 32:
                     continue
                 picture = image.convert("RGB")
-            picture.thumbnail((max(1, int(picture.width * .8)),
-                               max(1, int(picture.height * .8))))
+            picture.thumbnail((max(1, int(picture.width * 0.8)), max(1, int(picture.height * 0.8))))
             out[index] = encode_jpeg(picture)
             changed = True
         if not changed:
@@ -78,10 +86,12 @@ def fit_reply(items: Sequence[Item], budget: int = REPLY_BYTES,
 
 def shrunk_note(count: int, edges: tuple[int, int], budget: int = REPLY_BYTES) -> str:
     """What a reply whose pictures :func:`fit_reply` shrank says about it."""
-    return (f"The {count} picture{'s' if count != 1 else ''} above were shrunk together to fit "
-            f"the host's reply limit ({budget // 1000} KB): the largest went from "
-            f"{edges[0]} to {edges[1]} px on its long edge. For full-size pictures, ask for "
-            "fewer sections per call or a smaller resolution.")
+    return (
+        f"The {count} picture{'s' if count != 1 else ''} above were shrunk together to fit "
+        f"the host's reply limit ({budget // 1000} KB): the largest went from "
+        f"{edges[0]} to {edges[1]} px on its long edge. For full-size pictures, ask for "
+        "fewer sections per call or a smaller resolution."
+    )
 
 
 def paged(items: Sequence[Item], budget: int = REPLY_BYTES) -> list[list[Item]]:

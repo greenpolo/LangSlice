@@ -62,20 +62,23 @@ def _placed(job: Job, workspace: Workspace, section: Any) -> tuple[Any, Any, Any
         raise unknown_sections(job.state, [str(section)])
     problem = placement_problem(job.state, record)
     if problem is not None:
-        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                      message=f"{record.id}: {problem}")
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {problem}")
     frame = section_frame(job.state, workspace, record)
     try:
         warp = applied_record(job, job.state, record)
     except ValueError as exc:
         name = record.id
-        raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
-                      message=f"{name}: {exc}") from exc
+        raise Refused(RefusalCode.DEFORMATION_UNREADABLE, message=f"{name}: {exc}") from exc
     return record, frame, warp
 
 
-def _fit_matrix(job: Job, workspace: Workspace, record: Any, frame: Any, warp: Any,
-                ) -> np.ndarray:
+def _fit_matrix(
+    job: Job,
+    workspace: Workspace,
+    record: Any,
+    frame: Any,
+    warp: Any,
+) -> np.ndarray:
     """3x3: file pixel centres -> fit-grid pixel centres."""
     from langslice.core.fits import deformation
     from langslice.core.maps.section_maps import file_to_fit
@@ -93,20 +96,19 @@ def _points(value: Any, width: int, name: str) -> np.ndarray:
     if array.ndim == 1:
         array = array[None, :]
     if array.ndim != 2 or array.shape[1] != width or not np.isfinite(array).all():
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"{name} is N x {width} finite numbers.")
+        raise Refused(RefusalCode.BAD_ARGS, message=f"{name} is N x {width} finite numbers.")
     return array
 
 
 def _frame_of(frame_name: str) -> str:
     if frame_name not in FRAMES:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"frame is one of {list(FRAMES)}.")
+        raise Refused(RefusalCode.BAD_ARGS, message=f"frame is one of {list(FRAMES)}.")
     return frame_name
 
 
-def atlas_points(job: Job, workspace: Workspace, section: Any, xy: Any, *,
-                 frame: str = "file") -> AtlasPoints:
+def atlas_points(
+    job: Job, workspace: Workspace, section: Any, xy: Any, *, frame: str = "file"
+) -> AtlasPoints:
     """Section points *xy* (``(N, 2)`` ``[x, y]`` pixels of *frame*: ``file``,
     the image file's own, or ``fit``, the fit grid's) in the atlas, through the
     section's current registration (deformation included). Refused:
@@ -138,8 +140,9 @@ def atlas_points(job: Job, workspace: Workspace, section: Any, xy: Any, *,
     return AtlasPoints(um=um, native=native, ids=ids, inside=inside)
 
 
-def section_points(job: Job, workspace: Workspace, section: Any, xyz_um: Any, *,
-                   frame: str = "file") -> SectionPoints:
+def section_points(
+    job: Job, workspace: Workspace, section: Any, xyz_um: Any, *, frame: str = "file"
+) -> SectionPoints:
     """Atlas points *xyz_um* (``(N, 3)`` atlas micrometres, the atlas's axis
     order) on the section: each projected onto the section's atlas plane,
     then carried back through the section's current registration (its
@@ -157,13 +160,13 @@ def section_points(job: Job, workspace: Workspace, section: Any, xyz_um: Any, *,
     try:
         x, y = file_points(held, warp, cols, rows)
     except ValueError as exc:
-        name = record.id  # pyright: ignore[reportAny]
-        raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
-                      message=f"{name}: {exc}") from exc
+        name = record.id
+        raise Refused(RefusalCode.DEFORMATION_UNREADABLE, message=f"{name}: {exc}") from exc
     if _frame_of(frame) == "fit":
         x, y = apply(_fit_matrix(job, workspace, record, held, warp), x, y)
-    return SectionPoints(xy=np.stack([np.ravel(x), np.ravel(y)], axis=-1),
-                         off_plane_um=np.ravel(off))
+    return SectionPoints(
+        xy=np.stack([np.ravel(x), np.ravel(y)], axis=-1), off_plane_um=np.ravel(off)
+    )
 
 
 __all__ = ["FRAMES", "AtlasPoints", "SectionPoints", "atlas_points", "section_points"]

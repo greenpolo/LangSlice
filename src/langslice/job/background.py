@@ -88,11 +88,16 @@ class Work:
 
     def summary(self) -> dict[str, Any]:
         """The work as plain data (status, a script's view)."""
-        return {"id": self.id, "kind": self.kind, "sections": list(self.sections),
-                "status": self.status, "started": round(self.started, 3),
-                **({"finished": round(self.finished, 3)} if self.finished is not None else {}),
-                **({"notice": self.notice} if self.notice else {}),
-                **({"pictures": list(self.pictures)} if self.pictures else {})}
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "sections": list(self.sections),
+            "status": self.status,
+            "started": round(self.started, 3),
+            **({"finished": round(self.finished, 3)} if self.finished is not None else {}),
+            **({"notice": self.notice} if self.notice else {}),
+            **({"pictures": list(self.pictures)} if self.pictures else {}),
+        }
 
 
 def notice_text(work: Work, text: str) -> str:
@@ -100,11 +105,16 @@ def notice_text(work: Work, text: str) -> str:
     <n> of <section>. Pictures #n, #m."``"""
     sections = ", ".join(work.sections) or "the stack"
     verb = "finished" if work.status == DONE else "failed"
-    held = (" Now registration " + ", ".join(f"{number} of {section}" for section, number
-                                             in work.registrations.items()) + "."
-            if work.registrations else "")
-    pictures = (" Pictures " + ", ".join(f"#{seq}" for seq in work.pictures) + "."
-                if work.pictures else "")
+    held = (
+        " Now registration "
+        + ", ".join(f"{number} of {section}" for section, number in work.registrations.items())
+        + "."
+        if work.registrations
+        else ""
+    )
+    pictures = (
+        " Pictures " + ", ".join(f"#{seq}" for seq in work.pictures) + "." if work.pictures else ""
+    )
     return f"{work.id} {work.kind} of {sections} {verb}: {text.strip()}{held}{pictures}"
 
 
@@ -136,7 +146,11 @@ class BackgroundWork:
         self._draining = threading.Event()
 
     def start(
-        self, kind: str, sections: Sequence[str], land: Callable[[], Landed], *,
+        self,
+        kind: str,
+        sections: Sequence[str],
+        land: Callable[[], Landed],
+        *,
         wait_for_images: bool = True,
     ) -> Work:
         """Start one piece of work and return it at once (status ``running``).
@@ -148,14 +162,18 @@ class BackgroundWork:
         """
         with self._lock:
             self._count += 1
-            work = Work(id=f"{ID_PREFIX}{self._count}", kind=kind,
-                        sections=tuple(str(name) for name in sections), started=time.time())
-            entry = _Entry(work=work, land=land,
-                           wait_for=work.sections if wait_for_images else ())
+            work = Work(
+                id=f"{ID_PREFIX}{self._count}",
+                kind=kind,
+                sections=tuple(str(name) for name in sections),
+                started=time.time(),
+            )
+            entry = _Entry(work=work, land=land, wait_for=work.sections if wait_for_images else ())
             self._entries[work.id] = entry
             if self._executor is None:
-                self._executor = ThreadPoolExecutor(max_workers=MAX_WORKERS,
-                                                    thread_name_prefix="background-work")
+                self._executor = ThreadPoolExecutor(
+                    max_workers=MAX_WORKERS, thread_name_prefix="background-work"
+                )
             entry.future = self._executor.submit(self._thread, entry)
         return work
 
@@ -221,9 +239,11 @@ class BackgroundWork:
         """
         with self._lock:
             entries = list(self._entries.values())[:among]
-            ready = [entry.work for entry in entries
-                     if entry.work.status != RUNNING
-                     and not entry.work.delivered]
+            ready = [
+                entry.work
+                for entry in entries
+                if entry.work.status != RUNNING and not entry.work.delivered
+            ]
             for work in ready:
                 work.delivered = True
         return ready
@@ -243,8 +263,9 @@ class BackgroundWork:
         try:
             while True:
                 with self._lock:
-                    pending = [entry for entry in self._entries.values()
-                               if not entry.finished.is_set()]
+                    pending = [
+                        entry for entry in self._entries.values() if not entry.finished.is_set()
+                    ]
                 if not pending:
                     break
                 for entry in pending:
@@ -270,8 +291,7 @@ class BackgroundWork:
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:
             with self._lock:
-                pending = [entry for entry in self._entries.values()
-                           if not entry.finished.is_set()]
+                pending = [entry for entry in self._entries.values() if not entry.finished.is_set()]
             if not pending:
                 return True
             if any(entry.finished.wait(poll / len(pending)) for entry in pending):
@@ -337,13 +357,14 @@ class BackgroundWork:
             return
         job = self._job
         held = [note_for(image, notes) for image in drawn]
-        entry.work.captions = [str(note.caption or "") if note is not None else ""
-                               for note in held]
+        entry.work.captions = [str(note.caption or "") if note is not None else "" for note in held]
         try:
             names = job.views.save(
-                tool=entry.work.kind, pictures=list(zip(drawn, held, strict=True)),
+                tool=entry.work.kind,
+                pictures=list(zip(drawn, held, strict=True)),
                 arguments={"work": entry.work.id, "sections": list(entry.work.sections)},
-                atlas=job.workspace.atlas if job.workspace is not None else None)
+                atlas=job.workspace.atlas if job.workspace is not None else None,
+            )
             entry.work.pictures = [int(name.split("_", 1)[0]) for name in names]
         except Exception:
             logger.warning("Could not save the pictures of %s", entry.work.id, exc_info=True)

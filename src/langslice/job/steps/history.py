@@ -229,9 +229,7 @@ def _number(data: JsonObject, key: str) -> int | None:
     return integer_at(data, key)
 
 
-def registration_value(
-    state: Stack, section: Section
-) -> dict[str, JsonValue] | None:
+def registration_value(state: Stack, section: Section) -> dict[str, JsonValue] | None:
     """Return the section's registration in its JSON form.
 
     Parameters
@@ -249,17 +247,11 @@ def registration_value(
         it has neither a transform nor a current deformation.
     """
     deformation = section.deformation
-    if deformation is not None and deformation.linear_key != linear_key(
-        state, section
-    ):
+    if deformation is not None and deformation.linear_key != linear_key(state, section):
         deformation = None
     if section.transform is None and deformation is None:
         return None
-    transform = (
-        None
-        if section.transform is None
-        else affine_to_json(section.transform)
-    )
+    transform = None if section.transform is None else affine_to_json(section.transform)
     applied = None if deformation is None else deformation_to_json(deformation)
     return {
         "flip": bool(section.flip),
@@ -334,11 +326,7 @@ def guessed_maker(row: Row) -> str:
         method = deformation.steps[-1].get("method")
         if method:
             return str(method)
-        return (
-            "trace_borders"
-            if deformation.steps[-1].get("trace")
-            else "fireants_syn"
-        )
+        return "trace_borders" if deformation.steps[-1].get("trace") else "fireants_syn"
     kind = row.section.get("transform")
     kind = kind.get("kind") if isinstance(kind, Mapping) else None
     return {
@@ -389,9 +377,7 @@ class SectionHistories:
 
     def __init__(self, layout: JobLayout) -> None:
         self.layout = layout
-        self._cache: dict[
-            Path, tuple[tuple[int, int, int], tuple[Row, ...]]
-        ] = {}
+        self._cache: dict[Path, tuple[tuple[int, int, int], tuple[Row, ...]]] = {}
 
     def rows(self, section_id: str) -> tuple[Row, ...]:
         """Return a section's lines, oldest first.
@@ -423,9 +409,7 @@ class SectionHistories:
             lines: list[JsonObject] = list(lines_from_registration_list(text))
         else:
             lines = _parsed_lines(text)
-        rows = tuple(
-            row for row in map(Row.from_json, lines) if row is not None
-        )
+        rows = tuple(row for row in map(Row.from_json, lines) if row is not None)
         self._cache[path] = (stamp, rows)
         return rows
 
@@ -444,9 +428,7 @@ class SectionHistories:
         Row or None
             None without that line.
         """
-        return next(
-            (row for row in self.rows(section_id) if row.seq == seq), None
-        )
+        return next((row for row in self.rows(section_id) if row.seq == seq), None)
 
     def number(self, section_id: str, digest: str | None) -> int | None:
         """Return the number a section's history gives a registration.
@@ -487,9 +469,7 @@ class SectionHistories:
                 first.setdefault(row.registration, row)
         return [first[number] for number in sorted(first)]
 
-    def registration_number(
-        self, state: Stack, section: Section
-    ) -> int | None:
+    def registration_number(self, state: Stack, section: Section) -> int | None:
         """Return the number of the registration a section holds.
 
         Parameters
@@ -539,9 +519,7 @@ class SectionHistories:
         rows = self.rows(section.id)
         number = self.number(section.id, digest)
         if number is None and numbered and digest is not None:
-            number = (
-                max((row.registration or 0 for row in rows), default=0) + 1
-            )
+            number = max((row.registration or 0 for row in rows), default=0) + 1
         seq = rows[-1].seq + 1 if rows else 1
         row = Row(
             seq=seq,
@@ -655,9 +633,7 @@ def _with_parents(folder: Path, names: set[str]) -> set[str]:
             continue
         kept.add(name)
         try:
-            meta = json_object(
-                (folder / name / "record.json").read_text(encoding="utf-8")
-            )
+            meta = json_object((folder / name / "record.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         parent = None if meta is None else meta.get("parent")

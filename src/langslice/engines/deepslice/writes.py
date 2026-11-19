@@ -200,9 +200,7 @@ def _write_positions(
     result = context.set_positions(position_rows, cutting_angles=angles)
     if result.ok:
         landed = result.details.get("cutting_angles") is not None
-        return _positions_written(
-            result, angles_written=angles is not None and landed
-        )
+        return _positions_written(result, angles_written=angles is not None and landed)
 
     refused = f"{result.error}: {result.message}"
     if angles is None or not position_rows:
@@ -210,14 +208,10 @@ def _write_positions(
     result = context.set_positions(position_rows)
     if not result.ok:
         return Written(refused=refused)
-    return replace(
-        _positions_written(result, angles_written=False), refused=refused
-    )
+    return replace(_positions_written(result, angles_written=False), refused=refused)
 
 
-def _positions_written(
-    result: WriteResult, *, angles_written: bool
-) -> Written:
+def _positions_written(result: WriteResult, *, angles_written: bool) -> Written:
     """Return what a position write that was not refused whole did."""
     rows = cast("list[dict[str, str | float]]", result.rows)
     clamped = [
@@ -250,11 +244,7 @@ def _write_transforms(
         if row.refused is None:
             planes[row.id] = (here.position_mm, here.angles)
     params = in_plane_params(context, run, planes)
-    errors = {
-        section: NO_PIXEL_SIZE
-        for section, numbers in params.items()
-        if numbers is None
-    }
+    errors = {section: NO_PIXEL_SIZE for section, numbers in params.items() if numbers is None}
     transform_rows = [
         {"id": section, "params": list(numbers), "note": TRANSFORM_NOTE}
         for section, numbers in params.items()
@@ -266,9 +256,7 @@ def _write_transforms(
     done = context.set_transforms(transform_rows)
     if not done.ok:
         refused = written.refused or f"{done.error}: {done.message}"
-        return replace(
-            written, params=params, transform_errors=errors, refused=refused
-        )
+        return replace(written, params=params, transform_errors=errors, refused=refused)
     return replace(
         written,
         params=params,
@@ -282,7 +270,5 @@ def _row_errors(result: WriteResult) -> dict[str, str]:
     rows = cast("list[dict[str, str]]", result.rows)
     landed = set(result.written)
     return {
-        row["id"]: str(row.get("error", NOT_WRITTEN))
-        for row in rows
-        if row["id"] not in landed
+        row["id"]: str(row.get("error", NOT_WRITTEN)) for row in rows if row["id"] not in landed
     }

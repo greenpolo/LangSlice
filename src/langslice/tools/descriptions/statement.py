@@ -135,9 +135,7 @@ JOB_POSITIONS = (
     "where you conclude the interval between neighbouring sections is "
     "genuinely broken"
 )
-JOB_TRANSFORM = (
-    "give every section one in-plane transform onto its atlas section"
-)
+JOB_TRANSFORM = "give every section one in-plane transform onto its atlas section"
 JOB_ORIENTATION = "correct the orientation of any section that is {turned}"
 JOB_TRANSFORM_AND_ORIENTATION = (
     "give every section one in-plane transform onto its atlas section, "
@@ -153,10 +151,7 @@ JOB_SOME_DEFORMATIONS = (
     "give a section a deformation onto the atlas where it improves on its "
     "linear placement, with the section's stain as the evidence"
 )
-JOB_TRACES = (
-    ", or, for a section you choose to trace, the borders the image model "
-    "traces on it"
-)
+JOB_TRACES = ", or, for a section you choose to trace, the borders the image model traces on it"
 JOB_REVIEW = "review the stack"
 
 TASK_NOTE_TITLES: dict[str, str] = {
@@ -183,8 +178,7 @@ BREAK_RULE = (
     "exceeds {ratio:g}x the stack's median written spacing."
 )
 SUBMIT_TRANSFORMS = (
-    "- `submit` is refused unless every section carries a transform, damaged "
-    "sections included."
+    "- `submit` is refused unless every section carries a transform, damaged sections included."
 )
 DAMAGED_TRANSFORM = (
     "- A damaged section (one with marked regions) still needs a transform "
@@ -192,9 +186,7 @@ DAMAGED_TRANSFORM = (
     "against the surviving internal anatomy before submitting."
 )
 BY_HAND = "by hand with `interactive_transform`"
-BY_ELASTIX = (
-    "with `elastix_affine`, which leaves the marked regions out of the fit"
-)
+BY_ELASTIX = "with `elastix_affine`, which leaves the marked regions out of the fit"
 OR_FIT = ", or fit it "
 TRACE_OPTIONAL = (
     "- `trace_borders` is optional: you decide which sections, if any, to "
@@ -205,10 +197,7 @@ SUBMIT_DEFORMATIONS = (
     "applied at its current placement, damaged sections included; the user "
     "requires one on every section."
 )
-DATA_ONLY = (
-    "- Corrections are recorded as data; the user's image files are never "
-    "modified."
-)
+DATA_ONLY = "- Corrections are recorded as data; the user's image files are never modified."
 NO_LIMITS = (
     "- LangSlice sets no limit on tokens, time or tool calls. Quality is the "
     "absolute priority: this run may be evaluated on the quality of its "
@@ -243,8 +232,7 @@ PLACING = (
     "- After writing, review the whole stack against the atlas, watch for "
     "spacings that differ from their neighbours, and re-check the sections "
     "on either side of any gap before reporting an interval break.",
-    "- Submit when the work is complete; address any missing requirements "
-    "it returns.",
+    "- Submit when the work is complete; address any missing requirements it returns.",
 )
 REVISIT_POSITIONS = (
     "- Positions can be revisited throughout registration. If [[?zoom zooms "
@@ -287,9 +275,7 @@ NARRATE = (
     "run by these sentences, so leave out tool names, arguments and file "
     "paths."
 )
-FIT_REPLY = (
-    "- A fit's reply names the section image, atlas image and mask it used."
-)
+FIT_REPLY = "- A fit's reply names the section image, atlas image and mask it used."
 FIT_IMAGES = (
     "- A fit compares one section image with one atlas image. It does best "
     "when both show as much internal structure as possible (layers, nuclei, "
@@ -436,9 +422,7 @@ def build_job_statement(facts: StatementFacts) -> str:
         The statement, the same for every door.
     """
     spec, state, names = facts.spec, facts.state, facts.tool_names
-    absent = [
-        name for name in ("make_image", "trace_borders") if name not in names
-    ]
+    absent = [name for name in ("make_image", "trace_borders") if name not in names]
     shown = [
         *run_facts(
             spec,
@@ -522,9 +506,7 @@ def _position_constraints(spec: JobSpec, state: Stack) -> list[str]:
         return []
     if spec.position.strict_interval:
         interval = state.interval_mm
-        spacing = STRICT_SPACING.format(
-            tolerance=STRICT_INTERVAL_TOLERANCE, interval=interval
-        )
+        spacing = STRICT_SPACING.format(tolerance=STRICT_INTERVAL_TOLERANCE, interval=interval)
     else:
         spacing = BREAK_RULE.format(ratio=INTERVAL_BREAK_MIN_RATIO)
     return [SUBMIT_POSITIONS, spacing]
@@ -550,9 +532,7 @@ def _transform_constraints(spec: JobSpec, names: Collection[str]) -> list[str]:
     ]
 
 
-def _deformation_constraints(
-    spec: JobSpec, names: Collection[str]
-) -> list[str]:
+def _deformation_constraints(spec: JobSpec, names: Collection[str]) -> list[str]:
     if not spec.has("nonlinear"):
         return []
     constraints: list[str] = []
@@ -568,11 +548,7 @@ def _deformation_constraints(
 
 def _method(spec: JobSpec, names: Collection[str]) -> list[str]:
     method = _positioning_method(spec)
-    fits = [
-        name
-        for name in ("elastix_affine", *DEFORMABLE_METHODS)
-        if name in names
-    ]
+    fits = [name for name in ("elastix_affine", *DEFORMABLE_METHODS) if name in names]
     if spec.has("transform") and fits:
         method.append(FITS_REFINE)
     if spec.has("transform") and not spec.off("interactive_transform"):
@@ -609,8 +585,7 @@ def _deformation_method(names: Collection[str]) -> list[str]:
     if len(engines) > 1:
         method.append(METHODS_CHAINED)
         method += [
-            DEFORMABLE_METHOD.format(name=name, what=DEFORMABLE_METHODS[name])
-            for name in engines
+            DEFORMABLE_METHOD.format(name=name, what=DEFORMABLE_METHODS[name]) for name in engines
         ]
     return method
 
@@ -643,9 +618,7 @@ def task_notes(spec: JobSpec) -> list[str]:
     for task, title in TASK_NOTE_TITLES.items():
         if not spec.has(task):
             continue
-        body = [
-            line.strip() for line in notes[task].splitlines() if line.strip()
-        ]
+        body = [line.strip() for line in notes[task].splitlines() if line.strip()]
         if body:
             lines += ["", TASK_NOTES.format(title=title)]
             lines += [f"- {line}" for line in body]

@@ -49,8 +49,7 @@ class TransformProposal:
     mirrored: bool
     calibration: dict[str, Any]
     record: dict[str, Any]
-    affine: StoredAffine | None = field(
-        default=None, repr=False, compare=False)
+    affine: StoredAffine | None = field(default=None, repr=False, compare=False)
 
     def row(self) -> dict[str, Any]:
         return {"id": self.id, "transform": self.record}
@@ -84,15 +83,17 @@ class DeformationProposal:
             Its key, the linear placement it sits on and its one step; no
             record folder, since it is not saved.
         """
-        return DeformationRef(key=self.key, linear_key=self._warp.linear_key,
-                              steps=(dict(self._warp.step),))
+        return DeformationRef(
+            key=self.key, linear_key=self._warp.linear_key, steps=(dict(self._warp.step),)
+        )
 
 
 class ContextProposals(ContextFrames):
     """Make transforms and deformations to write, and read placements."""
 
-    def transform_from_matrix(self, section: object, matrix: Any, *,
-                              note: str = "") -> TransformProposal:
+    def transform_from_matrix(
+        self, section: object, matrix: Any, *, note: str = ""
+    ) -> TransformProposal:
         """A method's linear result as a transform LangSlice stores: *matrix*
         is the 2x3 map from the fit grid's pixels (:attr:`FitFrame.image`) to
         native atlas pixels (:attr:`FitFrame.atlas`), the form registration
@@ -104,14 +105,14 @@ class ContextProposals(ContextFrames):
         grid = self._grid(record)
         m = np.vstack([np.asarray(matrix, dtype=np.float64).reshape(2, 3), [0.0, 0.0, 1.0]])
         if not np.isfinite(m).all() or abs(np.linalg.det(m[:2, :2])) < 1e-9:
-            raise ToolError(RefusalCode.BAD_MATRIX,
-                            "the map is degenerate or not finite")
+            raise ToolError(RefusalCode.BAD_MATRIX, "the map is degenerate or not finite")
         step = np.asarray(grid.placement.atlas_to_section, dtype=np.float64) @ m
         params = cast("Grid", grid).params_after(IDENTITY_PARAMS, step)
         return self.transform_from_params(record.id, params, note=note)
 
-    def transform_from_params(self, section: object, params: Sequence[float], *,
-                              note: str = "") -> TransformProposal:
+    def transform_from_params(
+        self, section: object, params: Sequence[float], *, note: str = ""
+    ) -> TransformProposal:
         """The stored transform for the six normalized numbers *params*
         (``[a, b, tx, c, d, ty]``, on the section as its orientation sets it):
         the knobs about the section's stored pivot (else the canvas centre),
@@ -130,18 +131,24 @@ class ContextProposals(ContextFrames):
         record = self._record(section)
         values = [float(v) for v in params]
         if len(values) != 6 or not np.isfinite(values).all():
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            "a transform is six finite numbers [a, b, tx, c, d, ty]")
+            raise ToolError(
+                RefusalCode.BAD_ARGS, "a transform is six finite numbers [a, b, tx, c, d, ty]"
+            )
         workspace, state = self._run.workspace, self._run.state
         rendered = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
         um_per_px, source = calibrate(state, workspace, record, rendered)
         try:
-            geometry = canvas_geometry(rendered.size, um_per_px, workspace.atlas,
-                                       record.position_mm, state.plane,
-                                       record.pitch_deg, record.yaw_deg)
+            geometry = canvas_geometry(
+                rendered.size,
+                um_per_px,
+                workspace.atlas,
+                record.position_mm,
+                state.plane,
+                record.pitch_deg,
+                record.yaw_deg,
+            )
         except ValueError as exc:
-            raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                            f"{record.id}: {exc}") from exc
+            raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT, f"{record.id}: {exc}") from exc
         in_section = denormalized_affine(values, rendered.size)
         ox, oy = (float(v) for v in geometry.section_offset)
         shift = np.array([[1.0, 0.0, ox], [0.0, 1.0, oy], [0.0, 0.0, 1.0]])
@@ -151,8 +158,9 @@ class ContextProposals(ContextFrames):
         knobs_now = None if record.transform is None else record.transform.physical
         held_pivot = None if knobs_now is None else knobs_now.pivot
         pivot = (float(held_pivot[0]), float(held_pivot[1])) if held_pivot else (0.5, 0.5)
-        knobs = physical_params(on_canvas, pivot=(canvas_w * pivot[0], canvas_h * pivot[1]),
-                                um_per_px=um_per_px)
+        knobs = physical_params(
+            on_canvas, pivot=(canvas_w * pivot[0], canvas_h * pivot[1]), um_per_px=um_per_px
+        )
         mirrored = bool(decompose_affine(values)["mirrored"])
         scale = round(float(um_per_px), 4)
         calibration = {"section_um_per_px": scale, "source": source}
@@ -173,18 +181,31 @@ class ContextProposals(ContextFrames):
             mirrored=mirrored,
             note=str(note or "").strip(),
         )
-        return TransformProposal(id=record.id, params=tuple(values), knobs=dict(knobs),
-                                 pivot=pivot, mirrored=mirrored, calibration=calibration,
-                                 record=affine_to_json(affine), affine=affine)
+        return TransformProposal(
+            id=record.id,
+            params=tuple(values),
+            knobs=dict(knobs),
+            pivot=pivot,
+            mirrored=mirrored,
+            calibration=calibration,
+            record=affine_to_json(affine),
+            affine=affine,
+        )
 
-    def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
-                             meta: Mapping[str, Any] | None = None,
-                             weights: Any = None,
-                             provenance: Mapping[str, Any] | None = None,
-                             start: str = "linear",
-                             settings: Mapping[str, Any] | None = None,
-                             engine_settings: Mapping[str, Any] | None = None,
-                             engine_version: str = "") -> DeformationProposal:
+    def deformation_from_map(
+        self,
+        section: object,
+        native_xy: Any,
+        *,
+        note: str = "",
+        meta: Mapping[str, Any] | None = None,
+        weights: Any = None,
+        provenance: Mapping[str, Any] | None = None,
+        start: str = "linear",
+        settings: Mapping[str, Any] | None = None,
+        engine_settings: Mapping[str, Any] | None = None,
+        engine_version: str = "",
+    ) -> DeformationProposal:
         """A method's deformable result as the deformation LangSlice stores:
         *native_xy* is a float ``(H, W, 2)`` array giving, for each pixel
         centre ``(x, y)`` of the fit grid (:attr:`FitFrame.image`, ``H`` by
@@ -223,33 +244,49 @@ class ContextProposals(ContextFrames):
             plain_meta = to_jsonable(dict(meta or {}), strict=True)
             json.dumps(plain_meta)
         except (TypeError, ValueError) as exc:
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            f"meta is JSON values: {exc}") from exc
+            raise ToolError(RefusalCode.BAD_ARGS, f"meta is JSON values: {exc}") from exc
         text = str(note or "").strip()
         given = to_jsonable(dict(provenance or {}), strict=True)
         fitted_with = to_jsonable(dict(settings or {}), strict=True)
         engine = to_jsonable(dict(engine_settings or {}), strict=True)
         try:
             warp = warps.warp_from_map(
-                self._run.job, self._run.workspace, record.id, native_xy,
-                method=self._caller.label, step={"note": text} if text else {},
-                provenance={**self._caller.provenance(self.call, text, plain_meta),
-                            "input": "full map: fit-grid pixel centres to native atlas "
-                                     "pixels", **given},
-                weights=weights, start=str(start),
-                settings=fitted_with or None, engine_settings=engine,
-                engine_version=str(engine_version or ""))
+                self._run.job,
+                self._run.workspace,
+                record.id,
+                native_xy,
+                method=self._caller.label,
+                step={"note": text} if text else {},
+                provenance={
+                    **self._caller.provenance(self.call, text, plain_meta),
+                    "input": "full map: fit-grid pixel centres to native atlas pixels",
+                    **given,
+                },
+                weights=weights,
+                start=str(start),
+                settings=fitted_with or None,
+                engine_settings=engine,
+                engine_version=str(engine_version or ""),
+            )
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         consistency = warp.record.diagnostics.get("inverse_consistency_mm") or {}
         return DeformationProposal(
-            id=record.id, key=warp.key, summary=copy.deepcopy(warp.numbers),
+            id=record.id,
+            key=warp.key,
+            summary=copy.deepcopy(warp.numbers),
             inverse_consistency_mm={k: round(float(v), 4) for k, v in consistency.items()},
-            _warp=warp)
+            _warp=warp,
+        )
 
-    def read_registration(self, path: str | Path, *, sections: Sequence[str] = (),
-                          at: Mapping[object, Mapping[str, Any]] | None = None,
-                          registered_on: str = "file") -> dict[str, Any]:
+    def read_registration(
+        self,
+        path: str | Path,
+        *,
+        sections: Sequence[str] = (),
+        at: Mapping[object, Mapping[str, Any]] | None = None,
+        registered_on: str = "file",
+    ) -> dict[str, Any]:
         """A linear registration file made elsewhere (QuickNII or VisuAlign
         JSON/XML, DeepSlice CSV/JSON/XML, a LangSlice ``registration.json``)
         as placements for this job's sections. Nothing is written. Returns
@@ -296,26 +333,45 @@ class ContextProposals(ContextFrames):
             angles = plane.get("angles") or (record.pitch_deg, record.yaw_deg)
             planes[name] = (float(position), float(angles[0]), float(angles[1]))
         result = import_placements(
-            Path(path), self._run.workspace, section_ids=names,
+            Path(path),
+            self._run.workspace,
+            section_ids=names,
             orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices},
-            planes=planes, registered_on=registered_on)
+            planes=planes,
+            registered_on=registered_on,
+        )
         rows = []
         for p in result.placements:
             calibrated = p.pixel_size_source != "imported"
-            rows.append({
-                "id": p.section_id, "position_mm": round(float(p.position_mm), 4),
-                "pitch_deg": round(float(p.pitch_deg), 3),
-                "yaw_deg": round(float(p.yaw_deg), 3),
-                "rotation_deg": int(p.rotation_deg), "flip": bool(p.flip),
-                "params": [float(v) for v in p.params] if calibrated else None,
-                **({} if calibrated else {
-                    "params_note": "the job has no pixel size for this section; the file's "
-                                   "numbers imply one, which this job would not use"}),
-                "pixel_size_um": float(p.pixel_size_um),
-                "pixel_size_source": p.pixel_size_source,
-                "out_of_plane_um": round(float(p.placement.out_of_plane_um), 3),
-                "in_plane": {k: (round(float(v), 5) if isinstance(v, float) else v)
-                             for k, v in p.placement.in_plane.items()},
-            })
-        return {"placements": rows, "refused": dict(result.refused),
-                "missing": list(result.missing), "unmatched": list(result.unmatched)}
+            rows.append(
+                {
+                    "id": p.section_id,
+                    "position_mm": round(float(p.position_mm), 4),
+                    "pitch_deg": round(float(p.pitch_deg), 3),
+                    "yaw_deg": round(float(p.yaw_deg), 3),
+                    "rotation_deg": int(p.rotation_deg),
+                    "flip": bool(p.flip),
+                    "params": [float(v) for v in p.params] if calibrated else None,
+                    **(
+                        {}
+                        if calibrated
+                        else {
+                            "params_note": "the job has no pixel size for this section; the file's "
+                            "numbers imply one, which this job would not use"
+                        }
+                    ),
+                    "pixel_size_um": float(p.pixel_size_um),
+                    "pixel_size_source": p.pixel_size_source,
+                    "out_of_plane_um": round(float(p.placement.out_of_plane_um), 3),
+                    "in_plane": {
+                        k: (round(float(v), 5) if isinstance(v, float) else v)
+                        for k, v in p.placement.in_plane.items()
+                    },
+                }
+            )
+        return {
+            "placements": rows,
+            "refused": dict(result.refused),
+            "missing": list(result.missing),
+            "unmatched": list(result.unmatched),
+        }

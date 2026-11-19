@@ -172,27 +172,35 @@ def _remap(image: np.ndarray, offset_px: np.ndarray, *, nearest: bool = False) -
     yy, xx = np.indices((height, width), dtype=np.float32)
     return cv2.remap(
         image.astype(np.float64 if nearest else np.float32),
-        (xx + offset_px[..., 0]).astype(np.float32), (yy + offset_px[..., 1]).astype(np.float32),
+        (xx + offset_px[..., 0]).astype(np.float32),
+        (yy + offset_px[..., 1]).astype(np.float32),
         cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
     ).astype(image.dtype)
 
 
-def _native_coords(matrix: np.ndarray, offset_px: np.ndarray | None,
-                   shape: tuple[int, int]) -> np.ndarray:
+def _native_coords(
+    matrix: np.ndarray, offset_px: np.ndarray | None, shape: tuple[int, int]
+) -> np.ndarray:
     """Native atlas coords of every pixel q (+ offset) through inverse(*matrix*)."""
     yy, xx = np.indices(shape, dtype=np.float64)
     if offset_px is not None:
         xx = xx + offset_px[..., 0]
         yy = yy + offset_px[..., 1]
     inverse = np.linalg.inv(matrix)
-    return np.stack([inverse[k, 0] * xx + inverse[k, 1] * yy + inverse[k, 2]
-                     for k in range(2)], axis=-1)
+    return np.stack(
+        [inverse[k, 0] * xx + inverse[k, 1] * yy + inverse[k, 2] for k in range(2)], axis=-1
+    )
 
 
 def _atlas_meta(atlas: Any, placement: Placement, native: np.ndarray) -> dict[str, Any]:
     coords = plane_index_coordinates(
-        atlas, placement.position_mm, placement.plane, placement.pitch_deg, placement.yaw_deg,
+        atlas,
+        placement.position_mm,
+        placement.plane,
+        placement.pitch_deg,
+        placement.yaw_deg,
     )
     origin = coords[:, 0, 0]
     if coords.shape[1] < 2 or coords.shape[2] < 2:
@@ -241,22 +249,33 @@ def prepare_fit(
 
     scale = brain_scale(atlas)
     grid, native, working_coords, current, footprint = _placed_atlas(
-        atlas, placement, (width, height), settings.detail, previous, scale)
+        atlas, placement, (width, height), settings.detail, previous, scale
+    )
     spacing = float(np.mean(grid.spacing_mm))
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
     left = placement_left(atlas, placement, (*settings.exclude, *settings.structures))
     excluded = whole_region_ids(atlas, settings.exclude)
-    excluded_native = (regions_mask(atlas, native, settings.exclude, left)
-                       if settings.exclude else None)
+    excluded_native = (
+        regions_mask(atlas, native, settings.exclude, left) if settings.exclude else None
+    )
     ventricles = ventricle_ids(atlas)
     offset = _previous_offset(grid, previous)
-    excluded_w = (sample_native(excluded_native, working_coords) if excluded_native is not None
-                  else np.zeros(current.shape, dtype=bool))
+    excluded_w = (
+        sample_native(excluded_native, working_coords)
+        if excluded_native is not None
+        else np.zeros(current.shape, dtype=bool)
+    )
     softening_px = LINE_SOFTENING_UM * scale / 1000.0 / spacing
 
     moving = placed_atlas_image(
-        settings.atlas_image, native, atlas, placement, atlas_to_working, grid.size,
-        excluded_native, softening_px=softening_px,
+        settings.atlas_image,
+        native,
+        atlas,
+        placement,
+        atlas_to_working,
+        grid.size,
+        excluded_native,
+        softening_px=softening_px,
     )
     if offset is not None:
         moving = _remap(moving, offset)
@@ -277,12 +296,14 @@ def prepare_fit(
     extent = extent_ratio = None
     if settings.labels == "model":
         assert lines_w is not None
-        extent, extent_ratio = model_extent(lines_w, int((current != 0).sum()), spacing,
-                                            brain_scale=scale)
+        extent, extent_ratio = model_extent(
+            lines_w, int((current != 0).sum()), spacing, brain_scale=scale
+        )
     if extent is not None:
         fixed_mask |= dilate(extent, MASK_MARGIN_MM * scale / spacing)
-        moving_mask = (dilate(current != 0, TRACE_MOVING_MARGIN_MM * scale / spacing)
-                       & ~masks.damage_zone)
+        moving_mask = (
+            dilate(current != 0, TRACE_MOVING_MARGIN_MM * scale / spacing) & ~masks.damage_zone
+        )
 
     details: dict[str, Any] = {}
     region: np.ndarray | None = None
@@ -297,19 +318,25 @@ def prepare_fit(
         neighbourhood = dilate(in_reach, settings.neighbourhood_um / 1000.0 / spacing)
         fixed_mask &= neighbourhood
         moving_mask &= neighbourhood
-        details["structures"] = sorted(resolve_structures(
-            atlas, [split_side(entry)[0] for entry in settings.structures]))
+        details["structures"] = sorted(
+            resolve_structures(atlas, [split_side(entry)[0] for entry in settings.structures])
+        )
         details["neighbourhood_um"] = settings.neighbourhood_um
         taper_mm = RESTRICTED_TAPER_MM * scale
-        step_weight = _taper_weight(in_reach, spacing, settings.neighbourhood_um / 1000.0,
-                                    (width, height), taper_mm)
-        details["taper_um"] = [settings.neighbourhood_um,
-                               settings.neighbourhood_um + taper_mm * 1000.0]
+        step_weight = _taper_weight(
+            in_reach, spacing, settings.neighbourhood_um / 1000.0, (width, height), taper_mm
+        )
+        details["taper_um"] = [
+            settings.neighbourhood_um,
+            settings.neighbourhood_um + taper_mm * 1000.0,
+        ]
     if section_weights is not None:
         weights = np.asarray(section_weights, dtype=np.float32)
         if weights.shape != (height, width):
-            raise ValueError(f"section_weights is the section grid's (H, W) = ({height}, "
-                             f"{width}); got {weights.shape}")
+            raise ValueError(
+                f"section_weights is the section grid's (H, W) = ({height}, "
+                f"{width}); got {weights.shape}"
+            )
         fixed_mask &= grid.to_working(weights) >= EM_MATCH_THRESHOLD
         details["section_mask"] = "weights thresholded at 0.5"
 
@@ -328,8 +355,9 @@ def prepare_fit(
         merged = labels_at(current, atlas, MODEL_DEPTH)
         merged = np.where(kept, merged, 0)
         tissue = footprint if extent is None else extent
-        section_regions, unnamed, report = named_regions(lines_w, merged, tissue, spacing,
-                                                         brain_scale=scale)
+        section_regions, unnamed, report = named_regions(
+            lines_w, merged, tissue, spacing, brain_scale=scale
+        )
         fixed_mask &= ~unnamed
         if extent is not None:
             add_channel("outline", extent, current != 0)
@@ -343,8 +371,10 @@ def prepare_fit(
             "named": len([r for r in report if not r["dropped"]]),
             "dropped": [r for r in report if r["dropped"]],
         }
-        details["model_outline"] = {"used": extent is not None,
-                                    "area_ratio": round(float(extent_ratio or 0.0), 3)}
+        details["model_outline"] = {
+            "used": extent is not None,
+            "area_ratio": round(float(extent_ratio or 0.0), 3),
+        }
     details["label_channels"] = channel_names
     if not fixed_mask.any() or not moving_mask.any():
         raise ValueError("The fit masks are empty")
@@ -363,22 +393,34 @@ def prepare_fit(
     inputs = EngineInputs(
         fixed=np.ascontiguousarray(fixed, dtype=np.float32),
         moving=np.ascontiguousarray(moving, dtype=np.float32),
-        fixed_mask=fixed_mask, moving_mask=moving_mask,
-        spacing_mm=grid.spacing_mm, origin_mm=grid.origin_mm,
-        fixed_labels=fixed_labels, moving_labels=moving_labels,
+        fixed_mask=fixed_mask,
+        moving_mask=moving_mask,
+        spacing_mm=grid.spacing_mm,
+        origin_mm=grid.origin_mm,
+        fixed_labels=fixed_labels,
+        moving_labels=moving_labels,
         label_weights=[LABEL_CHANNEL_WEIGHT] * len(fixed_labels),
-        fixed_edges=fixed_edges, moving_edges=moving_edges,
+        fixed_edges=fixed_edges,
+        moving_edges=moving_edges,
         edge_weight=EDGE_CHANNEL_WEIGHT if fixed_edges is not None else 0.0,
         correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM * scale / 1000.0 / spacing)),
         brain_scale=scale,
     )
     return PreparedFit(
-        settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
+        settings=settings,
+        placement=placement,
+        grid=grid,
+        inputs=inputs,
+        native=native,
         footprint=_on_section(footprint, (width, height)),
-        excluded=excluded, ventricles=ventricles,
+        excluded=excluded,
+        ventricles=ventricles,
         atlas_meta=_atlas_record(atlas, placement, native),
-        previous=previous, details=details, excluded_mask=excluded_native,
-        step_weight=step_weight, brain_scale=scale,
+        previous=previous,
+        details=details,
+        excluded_mask=excluded_native,
+        step_weight=step_weight,
+        brain_scale=scale,
     )
 
 
@@ -390,8 +432,9 @@ def with_section_mask(prepared: PreparedFit, mask: np.ndarray) -> PreparedFit:
     width, height = prepared.footprint.shape[1], prepared.footprint.shape[0]
     keep = np.asarray(mask)
     if keep.shape != (height, width):
-        raise ValueError(f"the mask is the fit grid's (H, W) = ({height}, {width}); "
-                         f"got {keep.shape}")
+        raise ValueError(
+            f"the mask is the fit grid's (H, W) = ({height}, {width}); got {keep.shape}"
+        )
     if prepared.inputs is None:
         raise ValueError("A prepared warp has no engine fit to mask")
     working = prepared.grid.to_working(keep.astype(np.float32)) > 0.5
@@ -403,9 +446,13 @@ def with_section_mask(prepared: PreparedFit, mask: np.ndarray) -> PreparedFit:
     return prepared
 
 
-def _taper_weight(region: np.ndarray, spacing_mm: float, neighbourhood_mm: float,
-                  section_size: tuple[int, int],
-                  taper_mm: float = RESTRICTED_TAPER_MM) -> np.ndarray:
+def _taper_weight(
+    region: np.ndarray,
+    spacing_mm: float,
+    neighbourhood_mm: float,
+    section_size: tuple[int, int],
+    taper_mm: float = RESTRICTED_TAPER_MM,
+) -> np.ndarray:
     """1 within *neighbourhood_mm* of *region* (working grid), a raised cosine to 0
     over *taper_mm* beyond, on the section grid."""
     distance = np.asarray(ndi.distance_transform_edt(~region), dtype=np.float64) * spacing_mm
@@ -423,14 +470,23 @@ def _invert_step(field_px: np.ndarray, guess_px: np.ndarray) -> np.ndarray:
     inverse = guess_px.astype(np.float32).copy()
     for _ in range(INVERSE_ITERATIONS):
         mx, my = xx + inverse[..., 0], yy + inverse[..., 1]
-        sampled = np.stack([cv2.remap(c, mx, my, cv2.INTER_LINEAR,
-                                      borderMode=cv2.BORDER_REPLICATE) for c in channels], -1)
+        sampled = np.stack(
+            [
+                cv2.remap(c, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+                for c in channels
+            ],
+            -1,
+        )
         inverse += INVERSE_RELAXATION * (-sampled - inverse)
     return inverse
 
 
 def prepare_warp(
-    atlas: Any, placement: Placement, size: tuple[int, int], detail: str, *,
+    atlas: Any,
+    placement: Placement,
+    size: tuple[int, int],
+    detail: str,
+    *,
     previous: DeformableRecord | None = None,
 ) -> PreparedFit:
     """What :func:`finish_fit` reads for a warp no engine computes (the
@@ -439,18 +495,32 @@ def prepare_warp(
     facts. No images, masks or settings: nothing excluded, no details."""
     scale = brain_scale(atlas)
     grid, native, _coords, _current, footprint = _placed_atlas(
-        atlas, placement, size, detail, previous, scale)
+        atlas, placement, size, detail, previous, scale
+    )
     return PreparedFit(
-        settings=None, placement=placement, grid=grid, inputs=None, native=native,
-        footprint=_on_section(footprint, size), excluded=frozenset(),
-        ventricles=ventricle_ids(atlas), atlas_meta=_atlas_record(atlas, placement, native),
-        previous=previous, brain_scale=scale,
+        settings=None,
+        placement=placement,
+        grid=grid,
+        inputs=None,
+        native=native,
+        footprint=_on_section(footprint, size),
+        excluded=frozenset(),
+        ventricles=ventricle_ids(atlas),
+        atlas_meta=_atlas_record(atlas, placement, native),
+        previous=previous,
+        brain_scale=scale,
     )
 
 
 def warp_from_native_map(
-    atlas: Any, placement: Placement, native_xy: np.ndarray, detail: str, *,
-    engine: str, engine_version: str = "", native_parameters: dict[str, Any] | None = None,
+    atlas: Any,
+    placement: Placement,
+    native_xy: np.ndarray,
+    detail: str,
+    *,
+    engine: str,
+    engine_version: str = "",
+    native_parameters: dict[str, Any] | None = None,
     runtime_s: float = 0.0,
 ) -> DeformableRecord:
     """The record of a full map made elsewhere: *native_xy* ``(H, W, 2)``
@@ -472,17 +542,27 @@ def warp_from_native_map(
     matrix = placement.atlas_to_section
     yy, xx = np.indices((height, width), dtype=np.float64)
     nx, ny = native[..., 0], native[..., 1]
-    forward_px = np.stack([matrix[0, 0] * nx + matrix[0, 1] * ny + matrix[0, 2] - xx,
-                           matrix[1, 0] * nx + matrix[1, 1] * ny + matrix[1, 2] - yy], axis=-1)
+    forward_px = np.stack(
+        [
+            matrix[0, 0] * nx + matrix[0, 1] * ny + matrix[0, 2] - xx,
+            matrix[1, 0] * nx + matrix[1, 1] * ny + matrix[1, 2] - yy,
+        ],
+        axis=-1,
+    )
     inverse_px = _invert_step(forward_px, -forward_px)
     prepared = prepare_warp(atlas, placement, size, detail)
     prepared.grid = WorkingGrid(size, mm, size)
-    record = finish_fit(prepared, EngineResult(
-        field_mm=(forward_px * mm).astype(np.float32),
-        inverse_field_mm=(inverse_px * mm).astype(np.float32),
-        inverse_source="fixed-point inversion of the supplied map",
-        native_parameters=dict(native_parameters or {}), runtime_s=float(runtime_s),
-        engine_version=engine_version))
+    record = finish_fit(
+        prepared,
+        EngineResult(
+            field_mm=(forward_px * mm).astype(np.float32),
+            inverse_field_mm=(inverse_px * mm).astype(np.float32),
+            inverse_source="fixed-point inversion of the supplied map",
+            native_parameters=dict(native_parameters or {}),
+            runtime_s=float(runtime_s),
+            engine_version=engine_version,
+        ),
+    )
     record.engine["name"] = engine
     return record
 
@@ -492,27 +572,36 @@ def _previous_offset(grid: WorkingGrid, previous: DeformableRecord | None) -> np
     if previous is None:
         return None
     prev_w = cv2.resize(previous.field_mm, grid.size, interpolation=cv2.INTER_LINEAR)
-    return np.stack([prev_w[..., 0] / grid.spacing_mm[0],
-                     prev_w[..., 1] / grid.spacing_mm[1]], axis=-1)
+    return np.stack(
+        [prev_w[..., 0] / grid.spacing_mm[0], prev_w[..., 1] / grid.spacing_mm[1]], axis=-1
+    )
 
 
 def _placed_atlas(
-    atlas: Any, placement: Placement, size: tuple[int, int], detail: str,
-    previous: DeformableRecord | None, scale: float,
+    atlas: Any,
+    placement: Placement,
+    size: tuple[int, int],
+    detail: str,
+    previous: DeformableRecord | None,
+    scale: float,
 ) -> tuple[WorkingGrid, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """``(grid, native labels, working-grid native coordinates, labels there,
     footprint)``: the atlas's current frame on the working grid of *detail*
     times the brain *scale* (placed, or where *previous* left it) and its
     footprint widened by :data:`MASK_MARGIN_MM` times *scale*, on that grid."""
-    if previous is not None and (tuple(previous.section_size) != tuple(size)
-                                 or previous.placement.to_dict() != placement.to_dict()):
+    if previous is not None and (
+        tuple(previous.section_size) != tuple(size)
+        or previous.placement.to_dict() != placement.to_dict()
+    ):
         raise ValueError("A sequential step must use its previous record's section and placement")
-    grid = WorkingGrid.for_section(size, placement.section_mm_per_px,
-                                   DETAIL[detail].working_um * scale / 1000)
+    grid = WorkingGrid.for_section(
+        size, placement.section_mm_per_px, DETAIL[detail].working_um * scale / 1000
+    )
     native = native_labels(atlas, placement)
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
-    working_coords = _native_coords(atlas_to_working, _previous_offset(grid, previous),
-                                    (grid.size[1], grid.size[0]))
+    working_coords = _native_coords(
+        atlas_to_working, _previous_offset(grid, previous), (grid.size[1], grid.size[0])
+    )
     current = sample_native(native, working_coords)
     footprint = dilate(current != 0, MASK_MARGIN_MM * scale / float(np.mean(grid.spacing_mm)))
     return grid, native, working_coords, current, footprint
@@ -523,13 +612,17 @@ def _on_section(mask: np.ndarray, size: tuple[int, int]) -> np.ndarray:
 
 
 def _atlas_record(atlas: Any, placement: Placement, native: np.ndarray) -> dict[str, Any]:
-    return {**_atlas_meta(atlas, placement, native),
-            "acronyms": {str(k): v for k, v in structure_acronyms(
-                atlas, np.unique(native)).items()}}
+    return {
+        **_atlas_meta(atlas, placement, native),
+        "acronyms": {str(k): v for k, v in structure_acronyms(atlas, np.unique(native)).items()},
+    }
 
 
 def finish_fit(
-    prepared: PreparedFit, result: EngineResult, *, landmark_warp: bool = False,
+    prepared: PreparedFit,
+    result: EngineResult,
+    *,
+    landmark_warp: bool = False,
 ) -> DeformableRecord:
     """Interpolate the engine's fields to the section, compose, label and diagnose.
 
@@ -559,23 +652,34 @@ def finish_fit(
         total = compose_forward(step_field, parent_mm, mm)
         inverse = compose_inverse(step_inverse, parent_inverse_mm, mm)
     offset = np.stack([total[..., 0] / mm, total[..., 1] / mm], axis=-1)
-    warped = sample_native(prepared.native,
-                           _native_coords(prepared.placement.atlas_to_section, offset,
-                                          (height, width)))
-    placed = sample_native(prepared.native,
-                           _native_coords(prepared.placement.atlas_to_section, None,
-                                          (height, width)))
+    warped = sample_native(
+        prepared.native,
+        _native_coords(prepared.placement.atlas_to_section, offset, (height, width)),
+    )
+    placed = sample_native(
+        prepared.native, _native_coords(prepared.placement.atlas_to_section, None, (height, width))
+    )
     acronyms = {int(k): v for k, v in prepared.atlas_meta["acronyms"].items()}
     diag_warped, diag_placed = warped, placed
     if prepared.excluded_mask is not None and prepared.excluded_mask.any():
         kept_native = np.where(prepared.excluded_mask, 0, prepared.native)
-        diag_warped = sample_native(kept_native, _native_coords(
-            prepared.placement.atlas_to_section, offset, (height, width)))
-        diag_placed = sample_native(kept_native, _native_coords(
-            prepared.placement.atlas_to_section, None, (height, width)))
+        diag_warped = sample_native(
+            kept_native,
+            _native_coords(prepared.placement.atlas_to_section, offset, (height, width)),
+        )
+        diag_placed = sample_native(
+            kept_native, _native_coords(prepared.placement.atlas_to_section, None, (height, width))
+        )
     diagnostics = diagnose(
-        total, mm, diag_warped, diag_placed, prepared.footprint, ventricles=prepared.ventricles,
-        excluded=prepared.excluded, acronyms=acronyms, brain_scale=prepared.brain_scale,
+        total,
+        mm,
+        diag_warped,
+        diag_placed,
+        prepared.footprint,
+        ventricles=prepared.ventricles,
+        excluded=prepared.excluded,
+        acronyms=acronyms,
+        brain_scale=prepared.brain_scale,
         base_field_mm=total if landmark_warp else landmark_base_field(previous),
     )
     moved = np.stack([xx + offset[..., 0], yy + offset[..., 1]], -1)
@@ -592,12 +696,16 @@ def finish_fit(
     engine = {
         "name": prepared.settings.engine if prepared.settings is not None else None,
         "version": result.engine_version,
-        "runtime_s": result.runtime_s, "native_parameters": result.native_parameters,
+        "runtime_s": result.runtime_s,
+        "native_parameters": result.native_parameters,
         "notes": result.notes,
         **({"gpu_wait_s": round(result.gpu_wait_s, 1)} if result.gpu_wait_s else {}),
         **({"oom_retries": result.oom_retries} if result.oom_retries else {}),
-        "working_grid": {"size": list(grid.size), "spacing_mm": list(grid.spacing_mm),
-                         "origin_mm": list(grid.origin_mm)},
+        "working_grid": {
+            "size": list(grid.size),
+            "spacing_mm": list(grid.spacing_mm),
+            "origin_mm": list(grid.origin_mm),
+        },
         "step_details": prepared.details,
     }
     stored_step = None
@@ -607,16 +715,22 @@ def finish_fit(
     if result.left_out is not None:
         left_out = _on_section(result.left_out, (width, height))
     return DeformableRecord(
-        placement=prepared.placement, section_size=(width, height),
-        settings=prepared.settings, field_mm=total.astype(np.float32),
+        placement=prepared.placement,
+        section_size=(width, height),
+        settings=prepared.settings,
+        field_mm=total.astype(np.float32),
         inverse_field_mm=inverse.astype(np.float32),
         inverse_source=inverse_source,
         labels=warped.astype(prepared.native.dtype),
         footprint=prepared.footprint,
-        excluded_ids=sorted(prepared.excluded), engine=engine, diagnostics=diagnostics,
+        excluded_ids=sorted(prepared.excluded),
+        engine=engine,
+        diagnostics=diagnostics,
         atlas={k: v for k, v in prepared.atlas_meta.items() if k != "acronyms"},
-        step=0 if previous is None else previous.step + 1, parent=previous,
-        left_out=left_out, stored_step=stored_step,
+        step=0 if previous is None else previous.step + 1,
+        parent=previous,
+        left_out=left_out,
+        stored_step=stored_step,
     )
 
 
@@ -653,7 +767,9 @@ def run_or_fail(
 
 
 def fit_prepared(
-    prepared: Sequence[PreparedFit], *, max_workers: int | None = None,
+    prepared: Sequence[PreparedFit],
+    *,
+    max_workers: int | None = None,
 ) -> list[DeformableRecord | CandidateFailure]:
     """Run already prepared fits, in order.
 
@@ -676,15 +792,17 @@ def fit_prepared(
             return list(pool.map(run_or_fail, prepared))
     workers = max_workers or min(len(prepared), max(1, (os.cpu_count() or 2) // FIT_THREADS))
     context = multiprocessing.get_context("spawn")
-    with ProcessPoolExecutor(max_workers=workers, mp_context=context,
-                             initializer=engine_worker) as pool:
+    with ProcessPoolExecutor(
+        max_workers=workers, mp_context=context, initializer=engine_worker
+    ) as pool:
         futures = [pool.submit(run_fit, *_engine_args(p)) for p in prepared]
         for item, future in zip(prepared, futures, strict=True):
             try:
                 results.append(finish_fit(item, future.result()))
             except ENGINE_FAILURES as exc:
-                results.append(CandidateFailure(_engine_args(item)[1],
-                                                f"{type(exc).__name__}: {exc}"))
+                results.append(
+                    CandidateFailure(_engine_args(item)[1], f"{type(exc).__name__}: {exc}")
+                )
     return results
 
 

@@ -81,21 +81,42 @@ def picture(
     base = image.convert("RGB").resize(full, Image.Resampling.LANCZOS).crop(shown)
     kinds = tuple(kind for kind in atlas_images if kind != "borders")
     if style.atlas_opacity > 0 and kinds:
-        base = _blend_atlas(ctx, base, small if warped else _unwarped(small), kinds,
-                            style.atlas_opacity)
+        base = _blend_atlas(
+            ctx, base, small if warped else _unwarped(small), kinds, style.atlas_opacity
+        )
     native = native_labels(ctx.atlas, record.placement)
     drawn = draw_warped_borders(
-        base, small, ctx.atlas, highlight=style.highlight, marked=style.marked, warped=warped,
-        outlines=style.outlines, depth=style.depth, width_px=style.thickness,
-        core=style.core, native=native,
+        base,
+        small,
+        ctx.atlas,
+        highlight=style.highlight,
+        marked=style.marked,
+        warped=warped,
+        outlines=style.outlines,
+        depth=style.depth,
+        width_px=style.thickness,
+        core=style.core,
+        native=native,
     )
     captioned = caption(drawn, title)
     if note is not None:
-        pictures_drawn.note(captioned, **note, warp=pictures_drawn.WarpNote(
-            record=small, band=0, warped=warped,
-            highlight=tuple(style.highlight), marked=tuple(style.marked),
-            outlines=style.outlines, depth=style.depth, width_px=float(style.thickness),
-            native=native, grid_size=full, box=shown))
+        pictures_drawn.note(
+            captioned,
+            **note,
+            warp=pictures_drawn.WarpNote(
+                record=small,
+                band=0,
+                warped=warped,
+                highlight=tuple(style.highlight),
+                marked=tuple(style.marked),
+                outlines=style.outlines,
+                depth=style.depth,
+                width_px=float(style.thickness),
+                native=native,
+                grid_size=full,
+                box=shown,
+            ),
+        )
     return captioned
 
 
@@ -107,7 +128,11 @@ def unzoomed_size(size: tuple[int, int], long_edge: int) -> tuple[int, int]:
 
 
 def trace_picture(
-    image: Image.Image, lines: np.ndarray, *, style: Style, title: str,
+    image: Image.Image,
+    lines: np.ndarray,
+    *,
+    style: Style,
+    title: str,
 ) -> Image.Image:
     """The image model's traced lines on the section image, at ``style.long_edge``.
 
@@ -126,7 +151,7 @@ def trace_picture(
     factor = min(1.0, int(style.long_edge) / float(max(crop)))
     shown = (max(8, int(round(crop[0] * factor))), max(8, int(round(crop[1] * factor))))
     base = image.convert("RGB").crop(box).resize(shown, Image.Resampling.LANCZOS)
-    mask = np.asarray(lines, dtype=np.float32)[box[1]:box[3], box[0]:box[2]]
+    mask = np.asarray(lines, dtype=np.float32)[box[1] : box[3], box[0] : box[2]]
     drawn = cv2.resize(mask, shown, interpolation=cv2.INTER_AREA) > 0.02
     radius = int(round((float(style.thickness) - 1.0) / 2.0))
     if radius > 0:
@@ -139,13 +164,14 @@ def trace_picture(
 def _unwarped(record: DeformableRecord) -> DeformableRecord:
     from dataclasses import replace
 
-    return replace(
-        record, field_mm=np.zeros_like(record.field_mm), stored_step=None
-    )
+    return replace(record, field_mm=np.zeros_like(record.field_mm), stored_step=None)
 
 
 def _blend_atlas(
-    ctx: Workspace, base: Image.Image, record: DeformableRecord, kinds: tuple[str, ...],
+    ctx: Workspace,
+    base: Image.Image,
+    record: DeformableRecord,
+    kinds: tuple[str, ...],
     opacity: float,
 ) -> Image.Image:
     """The atlas images pulled through the record's map, blended under the lines.
@@ -160,14 +186,22 @@ def _blend_atlas(
     def pulled(kind: str) -> np.ndarray:
         native = native_intensity(ctx.atlas, record.placement, kind)
         native = normalize_intensity(native, labels > 0)
-        return cv2.remap(native.astype(np.float32), nx, ny, cv2.INTER_LINEAR,
-                         borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        return cv2.remap(
+            native.astype(np.float32),
+            nx,
+            ny,
+            cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
 
     if len(kinds) == 1:
         atlas = pulled(kinds[0])[..., None] * 255.0
     else:
-        atlas = sum(pulled(kind)[..., None] * np.asarray(rgb, dtype=np.float32)
-                    for kind, _word, rgb in channel_colors(kinds))
+        atlas = sum(
+            pulled(kind)[..., None] * np.asarray(rgb, dtype=np.float32)
+            for kind, _word, rgb in channel_colors(kinds)
+        )
     pixels = np.asarray(base, dtype=np.float32)
     mixed = pixels * (1.0 - opacity) + atlas * opacity
     return Image.fromarray(np.rint(np.clip(mixed, 0, 255)).astype(np.uint8))

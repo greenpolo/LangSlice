@@ -60,12 +60,25 @@ _T = TypeVar("_T")
 Row = dict[str, JsonValue]
 
 ROW_KEYS = (
-    "id", "index_original", "index_corrected", "flip", "rotation_deg",
-    "damaged_regions", "damage_note", "position_mm", "position_source",
+    "id",
+    "index_original",
+    "index_corrected",
+    "flip",
+    "rotation_deg",
+    "damaged_regions",
+    "damage_note",
+    "position_mm",
+    "position_source",
     "transform",
-    "border_trace", "deformation", "landmarks", "layers", "masks",
-    "images", "caveats", "cutting_angles_deg",
-)  # fmt: skip
+    "border_trace",
+    "deformation",
+    "landmarks",
+    "layers",
+    "masks",
+    "images",
+    "caveats",
+    "cutting_angles_deg",
+)
 ANGLES_KEY = "cutting_angles_deg"
 
 
@@ -156,9 +169,7 @@ def _named(row: JsonObject, key: str, read: Callable[[JsonObject], _T]) -> _T:
         raise ValueError(f"section {row.get('id')}, {key}: {exc}") from exc
 
 
-def _part(
-    row: JsonObject, key: str, read: Callable[[JsonObject], _T]
-) -> _T | None:
+def _part(row: JsonObject, key: str, read: Callable[[JsonObject], _T]) -> _T | None:
     """Return the part a row holds under *key* as *read* makes it.
 
     None for null; its error names the section and the part.
@@ -204,18 +215,12 @@ def _position_source(row: JsonObject) -> PositionSource:
 
 def _images(row: JsonObject) -> dict[str, ImageRef]:
     entries = _part_at(row, "images") or {}
-    return {
-        name: image_from_json(as_object("images", entry))
-        for name, entry in entries.items()
-    }
+    return {name: image_from_json(as_object("images", entry)) for name, entry in entries.items()}
 
 
 def _masks(row: JsonObject) -> dict[str, MaskRef]:
     entries = _part_at(row, "masks") or {}
-    return {
-        name: mask_from_json(as_object("masks", entry))
-        for name, entry in entries.items()
-    }
+    return {name: mask_from_json(as_object("masks", entry)) for name, entry in entries.items()}
 
 
 def _landmarks(row: JsonObject) -> Landmarks | None:

@@ -88,15 +88,24 @@ class FitSettings:
 
     def __post_init__(self, stiffness: Any = None) -> None:
         if stiffness is not None:
-            raise ValueError("stiffness is gone: give smoothness_um, the warp's smoothness "
-                             "in micrometres")
-        if not (isinstance(self.smoothness_um, (int, float))
-                and SMOOTHNESS_BOUNDS_UM[0] <= self.smoothness_um <= SMOOTHNESS_BOUNDS_UM[1]):
-            raise ValueError("smoothness_um must be a number of micrometres between "
-                             f"{SMOOTHNESS_BOUNDS_UM[0]:g} and {SMOOTHNESS_BOUNDS_UM[1]:g}")
-        for name, kind in (("engine", Engine), ("detail", Detail),
-                           ("section_image", SectionImage),
-                           ("labels", Labels), ("stain_metric", StainMetric)):
+            raise ValueError(
+                "stiffness is gone: give smoothness_um, the warp's smoothness in micrometres"
+            )
+        if not (
+            isinstance(self.smoothness_um, (int, float))
+            and SMOOTHNESS_BOUNDS_UM[0] <= self.smoothness_um <= SMOOTHNESS_BOUNDS_UM[1]
+        ):
+            raise ValueError(
+                "smoothness_um must be a number of micrometres between "
+                f"{SMOOTHNESS_BOUNDS_UM[0]:g} and {SMOOTHNESS_BOUNDS_UM[1]:g}"
+            )
+        for name, kind in (
+            ("engine", Engine),
+            ("detail", Detail),
+            ("section_image", SectionImage),
+            ("labels", Labels),
+            ("stain_metric", StainMetric),
+        ):
             value = getattr(self, name)
             if value not in get_args(kind):
                 raise ValueError(f"{name} must be one of {get_args(kind)}, got {value!r}")
@@ -116,8 +125,9 @@ class FitSettings:
     @property
     def metric(self) -> Metric:
         """The similarity metric this setting fits with (:func:`metric_for`)."""
-        return metric_for(self.section_image, self.atlas_image, engine=self.engine,
-                          stain_metric=self.stain_metric)
+        return metric_for(
+            self.section_image, self.atlas_image, engine=self.engine, stain_metric=self.stain_metric
+        )
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -132,7 +142,8 @@ class FitSettings:
         legacy = data.pop("stiffness", None)
         if legacy is not None and "smoothness_um" not in data:
             data["smoothness_um"] = {"soft": 50.0, "medium": 80.0, "firm": 120.0}.get(
-                legacy, DEFAULT_SMOOTHNESS_UM)
+                legacy, DEFAULT_SMOOTHNESS_UM
+            )
         unknown = sorted(set(data) - set(cls.__dataclass_fields__))
         if unknown:
             raise ValueError(f"Unknown fit setting key(s) {unknown}")
@@ -147,7 +158,10 @@ def neighbourhood_um_for(scale: float) -> float:
 
 
 def metric_for(
-    section_image: str, atlas_image: str, *, engine: str = "fireants",
+    section_image: str,
+    atlas_image: str,
+    *,
+    engine: str = "fireants",
     stain_metric: str = "mutual_information",
 ) -> Metric:
     """The similarity metric for an image pairing, engine and stain metric.
@@ -170,8 +184,10 @@ def metric_for(
             raise ValueError("Model lines can only be fitted against a borders atlas image")
         return "mean_squares"
     if atlas_image in BORDER_IMAGES:
-        raise ValueError("Atlas borders are fitted against traced lines only; fit a stain "
-                         "against a grayscale atlas image")
+        raise ValueError(
+            "Atlas borders are fitted against traced lines only; fit a stain "
+            "against a grayscale atlas image"
+        )
     if stain_metric == "mutual_information":
         return "mutual_information"
     return "local_correlation" if engine == "fireants" else ELASTIX_STAIN_METRIC

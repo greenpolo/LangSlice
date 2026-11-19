@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from langslice.core.pictures.placement import CanvasFrame
 
 
-
 @dataclass
 class PictureNote:
     """What one picture shows: its sections, its mode and, for a placement
@@ -60,7 +59,8 @@ class WarpNote:
 
 
 _NOTES: contextvars.ContextVar[list[tuple[Image.Image, PictureNote]] | None] = (
-    contextvars.ContextVar("langslice_picture_notes", default=None))
+    contextvars.ContextVar("langslice_picture_notes", default=None)
+)
 
 
 @contextlib.contextmanager
@@ -109,7 +109,8 @@ def note_of(image: Image.Image) -> PictureNote | None:
 
 
 def note_for(
-    image: Image.Image, notes: list[tuple[Image.Image, PictureNote]],
+    image: Image.Image,
+    notes: list[tuple[Image.Image, PictureNote]],
 ) -> PictureNote | None:
     """The latest note made for this very image (identity, not equality)."""
     for noted, held in reversed(notes):

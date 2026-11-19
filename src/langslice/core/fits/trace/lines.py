@@ -84,8 +84,12 @@ def smooth_border_overlay(
     """
     base = np.asarray(image.convert("RGB"), dtype=np.float32)
     coverage = placed_border_coverage(
-        labels, atlas_to_image, image.size, width_px=width_px,
-        smoothing_px=smoothing_px, supersample=supersample,
+        labels,
+        atlas_to_image,
+        image.size,
+        width_px=width_px,
+        smoothing_px=smoothing_px,
+        supersample=supersample,
     )
     alpha = coverage[..., None]
     blended = base * (1.0 - alpha) + np.array([255.0, 255.0, 0.0]) * alpha

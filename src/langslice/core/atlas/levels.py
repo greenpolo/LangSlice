@@ -32,10 +32,15 @@ def _lookup(atlas: Any, depth: int) -> tuple[np.ndarray, np.ndarray]:
         held = _LOOKUPS[id(structures)] = (structures, {})
     per_atlas = held[1]
     if depth not in per_atlas:
-        pairs = sorted((sid, ancestor_at(sid, record, depth))
-                       for sid, record in structure_table(atlas).items() if sid != 0)
-        per_atlas[depth] = (np.array([p[0] for p in pairs], dtype=np.int64),
-                            np.array([p[1] for p in pairs], dtype=np.int64))
+        pairs = sorted(
+            (sid, ancestor_at(sid, record, depth))
+            for sid, record in structure_table(atlas).items()
+            if sid != 0
+        )
+        per_atlas[depth] = (
+            np.array([p[0] for p in pairs], dtype=np.int64),
+            np.array([p[1] for p in pairs], dtype=np.int64),
+        )
     return per_atlas[depth]
 
 

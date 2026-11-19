@@ -45,28 +45,22 @@ RANGE = (
     "first section, {high:.2f} mm its last)."
 )
 AXIS_ENDS = (
-    "- {low:.2f} mm is the {low_end} edge of the volume; positions increase "
-    "toward {high_end}."
+    "- {low:.2f} mm is the {low_end} edge of the volume; positions increase toward {high_end}."
 )
 PROTOCOL = (
-    "- Cutting protocol: nominal section interval {interval}, section "
-    "thickness {thickness}. "
+    "- Cutting protocol: nominal section interval {interval}, section thickness {thickness}. "
 )
 INTERVAL = "{:.3f} mm center-to-center"
 THICKNESS = "{:.3f} mm"
 NOT_SUPPLIED = "not supplied"
-PROTOCOL_KNOWN = (
-    "These are protocol values; spacing may vary where sections are missing."
-)
+PROTOCOL_KNOWN = "These are protocol values; spacing may vary where sections are missing."
 PROTOCOL_UNKNOWN = (
     "Infer positions and spacing from anatomy. Estimate missing protocol "
     "values where the evidence supports them, and record estimates or "
     "unresolved uncertainty in your notes. Spacing may vary where sections "
     "are missing."
 )
-STACK_ANGLES = (
-    "- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
-)
+STACK_ANGLES = "- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
 MIXED_ANGLES = (
     "- Cutting angles: these differ between sections, as supplied; each "
     "status row carries its own cutting_angles_deg.[[?position_sections  "
@@ -92,16 +86,11 @@ POSITIONS_WRITTEN = (
     "- The stack's order follows the positions: writing positions renumbers "
     "the sections, so use filenames to name them."
 )
-POSITIONS_GIVEN = (
-    "- The positions shown are given; this run does not change them."
-)
+POSITIONS_GIVEN = "- The positions shown are given; this run does not change them."
 TRANSFORMS_GIVEN = (
-    "- Existing linear transforms are supplied and fixed for this run, "
-    "orientation included."
+    "- Existing linear transforms are supplied and fixed for this run, orientation included."
 )
-ORIENTATION_GIVEN = (
-    "- The orientation shown is fixed; transforms are not part of this run."
-)
+ORIENTATION_GIVEN = "- The orientation shown is fixed; transforms are not part of this run."
 NO_FLIP = "- Flipping sections is switched off for this run."
 CANVAS = (
     "- Alignment canvas: each section is drawn at its TRUE physical size "
@@ -140,8 +129,7 @@ SPARSE_SIGNAL = (
 ATLAS_IMAGES = "- Atlas images: {images}."
 DEFAULT_NISSL = " The fits' default `{nissl}` is `{image}` on this atlas."
 PICTURE_SIZE = (
-    "- Picture size is yours to choose: look's resolution runs from "
-    "{low} to {high} pixels."
+    "- Picture size is yours to choose: look's resolution runs from {low} to {high} pixels."
 )
 ATLAS_DESCRIBED = "- The atlas as BrainGlobe describes it: {description}"
 BORROWED = (
@@ -149,10 +137,7 @@ BORROWED = (
     "Nissl, registered to the CCFv3 annotation), resampled onto this atlas's "
     "grid."
 )
-ENGINE_MISSING = (
-    "- FireANTs (or torch) is not installed on this host, so {tools} cannot "
-    "run."
-)
+ENGINE_MISSING = "- FireANTs (or torch) is not installed on this host, so {tools} cannot run."
 
 
 def run_facts(
@@ -202,11 +187,7 @@ def run_facts(
     ]
     if spec.has("transform"):
         facts += _transform_facts(spec)
-    facts += [
-        USER_FACT.format(fact=fact.strip())
-        for fact in spec.facts
-        if fact.strip()
-    ]
+    facts += [USER_FACT.format(fact=fact.strip()) for fact in spec.facts if fact.strip()]
     return facts
 
 
@@ -234,9 +215,7 @@ def _section_facts(spec: JobSpec, state: Stack) -> list[str]:
     initial = [s for s in ordered if s.position_source == INITIAL]
     facts = [SET_POSITIONS]
     if initial:
-        facts = [
-            INITIAL_POSITIONS.format(initial=len(initial), count=len(ordered))
-        ]
+        facts = [INITIAL_POSITIONS.format(initial=len(initial), count=len(ordered))]
     damaged = [s.id for s in ordered if s.damaged]
     if damaged:
         facts.append(DAMAGED.format(sections=", ".join(damaged)))
@@ -318,20 +297,14 @@ def channel_facts(
         names = ", ".join(channels)
         facts.append(CHANNELS_SHARED.format(raw=RAW_CHANNELS, names=names))
     elif isinstance(channels, dict) and channels:
-        names = "; ".join(
-            f"{name}: {', '.join(listed)}" for name, listed in channels.items()
-        )
-        facts.append(
-            CHANNELS_PER_SECTION.format(raw=RAW_CHANNELS, names=names)
-        )
+        names = "; ".join(f"{name}: {', '.join(listed)}" for name, listed in channels.items())
+        facts.append(CHANNELS_PER_SECTION.format(raw=RAW_CHANNELS, names=names))
 
     opening = opening_words(opening_source(spec.image_settings()))
     if opening:
         facts.append(render(SECTION_IMAGES.format(opening=opening), off))
         facts.append(SPARSE_SIGNAL)
-    images = [
-        name for name in atlas_channels or () if name not in (BORDERS, NISSL)
-    ]
+    images = [name for name in atlas_channels or () if name not in (BORDERS, NISSL)]
     if images:
         line = ATLAS_IMAGES.format(images=", ".join(images))
         if nissl_image:
@@ -343,9 +316,7 @@ def channel_facts(
     return facts
 
 
-def atlas_facts(
-    atlas_name: str, atlas_channels: tuple[str, ...] | None
-) -> list[str]:
+def atlas_facts(atlas_name: str, atlas_channels: tuple[str, ...] | None) -> list[str]:
     """Return what the atlas and its borrowed Nissl image are.
 
     Parameters
@@ -367,9 +338,7 @@ def atlas_facts(
     if described:
         facts.append(ATLAS_DESCRIBED.format(description=described))
     if atlas_channels and BORROWED_NISSL in atlas_channels:
-        facts.append(
-            BORROWED.format(borrowed=BORROWED_NISSL, atlas=AUGMENTED_ATLAS)
-        )
+        facts.append(BORROWED.format(borrowed=BORROWED_NISSL, atlas=AUGMENTED_ATLAS))
     return facts
 
 
@@ -387,11 +356,7 @@ def engine_fact(tool_names: Collection[str]) -> str | None:
         The line naming the tools that need FireANTs; None when it runs, or
         when no tool of the run needs it.
     """
-    needing = [
-        name
-        for name in ("fireants_syn", "trace_borders")
-        if name in tool_names
-    ]
+    needing = [name for name in ("fireants_syn", "trace_borders") if name in tool_names]
     if not needing or engine_available():
         return None
     return ENGINE_MISSING.format(tools=" and ".join(needing))

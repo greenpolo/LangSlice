@@ -93,9 +93,7 @@ def deformable_row_to_json(row: DeformableRow) -> Written:
         if applied.inputs is not None:
             out["inputs"] = to_jsonable(applied.inputs.payload())
             out["estimated"] = (
-                None
-                if applied.estimated is None
-                else to_jsonable(applied.estimated.payload())
+                None if applied.estimated is None else to_jsonable(applied.estimated.payload())
             )
     if row.refusal is not None:
         out.update(cast("Written", row.refusal.payload()))

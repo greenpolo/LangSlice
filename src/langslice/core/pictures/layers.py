@@ -65,7 +65,6 @@ WARP_CONVENTION = (
 )
 
 
-
 def _native_rows_cols(panel: PanelFrame) -> tuple[np.ndarray, np.ndarray]:
     """Native plane row and column of each picture row and column (floats)."""
     x0, y0, x1, y1 = panel.content_box
@@ -89,7 +88,7 @@ def labels_layer(panel: PanelFrame) -> np.ndarray:
     keep_c = (c >= 0) & (c < annotation.shape[1])
     x0, y0, _x1, _y1 = panel.content_box
     block = annotation[np.ix_(r[keep_r], c[keep_c])].astype(np.uint32)
-    target = out[y0:y0 + len(r), x0:x0 + len(c)]
+    target = out[y0 : y0 + len(r), x0 : x0 + len(c)]
     target[np.ix_(np.nonzero(keep_r)[0], np.nonzero(keep_c)[0])] = block
     return out
 
@@ -103,14 +102,22 @@ def borders_layer(panel: PanelFrame) -> np.ndarray:
     out = np.zeros((height, width), dtype=np.uint8)
     x0, y0, x1, y1 = panel.content_box
     shape = (y1 - y0, x1 - x0)
-    kwargs = {"thickness": panel.line_width, "scale": panel.geometry.atlas_scale,
-              "offset": panel.geometry.atlas_offset, "origin": panel.crop_box[:2],
-              "factor": panel.factor}
+    kwargs = {
+        "thickness": panel.line_width,
+        "scale": panel.geometry.atlas_scale,
+        "offset": panel.geometry.atlas_offset,
+        "origin": panel.crop_box[:2],
+        "factor": panel.factor,
+    }
     coverage = np.zeros(shape, dtype=np.float32)
     for polys, width in ((panel.lines, 1.0), (panel.highlighted, HIGHLIGHT_WIDTH)):
         if polys:
-            coverage = np.maximum(coverage, line_coverage(
-                shape, list(polys), **{**kwargs, "thickness": panel.line_width * width}))
+            coverage = np.maximum(
+                coverage,
+                line_coverage(
+                    shape, list(polys), **{**kwargs, "thickness": panel.line_width * width}
+                ),
+            )
     out[y0:y1, x0:x1] = np.rint(coverage * 255.0).astype(np.uint8)
     return out
 
@@ -122,11 +129,13 @@ def picture_to_native(panel: PanelFrame) -> np.ndarray:
     scale = panel.geometry.atlas_scale
     ox, oy = panel.geometry.atlas_offset
     step = 1.0 / (panel.factor * scale)
-    return np.array([
-        [step, 0.0, (-y0 / panel.factor + by - oy) / scale],
-        [0.0, step, (-x0 / panel.factor + bx - ox) / scale],
-        [0.0, 0.0, 1.0],
-    ])
+    return np.array(
+        [
+            [step, 0.0, (-y0 / panel.factor + by - oy) / scale],
+            [0.0, step, (-x0 / panel.factor + bx - ox) / scale],
+            [0.0, 0.0, 1.0],
+        ]
+    )
 
 
 def section_to_picture(panel: PanelFrame) -> np.ndarray:
@@ -134,11 +143,13 @@ def section_to_picture(panel: PanelFrame) -> np.ndarray:
     (the linear placement; a deformation drawn on top is not in it)."""
     x0, y0, _x1, _y1 = panel.content_box
     bx, by = panel.crop_box[0], panel.crop_box[1]
-    canvas_to_picture = np.array([
-        [panel.factor, 0.0, x0 - bx * panel.factor],
-        [0.0, panel.factor, y0 - by * panel.factor],
-        [0.0, 0.0, 1.0],
-    ])
+    canvas_to_picture = np.array(
+        [
+            [panel.factor, 0.0, x0 - bx * panel.factor],
+            [0.0, panel.factor, y0 - by * panel.factor],
+            [0.0, 0.0, 1.0],
+        ]
+    )
     xy = canvas_to_picture @ np.asarray(panel.section_matrix, dtype=np.float64)
     swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     return swap @ xy @ swap
@@ -168,8 +179,9 @@ def frame_record(atlas: Any, note: PictureNote) -> dict[str, Any]:
     if frame is None or panel is None:
         raise ValueError("frame_record needs a placement picture's frame and panel")
     facts = atlas_facts(atlas)
-    index = plane_index_affine(atlas, frame.position_mm, frame.plane,
-                               frame.pitch_deg, frame.yaw_deg)
+    index = plane_index_affine(
+        atlas, frame.position_mm, frame.plane, frame.pitch_deg, frame.yaw_deg
+    )
     to_um = np.diag(facts["resolution_um"]) @ index @ picture_to_native(panel)
     params = frame.params
     placement: dict[str, Any] = (
@@ -184,20 +196,31 @@ def frame_record(atlas: Any, note: PictureNote) -> dict[str, Any]:
     return {
         "format_version": FRAME_FORMAT_VERSION,
         "atlas": facts,
-        "plane": {"name": frame.plane, "position_mm": float(frame.position_mm),
-                  "pitch_deg": float(frame.pitch_deg), "yaw_deg": float(frame.yaw_deg)},
+        "plane": {
+            "name": frame.plane,
+            "position_mm": float(frame.position_mm),
+            "pitch_deg": float(frame.pitch_deg),
+            "yaw_deg": float(frame.yaw_deg),
+        },
         "picture_size": [int(v) for v in panel.size],
         "content_box": [int(v) for v in panel.content_box],
-        "um_per_px": {"canvas": float(frame.um_per_px),
-                      "picture": float(frame.um_per_px) / panel.factor},
-        "canvas": {"size": [int(v) for v in panel.geometry.size],
-                   "crop_box": [int(v) for v in panel.crop_box],
-                   "factor": float(panel.factor),
-                   "atlas_scale": float(panel.geometry.atlas_scale),
-                   "atlas_offset": [float(v) for v in panel.geometry.atlas_offset],
-                   "section_offset": [int(v) for v in panel.geometry.section_offset]},
-        "section": {"id": frame.section_id, "render_size": [int(v) for v in frame.section.size],
-                    "placement": placement},
+        "um_per_px": {
+            "canvas": float(frame.um_per_px),
+            "picture": float(frame.um_per_px) / panel.factor,
+        },
+        "canvas": {
+            "size": [int(v) for v in panel.geometry.size],
+            "crop_box": [int(v) for v in panel.crop_box],
+            "factor": float(panel.factor),
+            "atlas_scale": float(panel.geometry.atlas_scale),
+            "atlas_offset": [float(v) for v in panel.geometry.atlas_offset],
+            "section_offset": [int(v) for v in panel.geometry.section_offset],
+        },
+        "section": {
+            "id": frame.section_id,
+            "render_size": [int(v) for v in frame.section.size],
+            "placement": placement,
+        },
         "deformation": note.deformation,
         "zoom": None if frame.zoom is None else [float(v) for v in frame.zoom],
         "pixel_to_atlas_um": to_um.tolist(),
@@ -213,8 +236,9 @@ def picture_layers(atlas: Any, note: PictureNote) -> tuple[np.ndarray, np.ndarra
     return labels_layer(note.panel), borders_layer(note.panel), frame_record(atlas, note)
 
 
-def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) -> tuple[
-        np.ndarray, np.ndarray, dict[str, Any]]:
+def warp_layers(
+    atlas: Any, note: PictureNote, picture_size: tuple[int, int]
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     """``(labels, borders, frame record)`` of a ``fit_deformable`` picture
     (a :class:`WarpNote`), on the picture's own pixel grid.
 
@@ -242,14 +266,14 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     rows, cols = record.field_mm.shape[:2]
     band = int(warp.band)
     facts = atlas_facts(atlas)
-    index = plane_index_affine(atlas, placement.position_mm, placement.plane,
-                               placement.pitch_deg, placement.yaw_deg)
+    index = plane_index_affine(
+        atlas, placement.position_mm, placement.plane, placement.pitch_deg, placement.yaw_deg
+    )
     swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     down = np.array([[1.0, 0.0, -band], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     picture_to_grid = swap @ down
     grid_to_native = np.linalg.inv(np.asarray(placement.atlas_to_section, dtype=np.float64))
-    to_um = (np.diag(facts["resolution_um"]) @ index @ swap @ grid_to_native
-             @ picture_to_grid)
+    to_um = np.diag(facts["resolution_um"]) @ index @ swap @ grid_to_native @ picture_to_grid
     yy, xx = np.indices((rows, cols), dtype=np.float64)
     shift_x = shift_y = np.zeros((rows, cols))
     if warp.warped:
@@ -265,27 +289,40 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
         native = native_labels(atlas, placement)
     ids = sample_native(np.asarray(native), np.stack([native_x, native_y], axis=-1))
     labels = np.zeros((height, width), dtype=np.uint32)
-    labels[band:band + rows, :cols] = ids.astype(np.uint32)
+    labels[band : band + rows, :cols] = ids.astype(np.uint32)
     coverage = drawn_border_coverage(
-        record, atlas, highlight=warp.highlight, marked=warp.marked, warped=warp.warped,
-        outlines=warp.outlines, depth=warp.depth, width_px=warp.width_px, native=native)
+        record,
+        atlas,
+        highlight=warp.highlight,
+        marked=warp.marked,
+        warped=warp.warped,
+        outlines=warp.outlines,
+        depth=warp.depth,
+        width_px=warp.width_px,
+        native=native,
+    )
     borders = np.zeros((height, width), dtype=np.uint8)
-    borders[band:band + rows, :cols] = np.rint(np.clip(coverage, 0.0, 1.0) * 255.0)
+    borders[band : band + rows, :cols] = np.rint(np.clip(coverage, 0.0, 1.0) * 255.0)
     residual = None
     if warp.warped:
         residual = {"grid_size": list(warp.grid_size), "box": list(warp.box)}
     frame = {
         "format_version": FRAME_FORMAT_VERSION,
         "atlas": facts,
-        "plane": {"name": placement.plane, "position_mm": float(placement.position_mm),
-                  "pitch_deg": float(placement.pitch_deg),
-                  "yaw_deg": float(placement.yaw_deg)},
+        "plane": {
+            "name": placement.plane,
+            "position_mm": float(placement.position_mm),
+            "pitch_deg": float(placement.pitch_deg),
+            "yaw_deg": float(placement.yaw_deg),
+        },
         "picture_size": [width, height],
         "content_box": [0, band, cols, band + rows],
         "um_per_px": {"picture": float(record.mm_per_px) * 1000.0},
-        "section": {"id": note.sections[0] if note.sections else None,
-                    "grid": "the section's oriented, unframed render the fit ran on, "
-                            "resized and cropped to the picture"},
+        "section": {
+            "id": note.sections[0] if note.sections else None,
+            "grid": "the section's oriented, unframed render the fit ran on, "
+            "resized and cropped to the picture",
+        },
         "deformation": note.deformation,
         "warped": bool(warp.warped),
         "residual": residual,
@@ -295,9 +332,9 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     return labels, borders, frame
 
 
-
 def coordinate_map(
-    view: dict[str, Any] | str | os.PathLike[str], *,
+    view: dict[str, Any] | str | os.PathLike[str],
+    *,
     folder: str | os.PathLike[str] | None = None,
 ) -> np.ndarray:
     """Every picture pixel's atlas position, ``(rows, cols, 3)`` float32 µm.
@@ -333,13 +370,14 @@ def coordinate_map(
     rows, cols = np.mgrid[0:height, 0:width].astype(np.float64)
     if frame.get("residual"):
         if base is None:
-            raise ValueError("This picture's map needs its deformation record: pass the "
-                             "view.json path, or folder= with the record")
+            raise ValueError(
+                "This picture's map needs its deformation record: pass the "
+                "view.json path, or folder= with the record"
+            )
         shift = _residual_shift(cast("JsonObject", frame), base)
         rows = rows + shift[0]
         cols = cols + shift[1]
-    out = (np.tensordot(matrix[:, :2], np.stack([rows, cols]), axes=1)
-           + matrix[:, 2][:, None, None])
+    out = np.tensordot(matrix[:, :2], np.stack([rows, cols]), axes=1) + matrix[:, 2][:, None, None]
     result = np.moveaxis(out, 0, -1).astype(np.float32)
     x0, y0, x1, y1 = (int(v) for v in frame["content_box"])
     outside = np.ones((height, width), dtype=bool)

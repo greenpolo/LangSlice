@@ -13,6 +13,7 @@ CANONICAL_PROVIDERS = ("gemini-api", "openai-api", "openai-oauth", "none")
 
 CUSTOM_PROVIDER = "custom"
 
+
 def canonical_provider(name: str) -> str:
     """A provider name, trimmed and lower-cased (canonical names only)."""
     return (name or "").strip().lower()

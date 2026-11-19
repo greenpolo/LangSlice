@@ -106,12 +106,25 @@ ATLAS_LAYER_DEFAULTS: dict[str, tuple[str, ...]] = {
     "positioning": ("template",),
 }
 WARP_CHOICES: tuple[str, ...] = ("applied", "none")
-_DISPLAY_MODE = {"section": "section", "atlas": "template", "overlay": "overlay",
-                 "positioning": "stacked"}
+_DISPLAY_MODE = {
+    "section": "section",
+    "atlas": "template",
+    "overlay": "overlay",
+    "positioning": "stacked",
+}
 FROM_FILE = " from the image file"
 SECTION_FIELDS: tuple[str, ...] = (
-    "index_original", "index_corrected", "position_mm", "cutting_angles_deg", "flip",
-    "rotation_deg", "transform", "deformation", "damaged_regions", "landmarks", "images",
+    "index_original",
+    "index_corrected",
+    "position_mm",
+    "cutting_angles_deg",
+    "flip",
+    "rotation_deg",
+    "transform",
+    "deformation",
+    "damaged_regions",
+    "landmarks",
+    "images",
 )
 _BORDER_COLOR = AUTO_BORDER_COLOR
 
@@ -152,33 +165,49 @@ class LookRequest:
     def args(self) -> dict[str, Any]:
         """The request as a recipe's ``args`` (JSON)."""
         return {
-            "mode": self.mode, "sections": list(self.sections),
+            "mode": self.mode,
+            "sections": list(self.sections),
             "positions_mm": [float(v) for v in self.positions_mm],
             "images": list(self.images),
             "atlas_layers": None if self.atlas_layers is None else list(self.atlas_layers),
-            "atlas_opacity": self.atlas_opacity, "warp": self.warp,
-            "long_edge": self.long_edge, "zoom": [float(v) for v in self.zoom],
-            "part": self.part, "highlight": list(self.highlight), "depth": self.depth,
+            "atlas_opacity": self.atlas_opacity,
+            "warp": self.warp,
+            "long_edge": self.long_edge,
+            "zoom": [float(v) for v in self.zoom],
+            "part": self.part,
+            "highlight": list(self.highlight),
+            "depth": self.depth,
             **({"region_only": True} if self.region_only else {}),
             **({"layers": list(self.layers)} if self.layers else {}),
             **({"masks": list(self.masks)} if self.masks else {}),
-            **({"registrations": [[name, number, held] for name, number, held
-                                  in self.registrations]} if self.registrations else {}),
+            **(
+                {
+                    "registrations": [
+                        [name, number, held] for name, number, held in self.registrations
+                    ]
+                }
+                if self.registrations
+                else {}
+            ),
         }
 
     @classmethod
     def from_args(cls, args: dict[str, Any]) -> LookRequest:
         unknown = sorted(set(args) - set(cls.__dataclass_fields__))
         if unknown:
-            raise Refused(RefusalCode.UNREADABLE_RECIPE,
-                          f"Unknown picture recipe key(s) {unknown} (views.jsonl)")
+            raise Refused(
+                RefusalCode.UNREADABLE_RECIPE,
+                f"Unknown picture recipe key(s) {unknown} (views.jsonl)",
+            )
         layers = args["atlas_layers"]
         return cls(
-            mode=str(args["mode"]), sections=tuple(str(s) for s in args["sections"]),
+            mode=str(args["mode"]),
+            sections=tuple(str(s) for s in args["sections"]),
             positions_mm=tuple(float(v) for v in args["positions_mm"]),
             images=tuple(str(c) for c in args["images"]),
             atlas_layers=None if layers is None else tuple(str(v) for v in layers),
-            atlas_opacity=args["atlas_opacity"], warp=str(args["warp"]),
+            atlas_opacity=args["atlas_opacity"],
+            warp=str(args["warp"]),
             long_edge=args["long_edge"],
             zoom=tuple(float(v) for v in args["zoom"]),
             part=None if args["part"] is None else int(args["part"]),
@@ -187,8 +216,10 @@ class LookRequest:
             layers=tuple(str(v) for v in args.get("layers") or ()),
             masks=tuple(str(v) for v in args.get("masks") or ()),
             depth=int(args["depth"]),
-            registrations=tuple((str(name), int(number), bool(held)) for name, number, held
-                                in args.get("registrations") or ()),
+            registrations=tuple(
+                (str(name), int(number), bool(held))
+                for name, number, held in args.get("registrations") or ()
+            ),
         )
 
 
@@ -205,7 +236,6 @@ class LookPicture:
     um_per_px: float
     stale: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
-
 
 
 def snapshot(state: Stack, ids: Sequence[str], *, view_angles: bool = False) -> dict[str, Any]:
@@ -245,8 +275,7 @@ def differs_since(state: Stack, held: dict[str, Any]) -> bool:
 REGISTRATION_FIELDS: tuple[str, ...] = ("flip", "rotation_deg", "transform", "deformation")
 
 
-def changed_since(state: Stack, held: dict[str, Any], *,
-                  besides: Collection[str] = ()) -> bool:
+def changed_since(state: Stack, held: dict[str, Any], *, besides: Collection[str] = ()) -> bool:
     """Whether *state* differs from the snapshot *held* in anything the
     picture depends on (a section gone included). Landmark markers and
     damage marks are not part of it (:data:`ANNOTATION_FIELDS`): editing pairs
@@ -273,10 +302,12 @@ def restored(state: Stack, held: dict[str, Any]) -> Stack:
     snapshots = cast("dict[str, JsonObject]", held.get("sections") or {})
     for section_id in snapshots:
         if out.by_id(section_id) is None:
-            raise Refused(RefusalCode.SECTION_GONE,
-                          f"{section_id} is no longer in the stack, so this "
-                          "picture cannot be drawn again; draw the stack as "
-                          "it is now.")
+            raise Refused(
+                RefusalCode.SECTION_GONE,
+                f"{section_id} is no longer in the stack, so this "
+                "picture cannot be drawn again; draw the stack as "
+                "it is now.",
+            )
     for index, section in enumerate(out.slices):
         fields = snapshots.get(section.id)
         if fields is not None:
@@ -284,9 +315,9 @@ def restored(state: Stack, held: dict[str, Any]) -> Stack:
     return out
 
 
-
-def _images_for(ws: Workspace, record: Section,
-                images: Sequence[str]) -> tuple[tuple[str, ...], str]:
+def _images_for(
+    ws: Workspace, record: Section, images: Sequence[str]
+) -> tuple[tuple[str, ...], str]:
     """``(raw names drawn together, image drawn alone)`` for *record*: the
     ``preprocessed`` image by default, one named image alone, or several raw
     channels together."""
@@ -296,20 +327,26 @@ def _images_for(ws: Workspace, record: Section,
     known = images_.image_names(ws, record)
     unknown = [name for name in wanted if name not in known]
     if unknown:
-        raise Refused(RefusalCode.UNKNOWN_IMAGE,
-                      f"{record.id} has no section image "
-                      f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
+        raise Refused(
+            RefusalCode.UNKNOWN_IMAGE,
+            f"{record.id} has no section image "
+            f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}",
+        )
     if len(wanted) == 1:
         return (), wanted[0]
     raw = images_.raw_names(ws, record.id)
     made = [name for name in wanted if name not in raw]
     if made:
-        raise Refused(RefusalCode.MIXED_IMAGES,
-                      f"{made[0]!r} is a made image and is drawn alone; "
-                      "several images are drawn together only when all are raw channels")
+        raise Refused(
+            RefusalCode.MIXED_IMAGES,
+            f"{made[0]!r} is a made image and is drawn alone; "
+            "several images are drawn together only when all are raw channels",
+        )
     if len(wanted) > MAX_OVERLAY_CHANNELS:
-        raise Refused(RefusalCode.TOO_MANY_CHANNELS,
-                      f"at most {MAX_OVERLAY_CHANNELS} raw channels are drawn together")
+        raise Refused(
+            RefusalCode.TOO_MANY_CHANNELS,
+            f"at most {MAX_OVERLAY_CHANNELS} raw channels are drawn together",
+        )
     return wanted, ""
 
 
@@ -334,9 +371,11 @@ def _atlas_layers(ws: Workspace, request: LookRequest) -> tuple[str, ...]:
     allowed = available_atlas_channels(ws)
     unknown = [name for name in layers if name not in allowed]
     if unknown:
-        raise Refused(RefusalCode.UNKNOWN_LAYER,
-                      f"atlas layer {', '.join(map(repr, unknown))} is not "
-                      f"drawn here; layers: {', '.join(allowed)}")
+        raise Refused(
+            RefusalCode.UNKNOWN_LAYER,
+            f"atlas layer {', '.join(map(repr, unknown))} is not "
+            f"drawn here; layers: {', '.join(allowed)}",
+        )
     return tuple(name for name in allowed if name in layers)
 
 
@@ -352,29 +391,52 @@ def _highlighted(ws: Workspace, request: LookRequest) -> tuple[tuple[str, frozen
         found = resolve_entries(ws.atlas, names)
     except ValueError as exc:
         raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from None
-    return tuple((name, frozenset(ids)) for name, (_region, _side, ids) in zip(
-        names, found, strict=True))
-
-
-def _options(
-    request: LookRequest, *, names: tuple[str, ...], image: str, layers: tuple[str, ...],
-    long_edge: int, zoom_px: tuple[float, ...] = (),
-    regions: tuple[tuple[str, frozenset[int]], ...] = (),
-) -> DisplayOptions:
-    images = [name for name in layers if name != "borders"]
-    opacity = (request.atlas_opacity if request.atlas_opacity is not None
-               else DEFAULT_ATLAS_OPACITY if images else 0.0)
-    return DisplayOptions(
-        mode=_DISPLAY_MODE[request.mode], zoom=zoom_px, channels=names, image=image,
-        atlas_channels=layers, atlas_opacity=float(opacity), regions=regions,
-        outlines="none" if request.region_only else "all",
-        border_color=_BORDER_COLOR, border_thickness=DEFAULT_BORDER_THICKNESS,
-        deformation=request.warp, long_edge=int(long_edge), depth=request.depth,
+    return tuple(
+        (name, frozenset(ids)) for name, (_region, _side, ids) in zip(names, found, strict=True)
     )
 
 
-def image_words(ws: Workspace, record: Section, names: Sequence[str], image: str,
-                ) -> tuple[str, str]:
+def _options(
+    request: LookRequest,
+    *,
+    names: tuple[str, ...],
+    image: str,
+    layers: tuple[str, ...],
+    long_edge: int,
+    zoom_px: tuple[float, ...] = (),
+    regions: tuple[tuple[str, frozenset[int]], ...] = (),
+) -> DisplayOptions:
+    images = [name for name in layers if name != "borders"]
+    opacity = (
+        request.atlas_opacity
+        if request.atlas_opacity is not None
+        else DEFAULT_ATLAS_OPACITY
+        if images
+        else 0.0
+    )
+    return DisplayOptions(
+        mode=_DISPLAY_MODE[request.mode],
+        zoom=zoom_px,
+        channels=names,
+        image=image,
+        atlas_channels=layers,
+        atlas_opacity=float(opacity),
+        regions=regions,
+        outlines="none" if request.region_only else "all",
+        border_color=_BORDER_COLOR,
+        border_thickness=DEFAULT_BORDER_THICKNESS,
+        deformation=request.warp,
+        long_edge=int(long_edge),
+        depth=request.depth,
+    )
+
+
+def image_words(
+    ws: Workspace,
+    record: Section,
+    names: Sequence[str],
+    image: str,
+) -> tuple[str, str]:
     """``(short, full)``: what of the section is drawn, for a burned label and
     for the index caption: the section image and what it is, or the raw
     channels in their colours."""
@@ -407,16 +469,13 @@ def _where(record: Section) -> str:
     return f"at {record.position_mm:.2f} mm{angles_label(record.angles)}"
 
 
-
 def _records(state: Stack, ids: Sequence[str]) -> list[Section]:
     if not ids:
         return sorted(state.slices, key=lambda record: record.index_original)
     records = [state.by_id(str(name)) for name in ids]
-    unknown = [str(name) for name, record in zip(ids, records, strict=True)
-               if record is None]
+    unknown = [str(name) for name, record in zip(ids, records, strict=True) if record is None]
     if unknown:
-        raise Refused(RefusalCode.UNKNOWN_SLICE_IDS,
-                      **unknown_sections(state, unknown))
+        raise Refused(RefusalCode.UNKNOWN_SLICE_IDS, **unknown_sections(state, unknown))
     return [record for record in records if record is not None]
 
 
@@ -433,15 +492,30 @@ def _zoom_tag(window: Sequence[float], base: Sequence[float], shown: Sequence[fl
     return f"zoom x{max(shown) / extent:.1f}  "
 
 
-def _recipe(request: LookRequest, held: dict[str, Any], *, base: tuple[int, int],
-            shown: tuple[int, int], um_per_px: float) -> dict[str, Any]:
-    return {"renderer": RENDERER, "args": request.args(), "state": held,
-            "base": [int(base[0]), int(base[1])], "shown": [int(shown[0]), int(shown[1])],
-            "um_per_px": round(float(um_per_px), 4)}
+def _recipe(
+    request: LookRequest,
+    held: dict[str, Any],
+    *,
+    base: tuple[int, int],
+    shown: tuple[int, int],
+    um_per_px: float,
+) -> dict[str, Any]:
+    return {
+        "renderer": RENDERER,
+        "args": request.args(),
+        "state": held,
+        "base": [int(base[0]), int(base[1])],
+        "shown": [int(shown[0]), int(shown[1])],
+        "um_per_px": round(float(um_per_px), 4),
+    }
 
 
 def _section_picture(
-    ws: Workspace, state: Stack, record: Section, request: LookRequest, long_edge: int,
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    request: LookRequest,
+    long_edge: int,
     base: tuple[int, int] | None,
 ) -> LookPicture:
     names, image = _images_for(ws, record, request.images)
@@ -454,11 +528,13 @@ def _section_picture(
     if request.zoom:
         try:
             picture, scale = framed_window(ws, record, look_, tuple(request.zoom), long_edge)
-            enlarged = FROM_FILE + (f" (file pixels enlarged x{scale:.1f})"
-                                    if scale > 1.05 else "")
+            enlarged = FROM_FILE + (f" (file pixels enlarged x{scale:.1f})" if scale > 1.05 else "")
         except Exception:
-            logger.warning("zoom of %s: the image file could not be read; drawn from its "
-                           "working copy", record.id, exc_info=True)
+            logger.warning(
+                "zoom of %s: the image file could not be read; drawn from its working copy",
+                record.id,
+                exc_info=True,
+            )
     if picture is None:
         if request.zoom:
             options = replace(options, zoom=_zoom_pixels(request.zoom, base))
@@ -471,24 +547,42 @@ def _section_picture(
         if factor > 1.05:
             from langslice.core.geometry.pixel_frames import cropped_geometry
 
-            picture = cropped_geometry(picture.resize(
-                (round(picture.width * factor), round(picture.height * factor)),
-                Image.Resampling.LANCZOS), picture)
+            picture = cropped_geometry(
+                picture.resize(
+                    (round(picture.width * factor), round(picture.height * factor)),
+                    Image.Resampling.LANCZOS,
+                ),
+                picture,
+            )
             enlarged = f" (source pixels enlarged x{factor:.1f})"
-    um = base_um * (max((request.zoom[2] - request.zoom[0]) * base[0],
-                        (request.zoom[3] - request.zoom[1]) * base[1]) / max(picture.size)
-                    if request.zoom else 1.0)
+    um = base_um * (
+        max(
+            (request.zoom[2] - request.zoom[0]) * base[0],
+            (request.zoom[3] - request.zoom[1]) * base[1],
+        )
+        / max(picture.size)
+        if request.zoom
+        else 1.0
+    )
     short, full = image_words(ws, record, names, image)
     registration = _registration_words(request, record)
-    label = (f"{_zoom_tag(request.zoom, base, picture.size)}{record.id}"
-             f"{_orientation(record)}{registration}  [{short}]{enlarged}")
-    text = (f"{record.id} section{_orientation(record)}{registration}, "
-            f"{_where(record)}; {um:.1f} um/px{UNCALIBRATED if source == 'uncalibrated' else ''}; "
-            f"{full}" + (f";{FROM_FILE}" if enlarged.startswith(FROM_FILE) else ""))
+    label = (
+        f"{_zoom_tag(request.zoom, base, picture.size)}{record.id}"
+        f"{_orientation(record)}{registration}  [{short}]{enlarged}"
+    )
+    text = (
+        f"{record.id} section{_orientation(record)}{registration}, "
+        f"{_where(record)}; {um:.1f} um/px{UNCALIBRATED if source == 'uncalibrated' else ''}; "
+        f"{full}" + (f";{FROM_FILE}" if enlarged.startswith(FROM_FILE) else "")
+    )
     from langslice.core.fits.landmarks import draw_landmarks
 
-    panel = {"role": "section", "section": record.id, "bounds": [0, 0, *picture.size],
-             "pixel_to_file_fraction": picture.info["pixel_to_file_fraction"]}
+    panel = {
+        "role": "section",
+        "section": record.id,
+        "bounds": [0, 0, *picture.size],
+        "pixel_to_file_fraction": picture.info["pixel_to_file_fraction"],
+    }
     panels = [panel]
     picture = picture.copy()
     draw_landmarks(picture, panels, state, record)
@@ -502,20 +596,39 @@ def _section_picture(
     recipe["endpoint_panels"] = panels
     recipe["registration_context"] = _landmark_context(state, record)
     note(image, sections=(record.id,), mode="section", recipe=recipe, caption=text)
-    return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
-                       mode="section", um_per_px=um,
-                       extra={**({"layers": drawn_layers} if drawn_layers else {}),
-                              **({"masks": drawn_masks} if drawn_masks else {})})
+    return LookPicture(
+        image=image,
+        caption=text,
+        recipe=recipe,
+        sections=(record.id,),
+        mode="section",
+        um_per_px=um,
+        extra={
+            **({"layers": drawn_layers} if drawn_layers else {}),
+            **({"masks": drawn_masks} if drawn_masks else {}),
+        },
+    )
 
 
 def _overlay_picture(
-    ws: Workspace, state: Stack, record: Section, request: LookRequest, long_edge: int,
-    base: tuple[int, int] | None, store: RecordStore | None,
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    request: LookRequest,
+    long_edge: int,
+    base: tuple[int, int] | None,
+    store: RecordStore | None,
 ) -> LookPicture:
     names, picked = _images_for(ws, record, request.images)
     layers = _atlas_layers(ws, request)
-    options = _options(request, names=names, image=picked, layers=layers,
-                       long_edge=long_edge, regions=_highlighted(ws, request))
+    options = _options(
+        request,
+        names=names,
+        image=picked,
+        layers=layers,
+        long_edge=long_edge,
+        regions=_highlighted(ws, request),
+    )
     position = record.position_mm
     if request.zoom and base is None:
         whole = placement_pictures(ws, state, record, position, options, {}, store=store)
@@ -523,8 +636,16 @@ def _overlay_picture(
         base = (x1 - x0, y1 - y0)
     if request.zoom and base is not None:
         options = replace(options, zoom=_zoom_pixels(request.zoom, base))
-    placed = placement_pictures(ws, state, record, position, options, {}, store=store,
-                                label_note=_registration_words(request, record))
+    placed = placement_pictures(
+        ws,
+        state,
+        record,
+        position,
+        options,
+        {},
+        store=store,
+        label_note=_registration_words(request, record),
+    )
     image = placed.images[0]
     shown: tuple[int, int] = image.size
     um = 0.0
@@ -536,11 +657,15 @@ def _overlay_picture(
     base = base or shown
     short, full = image_words(ws, record, names, picked)
     drawn = placed.row.get("deformation_drawn")
-    warp_words = ("deformation drawn: the section is warped onto the atlas, which keeps "
-                  "its place" if drawn else
-                  "deformation held but not drawable" if drawn is False else
-                  "linear placement only" if request.warp == "none" and record.deformation
-                  else "no deformation")
+    warp_words = (
+        "deformation drawn: the section is warped onto the atlas, which keeps its place"
+        if drawn
+        else "deformation held but not drawable"
+        if drawn is False
+        else "linear placement only"
+        if request.warp == "none" and record.deformation
+        else "no deformation"
+    )
     atlas_words = " + ".join(layers) or "none"
     if options.atlas_images and options.atlas_opacity > 0:
         atlas_words += f" (images at {options.atlas_opacity:g})"
@@ -550,15 +675,20 @@ def _overlay_picture(
     if options.regions:
         emphasis = "only" if request.region_only else "drawn thick, the other borders faint"
         atlas_words += f"; regions {', '.join(name for name, _ids in options.regions)} {emphasis}"
-    read = (placed.canvas.panels[0].from_file
-            if placed.canvas is not None and placed.canvas.panels else None)
+    read = (
+        placed.canvas.panels[0].from_file
+        if placed.canvas is not None and placed.canvas.panels
+        else None
+    )
     calibration = placed.row.get("calibration") or {}
     uncalibrated = UNCALIBRATED if calibration.get("source") == "uncalibrated" else ""
-    text = (f"{record.id} overlay{_orientation(record)}{_registration_words(request, record)}, "
-            f"{_where(record)}; "
-            f"{placed.row.get('transform_words') or 'identity transform'}, "
-            f"{warp_words}; {um:.1f} um/px{uncalibrated}; {full}; atlas {atlas_words}"
-            + (f";{FROM_FILE}" if read is not None else ""))
+    text = (
+        f"{record.id} overlay{_orientation(record)}{_registration_words(request, record)}, "
+        f"{_where(record)}; "
+        f"{placed.row.get('transform_words') or 'identity transform'}, "
+        f"{warp_words}; {um:.1f} um/px{uncalibrated}; {full}; atlas {atlas_words}"
+        + (f";{FROM_FILE}" if read is not None else "")
+    )
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
     recipe = _recipe(one, held, base=base, shown=shown, um_per_px=um)
@@ -577,29 +707,66 @@ def _overlay_picture(
         if drawn:
             applied = record.deformation
             warp_key = "" if applied is None else applied.key or ""
-        panels = [section_panel(record, placed.canvas.frame.section.size,
-                                pixel_to_render=to_section, bounds=panel.content_box,
-                                warp_key=warp_key),
-                  {"role": "atlas", "section": record.id, "bounds": list(panel.content_box),
-                   "pixel_to_native": (swap @ picture_to_native(panel) @ swap).tolist(),
-                   "native_size": list(panel.geometry.annotation.shape[::-1])}]
+        panels = [
+            section_panel(
+                record,
+                placed.canvas.frame.section.size,
+                pixel_to_render=to_section,
+                bounds=panel.content_box,
+                warp_key=warp_key,
+            ),
+            {
+                "role": "atlas",
+                "section": record.id,
+                "bounds": list(panel.content_box),
+                "pixel_to_native": (swap @ picture_to_native(panel) @ swap).tolist(),
+                "native_size": list(panel.geometry.annotation.shape[::-1]),
+            },
+        ]
         draw_landmarks(image, panels, state, record, warp=placed.canvas.frame.warp)
-    drawn_layers = _draw_layers(image, panels, state, record, request, ws,
-                                warp_record=placed.canvas.frame.warp if placed.canvas else None)
-    drawn_masks = _draw_masks(image, panels, state, record, request, ws,
-                              warp=placed.canvas.frame.warp if placed.canvas else None)
+    drawn_layers = _draw_layers(
+        image,
+        panels,
+        state,
+        record,
+        request,
+        ws,
+        warp_record=placed.canvas.frame.warp if placed.canvas else None,
+    )
+    drawn_masks = _draw_masks(
+        image,
+        panels,
+        state,
+        record,
+        request,
+        ws,
+        warp=placed.canvas.frame.warp if placed.canvas else None,
+    )
     text += _mask_words(drawn_masks, record)
     recipe["endpoint_panels"] = panels
     recipe["registration_context"] = _landmark_context(state, record)
     annotate(image, recipe=recipe, caption=text)
-    return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
-                       mode="overlay", um_per_px=um,
-                       extra={**placed.row, **({"layers": drawn_layers} if drawn_layers else {}),
-                              **({"masks": drawn_masks} if drawn_masks else {})})
+    return LookPicture(
+        image=image,
+        caption=text,
+        recipe=recipe,
+        sections=(record.id,),
+        mode="overlay",
+        um_per_px=um,
+        extra={
+            **placed.row,
+            **({"layers": drawn_layers} if drawn_layers else {}),
+            **({"masks": drawn_masks} if drawn_masks else {}),
+        },
+    )
 
 
 def overlay_region_window(
-    ws: Workspace, state: Stack, recipe: dict[str, Any], region: str, *,
+    ws: Workspace,
+    state: Stack,
+    recipe: dict[str, Any],
+    region: str,
+    *,
     store: RecordStore | None = None,
 ) -> tuple[dict[str, Any], tuple[float, ...]]:
     """A single region's bounds on the saved overlay's full canvas.
@@ -614,23 +781,29 @@ def overlay_region_window(
     drawn = restored(state, held) if held else state
     records = _records(drawn, request.sections)
     if len(records) != 1:
-        raise Refused(RefusalCode.BAD_REGION_PICTURE,
-                      "region needs an overlay picture of one section; "
-                      "draw that section's overlay alone and give its "
-                      "picture.")
+        raise Refused(
+            RefusalCode.BAD_REGION_PICTURE,
+            "region needs an overlay picture of one section; "
+            "draw that section's overlay alone and give its "
+            "picture.",
+        )
     record = records[0]
     names, image = _images_for(ws, record, request.images)
-    options = _options(request, names=names, image=image,
-                       layers=_atlas_layers(ws, request),
-                       long_edge=int(request.long_edge or picture_edge(ws)),
-                       regions=_highlighted(ws, request))
-    placed = placement_pictures(ws, drawn, record, record.position_mm,
-                                options, {}, store=store)
+    options = _options(
+        request,
+        names=names,
+        image=image,
+        layers=_atlas_layers(ws, request),
+        long_edge=int(request.long_edge or picture_edge(ws)),
+        regions=_highlighted(ws, request),
+    )
+    placed = placement_pictures(ws, drawn, record, record.position_mm, options, {}, store=store)
     assert placed.canvas is not None
     panel = placed.canvas.panels[0]
     if not panel.highlighted:
-        raise Refused(RefusalCode.REGION_NOT_IN_PLANE,
-                      f"Region {region!r} is absent from this overlay.")
+        raise Refused(
+            RefusalCode.REGION_NOT_IN_PLANE, f"Region {region!r} is absent from this overlay."
+        )
     points = np.concatenate(panel.highlighted)
     geometry = panel.geometry
     points = points * geometry.atlas_scale + np.asarray(geometry.atlas_offset)
@@ -643,8 +816,14 @@ def overlay_region_window(
 
 
 def _draw_layers(
-    picture: Image.Image, panels: list[dict[str, Any]], state: Stack, record: Section,
-    request: LookRequest, ws: Workspace, *, warp_record: DeformableRecord | None = None,
+    picture: Image.Image,
+    panels: list[dict[str, Any]],
+    state: Stack,
+    record: Section,
+    request: LookRequest,
+    ws: Workspace,
+    *,
+    warp_record: DeformableRecord | None = None,
 ) -> list[dict[str, Any]]:
     """The plugin layers *request* names, drawn on *picture* over its *panels*
     (:mod:`langslice.core.pictures.plugin_layers`); one note per layer, empty
@@ -654,13 +833,20 @@ def _draw_layers(
         return []
     from langslice.core.pictures.plugin_layers import draw_layers
 
-    return draw_layers(picture, panels, state, record, request.layers,
-                       workspace=ws, warp_record=warp_record)
+    return draw_layers(
+        picture, panels, state, record, request.layers, workspace=ws, warp_record=warp_record
+    )
 
 
 def _draw_masks(
-    picture: Image.Image, panels: list[dict[str, Any]], state: Stack, record: Section,
-    request: LookRequest, ws: Workspace, *, warp: Any = None,
+    picture: Image.Image,
+    panels: list[dict[str, Any]],
+    state: Stack,
+    record: Section,
+    request: LookRequest,
+    ws: Workspace,
+    *,
+    warp: Any = None,
 ) -> list[dict[str, Any]]:
     """The masks *request* names, outlined on *picture* over its *panels* where their
     weight reaches 0.5, drawn as a scalar layer by
@@ -678,6 +864,7 @@ def _draw_masks(
     from langslice.core.plugins import Layer
     from langslice.core.sections import masks as section_masks
     from langslice.core.sections.native import unorient
+
     held = record.masks
     layout: Any = getattr(ws, "layout", None)
     mapper = _Mapper(state, record, panels, ws, warp)
@@ -686,21 +873,37 @@ def _draw_masks(
         entry: dict[str, Any] = {"name": name}
         notes.append(entry)
         if name not in held:
-            entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
-                         "make_mask")
+            entry.update(
+                drawn=False, reason=f"{record.id} has no mask {name!r}; make it with make_mask"
+            )
             continue
         try:
             view = section_masks.read_mask(layout, state, record, name)
-            raster = np.asarray(unorient(
-                Image.fromarray(np.asarray(view.weights, dtype=np.float32), mode="F"),
-                record.rotation_deg, record.flip), dtype=np.float32)
-            shown = _draw_scalar(picture, mapper, Layer.scalar(
-                raster, frame="section_px", level=0.5, name=name), _colour(index))
-            entry.update(kind=view.kind, stale=bool(view.stale), drawn=True, shown=shown,
-                         earlier_registration=bool(view.earlier_registration))
+            raster = np.asarray(
+                unorient(
+                    Image.fromarray(np.asarray(view.weights, dtype=np.float32), mode="F"),
+                    record.rotation_deg,
+                    record.flip,
+                ),
+                dtype=np.float32,
+            )
+            shown = _draw_scalar(
+                picture,
+                mapper,
+                Layer.scalar(raster, frame="section_px", level=0.5, name=name),
+                _colour(index),
+            )
+            entry.update(
+                kind=view.kind,
+                stale=bool(view.stale),
+                drawn=True,
+                shown=shown,
+                earlier_registration=bool(view.earlier_registration),
+            )
         except KeyError:
-            entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
-                         "make_mask")
+            entry.update(
+                drawn=False, reason=f"{record.id} has no mask {name!r}; make it with make_mask"
+            )
         except Exception as exc:
             logger.warning("mask %s of %s could not be drawn", name, record.id, exc_info=True)
             entry.update(drawn=False, reason=f"the mask could not be read or placed ({exc})")
@@ -722,14 +925,15 @@ def _mask_words(notes: list[dict[str, Any]], record: Section) -> str:
             if entry is not None:
                 section_image = entry.section_image
                 atlas_image = entry.atlas_image
-            source = (f"sorted from section image {section_image} against "
-                      f"atlas image {atlas_image}")
+            source = f"sorted from section image {section_image} against atlas image {atlas_image}"
         parts.append(f"{note_['name']!r} ({source})")
     if not parts:
         return ""
-    return ("; coloured outlines trace the edge of the mask (its weight crossing 0.5): the "
-            "section pixels in the ringed patches are the ones it leaves out of a fit that "
-            "uses it, the rest is compared; mask " + ", ".join(parts))
+    return (
+        "; coloured outlines trace the edge of the mask (its weight crossing 0.5): the "
+        "section pixels in the ringed patches are the ones it leaves out of a fit that "
+        "uses it, the rest is compared; mask " + ", ".join(parts)
+    )
 
 
 def _landmark_context(state: Stack, record: Section) -> dict[str, Any]:
@@ -739,8 +943,14 @@ def _landmark_context(state: Stack, record: Section) -> dict[str, Any]:
 
 
 def _atlas_picture(
-    ws: Workspace, state: Stack, position_mm: float, request: LookRequest, long_edge: int,
-    base: tuple[int, int] | None, base_um: float | None, angles: Angles,
+    ws: Workspace,
+    state: Stack,
+    position_mm: float,
+    request: LookRequest,
+    long_edge: int,
+    base: tuple[int, int] | None,
+    base_um: float | None,
+    angles: Angles,
 ) -> LookPicture:
     layers = _atlas_layers(ws, request)
     options = _options(request, names=(), image="", layers=layers, long_edge=long_edge)
@@ -752,44 +962,60 @@ def _atlas_picture(
         native = atlas_section(ws, state, position_mm, frame=True, angles=angles)
         base, base_um = whole.size, voxel * max(native.size) / max(whole.size)
     if request.zoom:
-        extent = max((request.zoom[2] - request.zoom[0]) * base[0],
-                     (request.zoom[3] - request.zoom[1]) * base[1])
+        extent = max(
+            (request.zoom[2] - request.zoom[0]) * base[0],
+            (request.zoom[3] - request.zoom[1]) * base[1],
+        )
         um = max(base_um * extent / long_edge, voxel / ATLAS_UPSAMPLE)
         at_um = (base[0] * base_um / um, base[1] * base_um / um)
         options = replace(options, zoom=_zoom_pixels(request.zoom, at_um))
         picture = framed_atlas(ws, state, position_mm, options, angles=angles, um_per_px=um)
     else:
-        picture = (whole if whole is not None
-                   else framed_atlas(ws, state, position_mm, options, angles=angles))
+        picture = (
+            whole
+            if whole is not None
+            else framed_atlas(ws, state, position_mm, options, angles=angles)
+        )
         um = base_um
         if request.long_edge:
-            wanted = (max(base_um * max(picture.size) / int(request.long_edge),
-                          voxel / ATLAS_UPSAMPLE) if measured else base_um)
+            wanted = (
+                max(base_um * max(picture.size) / int(request.long_edge), voxel / ATLAS_UPSAMPLE)
+                if measured
+                else base_um
+            )
             if wanted < voxel * 0.99:
                 um = wanted
-                picture = framed_atlas(ws, state, position_mm, options, angles=angles,
-                                       um_per_px=um)
+                picture = framed_atlas(ws, state, position_mm, options, angles=angles, um_per_px=um)
                 base = picture.size
     section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
     median = state.drawn_at_median(angles) if section is None else False
     label = _zoom_tag(request.zoom, base, picture.size) + atlas_caption(
-        state, position_mm, options, angles=angles, median=median)
+        state, position_mm, options, angles=angles, median=median
+    )
     layers_words = " + ".join(layers) or "none"
-    plane = (view_angles_label(angles, median=True) if median
-             else f"{angles_label(angles)} (the stack's cutting angles)")
+    plane = (
+        view_angles_label(angles, median=True)
+        if median
+        else f"{angles_label(angles)} (the stack's cutting angles)"
+    )
     if section:
         plane = f"{angles_label(angles)} ({section.id}'s cutting angles)"
     border_word = picture.info.get("border_word")
-    text = (f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; layers {layers_words}"
-            + (f"; borders {border_word}" if border_word else ""))
+    text = f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; layers {layers_words}" + (
+        f"; borders {border_word}" if border_word else ""
+    )
     panels = []
     section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
     if section is not None:
         from langslice.core.fits.landmarks import draw_landmarks
 
-        panel = {"role": "atlas", "section": section.id, "bounds": [0, 0, *picture.size],
-                 "pixel_to_native": picture.info["pixel_to_native"],
-                 "native_size": list(atlas_section(ws, state, position_mm, angles=angles).size)}
+        panel = {
+            "role": "atlas",
+            "section": section.id,
+            "bounds": [0, 0, *picture.size],
+            "pixel_to_native": picture.info["pixel_to_native"],
+            "native_size": list(atlas_section(ws, state, position_mm, angles=angles).size),
+        }
         panels = [panel]
         picture = picture.copy()
         draw_landmarks(picture, panels, state, section)
@@ -800,16 +1026,31 @@ def _atlas_picture(
     recipe["endpoint_panels"] = panels
     if section:
         recipe["registration_context"] = _landmark_context(state, section)
-    note(image, sections=(section.id,) if section else (), mode="atlas",
-         recipe=recipe, caption=text,
-         extra={"position_mm": float(position_mm)})
-    return LookPicture(image=image, caption=text, recipe=recipe,
-                       sections=(section.id,) if section else (), mode="atlas",
-                       um_per_px=um, extra={"position_mm": float(position_mm)})
+    note(
+        image,
+        sections=(section.id,) if section else (),
+        mode="atlas",
+        recipe=recipe,
+        caption=text,
+        extra={"position_mm": float(position_mm)},
+    )
+    return LookPicture(
+        image=image,
+        caption=text,
+        recipe=recipe,
+        sections=(section.id,) if section else (),
+        mode="atlas",
+        um_per_px=um,
+        extra={"position_mm": float(position_mm)},
+    )
 
 
 def _positioning(
-    ws: Workspace, state: Stack, request: LookRequest, long_edge: int, angles: Angles,
+    ws: Workspace,
+    state: Stack,
+    request: LookRequest,
+    long_edge: int,
+    angles: Angles,
     zoom_edge: int | None,
 ) -> list[LookPicture]:
     records = _records(state, request.sections)
@@ -820,18 +1061,28 @@ def _positioning(
     def look_of(record: Section) -> Any:
         names, image = _images_for(ws, record, request.images)
         shown_words.setdefault(record.id, image_words(ws, record, names, image)[0])
-        return _options(request, names=names, image=image, layers=(),
-                        long_edge=long_edge).look(state, record)
+        return _options(request, names=names, image=image, layers=(), long_edge=long_edge).look(
+            state, record
+        )
 
     for record in records:
         look_of(record)
     words = sorted(set(shown_words.values()))
     try:
         drawn = positioning_pictures(
-            ws, state, records, [float(v) for v in request.positions_mm], look_of=look_of,
-            atlas_options=atlas_options, angles=angles, tile_edge=long_edge,
-            max_width=POSITIONING_MAX_WIDTH, part=request.part, window=request.zoom,
-            zoom_edge=zoom_edge, shown=words[0] if len(words) == 1 else "",
+            ws,
+            state,
+            records,
+            [float(v) for v in request.positions_mm],
+            look_of=look_of,
+            atlas_options=atlas_options,
+            angles=angles,
+            tile_edge=long_edge,
+            max_width=POSITIONING_MAX_WIDTH,
+            part=request.part,
+            window=request.zoom,
+            zoom_edge=zoom_edge,
+            shown=words[0] if len(words) == 1 else "",
         )
     except IndexError as exc:
         raise Refused(RefusalCode.UNKNOWN_PART, message=str(exc)) from None
@@ -841,32 +1092,54 @@ def _positioning(
     for one in drawn:
         layout = one.layout
         ids = tuple(slot.key for slot in layout.sections)
-        rows = ", ".join(f"{slot.label[0]} {slot.position_mm:.2f} mm"
-                         for slot in layout.sections)
+        rows = ", ".join(f"{slot.label[0]} {slot.position_mm:.2f} mm" for slot in layout.sections)
         text = one.caption + (f". Sections: {rows}" if rows else "")
-        counts = [f"{section.id}: {len(section.landmarks.pairs)}"
-                  for section in records
-                  if section.id in ids and section.landmarks and section.landmarks.pairs]
+        counts = [
+            f"{section.id}: {len(section.landmarks.pairs)}"
+            for section in records
+            if section.id in ids and section.landmarks and section.landmarks.pairs
+        ]
         if counts:
             counts_text = "landmarks " + ", ".join(counts)
             text += f"; {counts_text}"
-        recipe = _recipe(replace(whole, part=layout.part), held,
-                         base=(layout.width, layout.height), shown=one.content,
-                         um_per_px=one.um_per_px)
-        extra = {"part": layout.part, "parts": layout.parts,
-                 "positions_mm": [slot.position_mm for slot in layout.atlas],
-                 "range_mm": [float(v) for v in layout.range_mm]}
-        note(one.image, sections=ids, mode="positioning", recipe=recipe, caption=text,
-             extra=extra)
-        out.append(LookPicture(image=one.image, caption=text, recipe=recipe, sections=ids,
-                               mode="positioning", um_per_px=one.um_per_px, extra=extra))
+        recipe = _recipe(
+            replace(whole, part=layout.part),
+            held,
+            base=(layout.width, layout.height),
+            shown=one.content,
+            um_per_px=one.um_per_px,
+        )
+        extra = {
+            "part": layout.part,
+            "parts": layout.parts,
+            "positions_mm": [slot.position_mm for slot in layout.atlas],
+            "range_mm": [float(v) for v in layout.range_mm],
+        }
+        note(one.image, sections=ids, mode="positioning", recipe=recipe, caption=text, extra=extra)
+        out.append(
+            LookPicture(
+                image=one.image,
+                caption=text,
+                recipe=recipe,
+                sections=ids,
+                mode="positioning",
+                um_per_px=one.um_per_px,
+                extra=extra,
+            )
+        )
     return out
 
 
 def look(
-    ws: Workspace, state: Stack, request: LookRequest, *, store: RecordStore | None = None,
-    angles: Angles | None = None, base: tuple[int, int] | None = None,
-    base_um: float | None = None, zoom_edge: int | None = None,
+    ws: Workspace,
+    state: Stack,
+    request: LookRequest,
+    *,
+    store: RecordStore | None = None,
+    angles: Angles | None = None,
+    base: tuple[int, int] | None = None,
+    base_um: float | None = None,
+    zoom_edge: int | None = None,
 ) -> list[LookPicture]:
     """The pictures of *request*: one per section (``section``,
     ``overlay``), one per position (``atlas``), one per run of positions
@@ -881,11 +1154,9 @@ def look(
     long edge (None: the unzoomed picture's).
     """
     if request.mode not in MODES:
-        raise Refused(RefusalCode.UNKNOWN_MODE,
-                      f"mode must be one of {', '.join(MODES)}")
+        raise Refused(RefusalCode.UNKNOWN_MODE, f"mode must be one of {', '.join(MODES)}")
     if request.warp not in WARP_CHOICES:
-        raise Refused(RefusalCode.BAD_WARP,
-                      f"warp must be one of {', '.join(WARP_CHOICES)}")
+        raise Refused(RefusalCode.BAD_WARP, f"warp must be one of {', '.join(WARP_CHOICES)}")
     long_edge = int(request.long_edge or picture_edge(ws))
     plane = angles if angles is not None else state.view_angles
     if request.mode == "positioning":
@@ -895,39 +1166,56 @@ def look(
             records = _records(state, request.sections)
             own = tuple(record.position_mm for record in records)
             if request.positions_mm and tuple(request.positions_mm) != own:
-                raise Refused(RefusalCode.BAD_ARGS,
-                              "Name sections or give positions_mm, not both: a "
-                              "section's atlas picture is at its own plane.")
-            return [_atlas_picture(ws, state, record.position_mm,
-                                   replace(request, sections=(record.id,),
-                                           positions_mm=(record.position_mm,)),
-                                   long_edge, base, base_um, record.angles)
-                    for record in records]
+                raise Refused(
+                    RefusalCode.BAD_ARGS,
+                    "Name sections or give positions_mm, not both: a "
+                    "section's atlas picture is at its own plane.",
+                )
+            return [
+                _atlas_picture(
+                    ws,
+                    state,
+                    record.position_mm,
+                    replace(request, sections=(record.id,), positions_mm=(record.position_mm,)),
+                    long_edge,
+                    base,
+                    base_um,
+                    record.angles,
+                )
+                for record in records
+            ]
         if not request.positions_mm:
-            raise Refused(RefusalCode.BAD_ARGS,
-                          "atlas mode needs positions_mm or sections; "
-                          "nothing was drawn.")
-        return [_atlas_picture(ws, state, float(mm), request, long_edge, base, base_um, plane)
-                for mm in request.positions_mm]
+            raise Refused(
+                RefusalCode.BAD_ARGS,
+                "atlas mode needs positions_mm or sections; nothing was drawn.",
+            )
+        return [
+            _atlas_picture(ws, state, float(mm), request, long_edge, base, base_um, plane)
+            for mm in request.positions_mm
+        ]
     records = _records(state, request.sections)
     if request.mode == "section":
-        return [_section_picture(ws, state, record, request, long_edge, base)
-                for record in records]
-    return [_overlay_picture(ws, state, record, request, long_edge, base, store)
-            for record in records]
+        return [_section_picture(ws, state, record, request, long_edge, base) for record in records]
+    return [
+        _overlay_picture(ws, state, record, request, long_edge, base, store) for record in records
+    ]
 
 
 def redraw(
-    recipe: dict[str, Any], window: Sequence[float], ws: Workspace, state: Stack,
-    *, store: RecordStore | None = None, zoom_edge: int | None = None,
+    recipe: dict[str, Any],
+    window: Sequence[float],
+    ws: Workspace,
+    state: Stack,
+    *,
+    store: RecordStore | None = None,
+    zoom_edge: int | None = None,
 ) -> LookPicture:
     """The picture of *recipe* drawn again at *window* (fractions of its
     unzoomed content; empty: whole), from the stack as it was when the
     recipe was made (``stale`` when it has changed since).
     :class:`Refused` ``SECTION_GONE`` when a section it showed is gone.
     """
-    request = replace(LookRequest.from_args(recipe["args"]),
-                      zoom=tuple(float(v) for v in window))
+    request = replace(LookRequest.from_args(recipe["args"]), zoom=tuple(float(v) for v in window))
     held = recipe.get("state") or {}
     named = {name for name, _number, was_held in request.registrations if not was_held}
     stale = bool(held) and changed_since(state, held, besides=named)
@@ -935,10 +1223,14 @@ def redraw(
     angles = held.get("view_angles")
     base = recipe.get("base")
     pictures = look(
-        ws, drawn, request, store=store,
+        ws,
+        drawn,
+        request,
+        store=store,
         angles=(float(angles[0]), float(angles[1])) if angles else None,
         base=(int(base[0]), int(base[1])) if base else None,
-        base_um=_base_um(recipe), zoom_edge=zoom_edge,
+        base_um=_base_um(recipe),
+        zoom_edge=zoom_edge,
     )
     return replace(pictures[0], stale=stale)
 
@@ -958,7 +1250,16 @@ def _base_um(recipe: dict[str, Any]) -> float | None:
 
 
 __all__ = [
-    "ATLAS_LAYER_DEFAULTS", "LookPicture", "LookRequest", "MODES",
-    "RENDERER", "changed_since", "differs_since", "image_words",
-    "look", "redraw", "restored", "snapshot",
+    "ATLAS_LAYER_DEFAULTS",
+    "LookPicture",
+    "LookRequest",
+    "MODES",
+    "RENDERER",
+    "changed_since",
+    "differs_since",
+    "image_words",
+    "look",
+    "redraw",
+    "restored",
+    "snapshot",
 ]

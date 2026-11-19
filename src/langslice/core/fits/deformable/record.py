@@ -82,10 +82,24 @@ OUTSIZED_MEDIAN_MM = 0.6
 
 RECORD_VERSION = 3
 READ_VERSIONS = (2, 3)
-_RECORD_KEYS = ("version", "step", "parent", "placement", "section_size", "settings",
-                "field_convention", "fields", "inverse_source", "labels",
-                "excluded_ids", "engine", "diagnostics", "atlas", "provenance",
-                "fields_sha256")
+_RECORD_KEYS = (
+    "version",
+    "step",
+    "parent",
+    "placement",
+    "section_size",
+    "settings",
+    "field_convention",
+    "fields",
+    "inverse_source",
+    "labels",
+    "excluded_ids",
+    "engine",
+    "diagnostics",
+    "atlas",
+    "provenance",
+    "fields_sha256",
+)
 FIELDS_WHOLE = "section_grid"
 FIELDS_ENGINE = "engine_grid"
 FIELDS_MESH = "landmark_mesh"
@@ -102,7 +116,10 @@ def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
 
 
 def displacement_report(
-    field_mm: np.ndarray, mm_per_px: float, footprint: np.ndarray, brain_scale: float = 1.0,
+    field_mm: np.ndarray,
+    mm_per_px: float,
+    footprint: np.ndarray,
+    brain_scale: float = 1.0,
 ) -> dict[str, Any]:
     """Max and median displacement in *footprint*, their limits, and whether either is passed.
 
@@ -112,15 +129,21 @@ def displacement_report(
     """
     magnitude = np.linalg.norm(field_mm, axis=-1)[footprint]
     rows, cols = np.nonzero(footprint)
-    extent_mm = (float(max(rows.max() - rows.min(), cols.max() - cols.min()) + 1) * mm_per_px
-                 if rows.size else 0.0)
+    extent_mm = (
+        float(max(rows.max() - rows.min(), cols.max() - cols.min()) + 1) * mm_per_px
+        if rows.size
+        else 0.0
+    )
     largest = float(magnitude.max()) if magnitude.size else 0.0
     median = float(np.median(magnitude)) if magnitude.size else 0.0
     max_limit = OUTSIZED_MAX_FRACTION * extent_mm
     median_limit = OUTSIZED_MEDIAN_MM * brain_scale
     return {
-        "max_mm": largest, "median_mm": median, "tissue_extent_mm": extent_mm,
-        "max_limit_mm": max_limit, "median_limit_mm": median_limit,
+        "max_mm": largest,
+        "median_mm": median,
+        "tissue_extent_mm": extent_mm,
+        "max_limit_mm": max_limit,
+        "median_limit_mm": median_limit,
         "outsized": bool(magnitude.size) and (largest > max_limit or median > median_limit),
     }
 
@@ -178,8 +201,8 @@ def diagnose(
     count = np.bincount(index_warped[valid], minlength=len(ids))
     jac_sum = np.bincount(index_warped[valid], weights=jacobian[valid], minlength=len(ids))
     placed_count = np.bincount(np.searchsorted(ids, placed)[placed != 0], minlength=len(ids))
-    pixel_mm2 = mm_per_px ** 2
-    min_flag_area_mm2 = MIN_FLAG_AREA_MM2 * brain_scale ** 2
+    pixel_mm2 = mm_per_px**2
+    min_flag_area_mm2 = MIN_FLAG_AREA_MM2 * brain_scale**2
     regions: list[dict[str, Any]] = []
     flags: list[dict[str, Any]] = []
     for k, uid in enumerate(int(i) for i in ids):
@@ -189,11 +212,14 @@ def diagnose(
         if count[k]:
             ratio = float(count[k] / jac_sum[k]) if jac_sum[k] > 0 else None
         entry = {
-            "id": uid, "acronym": acronyms.get(uid, str(uid)),
-            "placed_area_mm2": placed_mm2, "warped_area_mm2": float(count[k] * pixel_mm2),
+            "id": uid,
+            "acronym": acronyms.get(uid, str(uid)),
+            "placed_area_mm2": placed_mm2,
+            "warped_area_mm2": float(count[k] * pixel_mm2),
             "area_ratio": ratio,
             "raster_area_ratio": float(count[k] / placed_count[k]) if placed_count[k] else None,
-            "ventricle": ventricle, "excluded": uid in excluded,
+            "ventricle": ventricle,
+            "excluded": uid in excluded,
         }
         regions.append(entry)
         if uid in excluded or placed_mm2 < min_flag_area_mm2:
@@ -204,19 +230,36 @@ def diagnose(
         elif ratio is None:
             code = FitFlag.REGION_FOLDED
         if code:
-            flags.append({"code": code, "id": uid, "acronym": entry["acronym"],
-                          "area_ratio": ratio, "ventricle": ventricle})
+            flags.append(
+                {
+                    "code": code,
+                    "id": uid,
+                    "acronym": entry["acronym"],
+                    "area_ratio": ratio,
+                    "ventricle": ventricle,
+                }
+            )
     if fold_fraction > FOLD_FRACTION_LIMIT:
-        flags.append({"code": FitFlag.FOLDS, "fold_fraction": fold_fraction,
-                      "limit": FOLD_FRACTION_LIMIT})
+        flags.append(
+            {"code": FitFlag.FOLDS, "fold_fraction": fold_fraction, "limit": FOLD_FRACTION_LIMIT}
+        )
     displacement = displacement_report(
         field_mm if base_field_mm is None else field_mm - base_field_mm,
-        mm_per_px, footprint, brain_scale)
+        mm_per_px,
+        footprint,
+        brain_scale,
+    )
     displacement["beyond_landmark_warp"] = base_field_mm is not None
     if displacement["outsized"]:
-        flags.append({"code": FitFlag.DISPLACEMENT_OUTSIZED,
-                      **{key: displacement[key] for key in (
-                          "max_mm", "median_mm", "max_limit_mm", "median_limit_mm")}})
+        flags.append(
+            {
+                "code": FitFlag.DISPLACEMENT_OUTSIZED,
+                **{
+                    key: displacement[key]
+                    for key in ("max_mm", "median_mm", "max_limit_mm", "median_limit_mm")
+                },
+            }
+        )
     return {
         "fold_fraction": fold_fraction,
         "jacobian_in_tissue": {
@@ -226,7 +269,8 @@ def diagnose(
             "max": float(in_tissue.max()) if in_tissue.size else None,
         },
         "max_displacement_mm": float(np.linalg.norm(field_mm, axis=-1)[footprint].max())
-        if footprint.any() else 0.0,
+        if footprint.any()
+        else 0.0,
         "displacement": displacement,
         "regions": regions,
         "flags": flags,
@@ -262,8 +306,7 @@ class DeformableRecord:
     left_out: np.ndarray | None = None
     weights: np.ndarray | None = None
     saved_as: str | None = field(default=None, repr=False, compare=False)
-    stored_step: StoredStep | None = field(
-        default=None, repr=False, compare=False)
+    stored_step: StoredStep | None = field(default=None, repr=False, compare=False)
 
     @property
     def mm_per_px(self) -> float:
@@ -281,7 +324,8 @@ class DeformableRecord:
 
     def metadata(self) -> dict[str, Any]:
         meta: dict[str, Any] = {
-            "version": RECORD_VERSION, "step": self.step,
+            "version": RECORD_VERSION,
+            "step": self.step,
             "parent": None if self.parent is None else self.parent.saved_as,
             "placement": self.placement.to_dict(),
             "section_size": list(self.section_size),
@@ -296,13 +340,14 @@ class DeformableRecord:
             "inverse_source": self.inverse_source,
             "labels": "leaf atlas ids under the composed warp",
             "excluded_ids": list(self.excluded_ids),
-            "engine": self.engine, "diagnostics": self.diagnostics, "atlas": self.atlas,
+            "engine": self.engine,
+            "diagnostics": self.diagnostics,
+            "atlas": self.atlas,
             "provenance": self.provenance,
         }
 
         if self.stored_step is not None:
-            meta["fields_sha256"] = fields_digest(
-                self.field_mm, _present(self.inverse_field_mm))
+            meta["fields_sha256"] = fields_digest(self.field_mm, _present(self.inverse_field_mm))
         return meta
 
     @property
@@ -326,8 +371,9 @@ class DeformableRecord:
         if self.parent is not None:
             name = self.parent.saved_as
             if not name:
-                raise ValueError("The parent record has no folder: save it first, "
-                                 "in the same parent folder")
+                raise ValueError(
+                    "The parent record has no folder: save it first, in the same parent folder"
+                )
             if not (out.parent / name / "record.json").exists():
                 self.parent.save(out.parent / name)
         out.mkdir(parents=True, exist_ok=True)
@@ -335,14 +381,16 @@ class DeformableRecord:
         self.round_to_storage()
         ome_warp.write(out, self)
         metadata = to_jsonable(self.metadata(), strict=True)
-        (out / "record.json").write_text(json.dumps(metadata, indent=2) + "\n",
-            encoding="utf-8", newline="\n")
+        (out / "record.json").write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
         self.saved_as = out.name
         return out
 
     @classmethod
-    def load(cls, directory: str | Path,
-             _children: frozenset[str] = frozenset()) -> DeformableRecord:
+    def load(
+        cls, directory: str | Path, _children: frozenset[str] = frozenset()
+    ) -> DeformableRecord:
         """The record saved in *directory*, its parent chain from the sibling
         folders ``record.json`` names; ``ValueError`` naming the
         ``record.json`` that (or whose arrays) cannot be read, or whose chain
@@ -351,8 +399,11 @@ class DeformableRecord:
         meta = cls._metadata(root)
         if root.name in _children:
             raise ValueError(f"{root / 'record.json'}: its parent chain comes back to it")
-        parent = None if meta["parent"] is None else cls.load(
-            root.parent / str(meta["parent"]), _children | {root.name})
+        parent = (
+            None
+            if meta["parent"] is None
+            else cls.load(root.parent / str(meta["parent"]), _children | {root.name})
+        )
         try:
             arrays = ome_warp.read(root)
             field_mm, inverse_mm, stored_step = _read_fields(meta, arrays, parent)
@@ -360,15 +411,24 @@ class DeformableRecord:
             return cls(
                 placement=Placement.from_dict(meta["placement"]),
                 section_size=(int(meta["section_size"][0]), int(meta["section_size"][1])),
-                settings=None if meta["settings"] is None else FitSettings.from_dict(
-                    meta["settings"]),
-                field_mm=field_mm, inverse_field_mm=inverse_mm,
-                inverse_source=str(meta["inverse_source"]), labels=_present(arrays["labels"]),
+                settings=None
+                if meta["settings"] is None
+                else FitSettings.from_dict(meta["settings"]),
+                field_mm=field_mm,
+                inverse_field_mm=inverse_mm,
+                inverse_source=str(meta["inverse_source"]),
+                labels=_present(arrays["labels"]),
                 footprint=_present(arrays["footprint"]),
-                excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
-                diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
-                parent=parent, provenance=dict(meta["provenance"]),
-                left_out=arrays["left_out"], weights=arrays["weights"], saved_as=root.name,
+                excluded_ids=[int(i) for i in meta["excluded_ids"]],
+                engine=meta["engine"],
+                diagnostics=meta["diagnostics"],
+                atlas=meta["atlas"],
+                step=int(meta["step"]),
+                parent=parent,
+                provenance=dict(meta["provenance"]),
+                left_out=arrays["left_out"],
+                weights=arrays["weights"],
+                saved_as=root.name,
                 stored_step=stored_step,
             )
         except (OSError, ValueError, KeyError) as exc:
@@ -378,15 +438,16 @@ class DeformableRecord:
     def _metadata(root: Path) -> dict[str, Any]:
         """*root*'s ``record.json``, checked: its keys and its format."""
         try:
-            meta = json.loads((root / "record.json").read_text(
-                encoding="utf-8"))
+            meta = json.loads((root / "record.json").read_text(encoding="utf-8"))
             unknown = sorted(set(meta) - set(_RECORD_KEYS))
             if unknown:
                 raise ValueError(f"Unknown record key(s) {unknown}")
             if meta.get("version") not in READ_VERSIONS:
-                raise ValueError(f"record format {meta.get('version')!r}, which "
-                                 "this LangSlice does not read (it reads "
-                                 f"{' or '.join(map(str, READ_VERSIONS))})")
+                raise ValueError(
+                    f"record format {meta.get('version')!r}, which "
+                    "this LangSlice does not read (it reads "
+                    f"{' or '.join(map(str, READ_VERSIONS))})"
+                )
             if "parent" not in meta:
                 raise KeyError("parent")
             return meta
@@ -418,8 +479,9 @@ def _read_fields(
         working = numbers_at(object_at(engine, "working_grid"), "size")
         working_size = (int(working[0]), int(working[1]))
         grid = WorkingGrid((width, height), mm_per_px, working_size)
-        step = EngineStep(grid, _present(arrays["step_field_mm"]),
-                          _present(arrays["step_inverse_field_mm"]))
+        step = EngineStep(
+            grid, _present(arrays["step_field_mm"]), _present(arrays["step_inverse_field_mm"])
+        )
     elif kind == FIELDS_MESH:
         mesh = object_at(engine, "native_parameters")
         source = np.asarray(list_at(mesh, "source_xy"), dtype=np.float64)
@@ -432,8 +494,7 @@ def _read_fields(
     if parent_record is not None:
         parent_inverse_mm = _present(parent_record.inverse_field_mm)
         previous = (parent_record.field_mm, parent_inverse_mm)
-    field_mm, inverse_mm = rebuilt_fields(
-        step, (width, height), mm_per_px, previous)
+    field_mm, inverse_mm = rebuilt_fields(step, (width, height), mm_per_px, previous)
     field_mm = at_storage_precision(field_mm)
     return field_mm, at_storage_precision(inverse_mm), step
 
@@ -487,5 +548,3 @@ def _present(array: np.ndarray | None) -> np.ndarray:
     if array is None:
         raise ValueError("an array is missing")
     return array
-
-

@@ -39,20 +39,35 @@ logger = logging.getLogger(__name__)
 ATLAS_IMAGE_PERCENTILE = 99.5
 
 
-
 def _image_plane(
-    ctx: Workspace, state: Stack, kind: str, position_mm: float, labels: np.ndarray,
+    ctx: Workspace,
+    state: Stack,
+    kind: str,
+    position_mm: float,
+    labels: np.ndarray,
     angles: Angles,
 ) -> np.ndarray:
     """The atlas image *kind* on the native plane grid, percentile-stretched to 0..1."""
     from langslice.core.geometry.oblique import sample_oblique_plane
 
-    values = np.asarray(sample_oblique_plane(
-        ctx.atlas, position_mm, state.plane, *angles, volume=kind, order=1,
-    ), dtype=np.float32)
+    values = np.asarray(
+        sample_oblique_plane(
+            ctx.atlas,
+            position_mm,
+            state.plane,
+            *angles,
+            volume=kind,
+            order=1,
+        ),
+        dtype=np.float32,
+    )
     if values.shape != labels.shape:
-        values = np.asarray(Image.fromarray(values, mode="F").resize(
-            (labels.shape[1], labels.shape[0]), Image.Resampling.BILINEAR), dtype=np.float32)
+        values = np.asarray(
+            Image.fromarray(values, mode="F").resize(
+                (labels.shape[1], labels.shape[0]), Image.Resampling.BILINEAR
+            ),
+            dtype=np.float32,
+        )
     inside = values[(labels > 0) & (values > 0)]
     top = float(np.percentile(inside, ATLAS_IMAGE_PERCENTILE)) if inside.size else 0.0
     if top <= 0:
@@ -61,8 +76,12 @@ def _image_plane(
 
 
 def atlas_image_picture(
-    ctx: Workspace, state: Stack, kinds: tuple[str, ...], position_mm: float,
-    *, angles: Angles | None = None,
+    ctx: Workspace,
+    state: Stack,
+    kinds: tuple[str, ...],
+    position_mm: float,
+    *,
+    angles: Angles | None = None,
 ) -> Image.Image | None:
     """The atlas images *kinds* on the native plane grid; None for the template alone.
 
@@ -80,9 +99,15 @@ def atlas_image_picture(
         return None
     plane = state.plane
     pitch, yaw = plane_angles(state, angles)
-    labels = np.asarray(annotation_slice(
-        ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
-    ))
+    labels = np.asarray(
+        annotation_slice(
+            ctx.atlas,
+            position_mm,
+            plane=plane,
+            pitch_deg=pitch,
+            yaw_deg=yaw,
+        )
+    )
     shape = labels.shape
     if not images:
         return Image.new("L", (shape[1], shape[0]), 0)
@@ -90,8 +115,9 @@ def atlas_image_picture(
     def gray(kind: str) -> np.ndarray:
         if kind != TEMPLATE:
             return _image_plane(ctx, state, kind, position_mm, labels, (pitch, yaw))
-        reference = get_reference_slice(ctx.atlas, position_mm, plane=plane,
-                                        pitch_deg=pitch, yaw_deg=yaw)
+        reference = get_reference_slice(
+            ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw
+        )
         if reference.size != (shape[1], shape[0]):
             reference = reference.resize((shape[1], shape[0]), Image.Resampling.BILINEAR)
         return np.asarray(reference.convert("L"), dtype=np.float32) / 255.0
@@ -105,8 +131,12 @@ def atlas_image_picture(
 
 
 def regions_in_plane(
-    ctx: Workspace, state: Stack, position_mm: float, options: DisplayOptions,
-    *, angles: Angles | None = None,
+    ctx: Workspace,
+    state: Stack,
+    position_mm: float,
+    options: DisplayOptions,
+    *,
+    angles: Angles | None = None,
 ) -> list[str]:
     """The highlighted regions with at least one pixel in the plane at
     *position_mm* and *angles* (the stack's when None); a region with a side
@@ -117,14 +147,21 @@ def regions_in_plane(
     if not options.regions:
         return []
     pitch, yaw = plane_angles(state, angles)
-    labels = np.asarray(annotation_slice(
-        ctx.atlas, position_mm, plane=state.plane,
-        pitch_deg=pitch, yaw_deg=yaw,
-    ))
-    left = regions_left(ctx.atlas, options.regions, position_mm, state.plane, pitch, yaw,
-                        np.eye(2))
-    return [name for name, ids in options.regions
-            if restrict(np.isin(labels, list(ids)), split_side(name)[1], left).any()]
+    labels = np.asarray(
+        annotation_slice(
+            ctx.atlas,
+            position_mm,
+            plane=state.plane,
+            pitch_deg=pitch,
+            yaw_deg=yaw,
+        )
+    )
+    left = regions_left(ctx.atlas, options.regions, position_mm, state.plane, pitch, yaw, np.eye(2))
+    return [
+        name
+        for name, ids in options.regions
+        if restrict(np.isin(labels, list(ids)), split_side(name)[1], left).any()
+    ]
 
 
 def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
@@ -135,10 +172,14 @@ def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
     return cropped_geometry(image.crop(box), image, box)
 
 
-
 def framed_section(
-    ctx: Workspace, state: Stack, record: Section, options: DisplayOptions,
-    *, long_edge: int | None = None, look: Look | str = "options",
+    ctx: Workspace,
+    state: Stack,
+    record: Section,
+    options: DisplayOptions,
+    *,
+    long_edge: int | None = None,
+    look: Look | str = "options",
 ) -> Image.Image:
     """One section as corrected, the whole image, in the call's look and zoom.
 
@@ -156,14 +197,22 @@ def framed_section(
     x0, y0, x1, y1 = window
     extent = max(abs(x1 - x0), abs(y1 - y0), 1e-3)
     larger = render_slice(
-        ctx, record, long_edge=int(math.ceil(long_edge / min(1.0, extent))), look=drawn,
+        ctx,
+        record,
+        long_edge=int(math.ceil(long_edge / min(1.0, extent))),
+        look=drawn,
     )
     return _crop_fraction(larger, tuple(window))
 
 
 def framed_atlas(
-    ctx: Workspace, state: Stack, position_mm: float, options: DisplayOptions,
-    *, long_edge: int | None = None, um_per_px: float | None = None,
+    ctx: Workspace,
+    state: Stack,
+    position_mm: float,
+    options: DisplayOptions,
+    *,
+    long_edge: int | None = None,
+    um_per_px: float | None = None,
     angles: Angles | None = None,
 ) -> Image.Image:
     """The atlas at *position_mm*, framed to its anatomy, with the call's lines.
@@ -200,15 +249,25 @@ def framed_atlas(
         whole = atlas_section(ctx, state, position_mm, frame=True, angles=(pitch, yaw))
         return cropped_geometry(sized(whole), whole)
     plane = state.plane
-    labels = np.asarray(annotation_slice(
-        ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
-    ))
-    picture = atlas_image_picture(ctx, state, options.atlas_channels, position_mm,
-                                  angles=(pitch, yaw))
+    labels = np.asarray(
+        annotation_slice(
+            ctx.atlas,
+            position_mm,
+            plane=plane,
+            pitch_deg=pitch,
+            yaw_deg=yaw,
+        )
+    )
+    picture = atlas_image_picture(
+        ctx, state, options.atlas_channels, position_mm, angles=(pitch, yaw)
+    )
     if picture is None:
         picture = get_reference_slice(
-            ctx.atlas, position_mm, plane=plane,
-            pitch_deg=pitch, yaw_deg=yaw,
+            ctx.atlas,
+            position_mm,
+            plane=plane,
+            pitch_deg=pitch,
+            yaw_deg=yaw,
         )
     native = (labels.shape[1], labels.shape[0])
     if picture.size != native:
@@ -216,8 +275,9 @@ def framed_atlas(
     try:
         mask = atlas_mask(ctx, state, position_mm, picture.size, angles=(pitch, yaw)) > 0
     except IMAGE_FAILURES as exc:
-        logger.warning("atlas at %.3f mm: framed by its labels, no root mask (%s)",
-                       position_mm, exc)
+        logger.warning(
+            "atlas at %.3f mm: framed by its labels, no root mask (%s)", position_mm, exc
+        )
         mask = labels > 0
     box = mask_box(picture.size, mask) or (0, 0, picture.width, picture.height)
     if not options.full_view:
@@ -238,30 +298,51 @@ def framed_atlas(
     canvas = np.asarray(shown, dtype=np.uint8).copy()
     context: list[np.ndarray] = []
     if options.borders:
-        context = region_outlines(ctx.atlas, position_mm, depth=options.depth, plane=plane,
-                                  pitch_deg=pitch, yaw_deg=yaw)
+        context = region_outlines(
+            ctx.atlas, position_mm, depth=options.depth, plane=plane, pitch_deg=pitch, yaw_deg=yaw
+        )
     origin = (box[0], box[1])
     region_lines: list[np.ndarray] = []
     if options.regions:
-        left = regions_left(ctx.atlas, options.regions, position_mm, plane,
-                            pitch, yaw, np.eye(2))
+        left = regions_left(ctx.atlas, options.regions, position_mm, plane, pitch, yaw, np.eye(2))
         region_lines = region_polys(labels, options.regions, left)
     drawn_polys = context + region_lines
     coverage = (
-        line_coverage(canvas.shape[:2], drawn_polys, thickness=options.border_thickness,
-                     origin=origin, factor=factor)
-        if drawn_polys else None
+        line_coverage(
+            canvas.shape[:2],
+            drawn_polys,
+            thickness=options.border_thickness,
+            origin=origin,
+            factor=factor,
+        )
+        if drawn_polys
+        else None
     )
     core, _ = resolve_border_color(
-        options.border_color, options.border_thickness, rgb=canvas, coverage=coverage,
+        options.border_color,
+        options.border_thickness,
+        rgb=canvas,
+        coverage=coverage,
     )
     if context:
-        _draw_polys(canvas, context, core, thickness=options.border_thickness, origin=origin,
-                    factor=factor, alpha=REGION_CONTEXT_ALPHA if options.regions else 1.0)
+        _draw_polys(
+            canvas,
+            context,
+            core,
+            thickness=options.border_thickness,
+            origin=origin,
+            factor=factor,
+            alpha=REGION_CONTEXT_ALPHA if options.regions else 1.0,
+        )
     if region_lines:
-        _draw_polys(canvas, region_lines, core,
-                    thickness=options.border_thickness * HIGHLIGHT_WIDTH, origin=origin,
-                    factor=factor)
+        _draw_polys(
+            canvas,
+            region_lines,
+            core,
+            thickness=options.border_thickness * HIGHLIGHT_WIDTH,
+            origin=origin,
+            factor=factor,
+        )
     result = Image.fromarray(canvas, mode="RGB")
     result.info["pixel_to_native"] = shown.info["pixel_to_native"]
     if drawn_polys:
@@ -269,8 +350,14 @@ def framed_atlas(
     return result
 
 
-def atlas_caption(state: Stack, position_mm: float, options: DisplayOptions,
-                  *, angles: Angles | None = None, median: bool = False) -> str:
+def atlas_caption(
+    state: Stack,
+    position_mm: float,
+    options: DisplayOptions,
+    *,
+    angles: Angles | None = None,
+    median: bool = False,
+) -> str:
     """The label burned into an atlas picture drawn at *angles* (the stack's
     when None); *median*: drawn at the median of differing sections' angles,
     which the label says

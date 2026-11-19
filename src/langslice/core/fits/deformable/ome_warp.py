@@ -71,19 +71,29 @@ FIELD_GROUP = "coordinateTransformations/field"
 INVERSE_GROUP = "coordinateTransformations/inverse_field"
 STEP_GROUP = "coordinateTransformations/step_field"
 STEP_INVERSE_GROUP = "coordinateTransformations/step_inverse_field"
-FIELD_GROUPS = {"field_mm": FIELD_GROUP, "inverse_field_mm": INVERSE_GROUP,
-                "step_field_mm": STEP_GROUP,
-                "step_inverse_field_mm": STEP_INVERSE_GROUP}
-IMAGE_GROUPS = {"labels": "warped_labels", "footprint": "footprint", "left_out": "left_out",
-                "weights": "weights"}
+FIELD_GROUPS = {
+    "field_mm": FIELD_GROUP,
+    "inverse_field_mm": INVERSE_GROUP,
+    "step_field_mm": STEP_GROUP,
+    "step_inverse_field_mm": STEP_INVERSE_GROUP,
+}
+IMAGE_GROUPS = {
+    "labels": "warped_labels",
+    "footprint": "footprint",
+    "left_out": "left_out",
+    "weights": "weights",
+}
 LEVEL = "s0"
 SECTION, PLACED, ATLAS = "section", "placed_atlas", "atlas"
 BLOSC_LEVEL = 5
 
 _AXIS_RUNS = {
-    "a": "anterior to posterior", "p": "posterior to anterior",
-    "s": "superior to inferior", "i": "inferior to superior",
-    "r": "right to left", "l": "left to right",
+    "a": "anterior to posterior",
+    "p": "posterior to anterior",
+    "s": "superior to inferior",
+    "i": "inferior to superior",
+    "r": "right to left",
+    "l": "left to right",
 }
 
 
@@ -92,10 +102,11 @@ def at_storage_precision(field_mm: np.ndarray) -> np.ndarray:
     return np.asarray(field_mm).astype(FIELD_DTYPE).astype(np.float32)
 
 
-
 def _plane_axes(unit: str) -> list[dict[str, Any]]:
-    return [{"name": "y", "type": "space", "unit": unit},
-            {"name": "x", "type": "space", "unit": unit}]
+    return [
+        {"name": "y", "type": "space", "unit": unit},
+        {"name": "x", "type": "space", "unit": unit},
+    ]
 
 
 def _system(name: str, axes: list[dict[str, Any]]) -> dict[str, Any]:
@@ -125,33 +136,41 @@ def _to_volume_yx(native_to_volume: np.ndarray) -> list[list[float]]:
     return np.stack([m[:, 1], m[:, 0], m[:, 2]], axis=1).tolist()
 
 
-def _image_attributes(name: str, system: dict[str, Any], scale: list[float],
-                      *, origin: list[float] | None = None) -> dict[str, Any]:
+def _image_attributes(
+    name: str, system: dict[str, Any], scale: list[float], *, origin: list[float] | None = None
+) -> dict[str, Any]:
     to_system = {"input": {"path": LEVEL}, "output": {"name": system["name"]}}
     placing = {"type": "scale", "scale": scale, **to_system}
     if origin is not None:
-        steps = [{"type": "scale", "scale": scale},
-                 {"type": "translation", "translation": origin}]
+        steps = [{"type": "scale", "scale": scale}, {"type": "translation", "translation": origin}]
         placing = {"type": "sequence", "transformations": steps, **to_system}
-    return {"ome": {"version": OME_VERSION, "multiscales": [{
-        "name": name,
-        "type": "none",
-        "metadata": {"description": "a single full-resolution level"},
-        "coordinateSystems": [system],
-        "datasets": [{"path": LEVEL, "coordinateTransformations": [placing]}],
-    }]}}
+    return {
+        "ome": {
+            "version": OME_VERSION,
+            "multiscales": [
+                {
+                    "name": name,
+                    "type": "none",
+                    "metadata": {"description": "a single full-resolution level"},
+                    "coordinateSystems": [system],
+                    "datasets": [{"path": LEVEL, "coordinateTransformations": [placing]}],
+                }
+            ],
+        }
+    }
 
 
-def _field_attributes(name: str, frame: str, mm: float,
-                      *, grid: WorkingGrid | None = None) -> dict[str, Any]:
+def _field_attributes(
+    name: str, frame: str, mm: float, *, grid: WorkingGrid | None = None
+) -> dict[str, Any]:
     axes = [{"name": "c", "type": "displacement", "discrete": True}, *_plane_axes("millimeter")]
     if grid is None:
         return _image_attributes(name, _system(frame, axes), [1.0, mm, mm])
     spacing_x, spacing_y = grid.spacing_mm
     origin_x, origin_y = grid.origin_mm
-    return _image_attributes(name, _system(frame, axes),
-                             [1.0, spacing_y, spacing_x],
-                             origin=[0.0, origin_y, origin_x])
+    return _image_attributes(
+        name, _system(frame, axes), [1.0, spacing_y, spacing_x], origin=[0.0, origin_y, origin_x]
+    )
 
 
 def scene_attributes(record: DeformableRecord, images: list[str]) -> dict[str, Any]:
@@ -161,41 +180,66 @@ def scene_attributes(record: DeformableRecord, images: list[str]) -> dict[str, A
     groups = _whole_map_groups(record)
     deformation = []
     if groups is not None:
-        forward = {"type": "displacements", "path": groups[0],
-                   "interpolation": "linear", "name": "section to placed atlas"}
+        forward = {
+            "type": "displacements",
+            "path": groups[0],
+            "interpolation": "linear",
+            "name": "section to placed atlas",
+        }
         warp: dict[str, Any] = forward
         if groups[1] is not None:
-            inverse = {"type": "displacements", "path": groups[1],
-                       "interpolation": "linear",
-                       "name": "placed atlas to section"}
+            inverse = {
+                "type": "displacements",
+                "path": groups[1],
+                "interpolation": "linear",
+                "name": "placed atlas to section",
+            }
             warp = {"type": "bijection", "forward": forward, "inverse": inverse}
         ends = {"input": {"name": SECTION}, "output": {"name": PLACED}}
         deformation = [{**warp, "name": "the deformation", **ends}]
     atlas = record.atlas
     resolution = [float(v) for v in atlas["resolution_um"]]
     placement = {
-        "type": "sequence", "name": "the linear placement",
-        "input": {"name": PLACED}, "output": {"name": ATLAS},
+        "type": "sequence",
+        "name": "the linear placement",
+        "input": {"name": PLACED},
+        "output": {"name": ATLAS},
         "transformations": [
-            {"type": "scale", "scale": [1.0 / mm, 1.0 / mm],
-             "name": "millimetres to placed-atlas pixels"},
-            {"type": "affine", "affine": _yx(np.linalg.inv(record.placement.atlas_to_section)),
-             "name": "placed-atlas pixels to native atlas-plane pixels"},
-            {"type": "affine", "affine": _to_volume_yx(atlas["native_to_volume_index"]),
-             "name": "native atlas-plane pixels to atlas volume indices"},
+            {
+                "type": "scale",
+                "scale": [1.0 / mm, 1.0 / mm],
+                "name": "millimetres to placed-atlas pixels",
+            },
+            {
+                "type": "affine",
+                "affine": _yx(np.linalg.inv(record.placement.atlas_to_section)),
+                "name": "placed-atlas pixels to native atlas-plane pixels",
+            },
+            {
+                "type": "affine",
+                "affine": _to_volume_yx(atlas["native_to_volume_index"]),
+                "name": "native atlas-plane pixels to atlas volume indices",
+            },
             {"type": "scale", "scale": resolution, "name": "volume indices to micrometres"},
         ],
     }
-    links = [{"type": "identity", "input": {"name": SECTION, "path": group},
-              "output": {"name": SECTION}} for group in images]
-    return {"ome": {"version": OME_VERSION, "scene": {
-        "coordinateSystems": [
-            _system(SECTION, _plane_axes("millimeter")),
-            _system(PLACED, _plane_axes("millimeter")),
-            _system(ATLAS, _atlas_axes(str(atlas.get("orientation", "")))),
-        ],
-        "coordinateTransformations": [*deformation, placement, *links],
-    }}}
+    links = [
+        {"type": "identity", "input": {"name": SECTION, "path": group}, "output": {"name": SECTION}}
+        for group in images
+    ]
+    return {
+        "ome": {
+            "version": OME_VERSION,
+            "scene": {
+                "coordinateSystems": [
+                    _system(SECTION, _plane_axes("millimeter")),
+                    _system(PLACED, _plane_axes("millimeter")),
+                    _system(ATLAS, _atlas_axes(str(atlas.get("orientation", "")))),
+                ],
+                "coordinateTransformations": [*deformation, placement, *links],
+            },
+        }
+    }
 
 
 def _whole_map_groups(
@@ -217,7 +261,6 @@ def _whole_map_groups(
     return None
 
 
-
 def _blosc(dtype: np.dtype[Any]) -> Any:
     from zarr.codecs import BloscCodec
 
@@ -227,8 +270,13 @@ def _blosc(dtype: np.dtype[Any]) -> Any:
 
 def _array(group: Any, name: str, data: np.ndarray, dimensions: tuple[str, ...]) -> None:
     data = np.ascontiguousarray(data)
-    group.create_array(name, data=data, chunks=data.shape, compressors=_blosc(data.dtype),
-                       dimension_names=dimensions)
+    group.create_array(
+        name,
+        data=data,
+        chunks=data.shape,
+        compressors=_blosc(data.dtype),
+        dimension_names=dimensions,
+    )
 
 
 def _field_planes(field_mm: np.ndarray) -> np.ndarray:
@@ -259,8 +307,10 @@ def write(directory: str | Path, record: DeformableRecord) -> Path:
         _array(group, LEVEL, planes, ("c", "y", "x"))
 
     if isinstance(step, EngineStep):
-        engine_fields = [("step_field", step.field_mm, SECTION),
-                         ("step_inverse_field", step.inverse_field_mm, PLACED)]
+        engine_fields = [
+            ("step_field", step.field_mm, SECTION),
+            ("step_inverse_field", step.inverse_field_mm, PLACED),
+        ]
         for name, field_mm, frame in engine_fields:
             attributes = _field_attributes(name, frame, mm, grid=step.grid)
             group = transforms.create_group(name, attributes=attributes)
@@ -272,8 +322,12 @@ def write(directory: str | Path, record: DeformableRecord) -> Path:
         data = getattr(record, attribute)
         if data is None:
             continue
-        group = root.create_group(name, attributes=_image_attributes(
-            name, _system(SECTION, _plane_axes("millimeter")), [mm, mm]))
+        group = root.create_group(
+            name,
+            attributes=_image_attributes(
+                name, _system(SECTION, _plane_axes("millimeter")), [mm, mm]
+            ),
+        )
         _array(group, LEVEL, np.asarray(data), ("y", "x"))
         images.append(name)
     root.attrs.put(scene_attributes(record, images))

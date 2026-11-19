@@ -49,7 +49,12 @@ def read_manifest(layout: JobLayout, tool: str) -> dict[str, Any]:
 
 
 def register_layer(
-    layout: JobLayout, record: Section, tool: str, call: str, layer: Layer, *,
+    layout: JobLayout,
+    record: Section,
+    tool: str,
+    call: str,
+    layer: Layer,
+    *,
     persist: bool = True,
 ) -> dict[str, Any]:
     """Write *layer*'s file under the tool's folder, list it in the manifest
@@ -60,16 +65,29 @@ def register_layer(
     manifest = read_manifest(layout, tool)
     number = int(manifest.get("next", 1))
     name = layer.name or tool
-    stem = (layout.plugin_dir(tool) / LAYERS_SUBDIR
-            / f"{layout.section_name(record.id)}_{number:04d}_{_UNSAFE.sub('_', name)}")
-    suffix = {"points": ".csv", "lines": ".json", "labels": ".png", "scalar": ".npz",
-              "picture": ".png"}[layer.kind]
+    stem = (
+        layout.plugin_dir(tool)
+        / LAYERS_SUBDIR
+        / f"{layout.section_name(record.id)}_{number:04d}_{_UNSAFE.sub('_', name)}"
+    )
+    suffix = {
+        "points": ".csv",
+        "lines": ".json",
+        "labels": ".png",
+        "scalar": ".npz",
+        "picture": ".png",
+    }[layer.kind]
     if persist:
         written = save_layer(layer, stem)
         suffix = written.suffix
     ref = {
-        "id": f"{tool}/{number}", "name": name, "kind": layer.kind, "frame": layer.frame,
-        "file": layout.relative(stem.with_suffix(suffix)), "tool": tool, "call": call,
+        "id": f"{tool}/{number}",
+        "name": name,
+        "kind": layer.kind,
+        "frame": layer.frame,
+        "file": layout.relative(stem.with_suffix(suffix)),
+        "tool": tool,
+        "call": call,
         "created": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if persist:
@@ -86,8 +104,11 @@ def register_layer(
 def layer_rows(state: Stack) -> list[dict[str, Any]]:
     """Every layer the sections show, one row each (``section``, then the
     reference's fields), in stack order."""
-    return [{"section": section.id, **layer_to_json(ref)}
-            for section in state.in_order() for ref in section.layers]
+    return [
+        {"section": section.id, **layer_to_json(ref)}
+        for section in state.in_order()
+        for ref in section.layers
+    ]
 
 
 def export_layers(layout: JobLayout, state: Stack) -> list[str]:

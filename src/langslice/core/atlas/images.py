@@ -47,8 +47,11 @@ def _takes_borrowed_nissl(atlas: Any) -> bool:
     if space is not None and space not in CCFV3_SPACES:
         return False
     extent = np.asarray(context.shape) * np.asarray(context.resolution_um) / 1000.0
-    return (context.orientation == "asr" and getattr(atlas, "atlas_name", "") != AUGMENTED_ATLAS
-            and bool(np.allclose(extent, _CCFV3_EXTENT_MM, atol=0.026)))
+    return (
+        context.orientation == "asr"
+        and getattr(atlas, "atlas_name", "") != AUGMENTED_ATLAS
+        and bool(np.allclose(extent, _CCFV3_EXTENT_MM, atol=0.026))
+    )
 
 
 def _borrowed_nissl(atlas: Any) -> np.ndarray:
@@ -66,8 +69,14 @@ def _borrowed_nissl(atlas: Any) -> np.ndarray:
         source = np.asarray(load_atlas(AUGMENTED_ATLAS).template)
         step = np.asarray(atlas_space_context(atlas).resolution_um) / 1000.0 / AUGMENTED_VOXEL_MM
         offset = 0.5 * step - 0.5 + np.array([AUGMENTED_AP_OFFSET_MM / AUGMENTED_VOXEL_MM, 0, 0])
-        volume = affine_transform(source, np.diag(step), offset=offset,
-                                  output_shape=annotation.shape, order=1, output=source.dtype)
+        volume = affine_transform(
+            source,
+            np.diag(step),
+            offset=offset,
+            output_shape=annotation.shape,
+            order=1,
+            output=source.dtype,
+        )
         volume[annotation == 0] = 0
         _borrowed.clear()
         _borrowed[key] = volume
@@ -107,10 +116,15 @@ def nissl_note(atlas: Any, asked: str) -> str | None:
     """What the reply says when *asked* is the default :data:`NISSL` and the atlas's template IS
     a Nissl (``ccfv3augmented_mouse_25um``): the request was honoured, not replaced. None for
     any other name or atlas."""
-    if (asked == NISSL and default_image(atlas) == TEMPLATE
-            and getattr(atlas, "atlas_name", "") == AUGMENTED_ATLAS):
-        return ("your default \"nissl\" request was honoured: this atlas's template is a "
-                "Nissl (the Blue Brain averaged Nissl)")
+    if (
+        asked == NISSL
+        and default_image(atlas) == TEMPLATE
+        and getattr(atlas, "atlas_name", "") == AUGMENTED_ATLAS
+    ):
+        return (
+            'your default "nissl" request was honoured: this atlas\'s template is a '
+            "Nissl (the Blue Brain averaged Nissl)"
+        )
     return None
 
 
@@ -121,8 +135,10 @@ def resolve_image(atlas: Any, name: str) -> str:
     if name == NISSL:
         return default_image(atlas)
     if name not in _own_images(atlas):
-        raise ValueError(f"{getattr(atlas, 'atlas_name', 'This atlas')} has no image {name!r}; "
-                         f"its images: {', '.join(atlas_images(atlas))}")
+        raise ValueError(
+            f"{getattr(atlas, 'atlas_name', 'This atlas')} has no image {name!r}; "
+            f"its images: {', '.join(atlas_images(atlas))}"
+        )
     return name
 
 

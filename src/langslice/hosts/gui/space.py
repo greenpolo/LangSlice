@@ -139,9 +139,7 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
     try:
         mesh = atlas.mesh_from_structure(ROOT_STRUCTURE)
     except (AttributeError, KeyError, OSError, ValueError) as exc:
-        raise ShellError(
-            f"This atlas has no brain mesh to draw: {exc}"
-        ) from exc
+        raise ShellError(f"This atlas has no brain mesh to draw: {exc}") from exc
     triangles = [c.data for c in mesh.cells if c.type == "triangle"]
     if not triangles:
         raise ShellError("This atlas's brain mesh has no triangles.")
@@ -164,9 +162,7 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
     )
 
 
-def job_space(
-    workspace: Workspace, state: Stack, *, thickness_um: float | None
-) -> Space:
+def job_space(workspace: Workspace, state: Stack, *, thickness_um: float | None) -> Space:
     """Place every section of *state* in the atlas, as far as it can be.
 
     Parameters
@@ -184,9 +180,7 @@ def job_space(
         The sections in stack order, each with its corners or None.
     """
     sections = tuple(
-        SpaceSection(
-            section.id, order, section_corners(workspace, state, section)
-        )
+        SpaceSection(section.id, order, section_corners(workspace, state, section))
         for order, section in enumerate(state.in_order(), 1)
     )
     given = thickness_um is not None and thickness_um > 0
@@ -200,9 +194,7 @@ def job_space(
     return Space(thickness, given, plane_axis, sections)
 
 
-def section_corners(
-    workspace: Workspace, state: Stack, section: Section
-) -> Corners | None:
+def section_corners(workspace: Workspace, state: Stack, section: Section) -> Corners | None:
     """Find where the corners of a section's thumbnail sit in the atlas.
 
     Parameters
@@ -239,9 +231,7 @@ def section_corners(
     return _as_corners(atlas_um)
 
 
-def turned_corners(
-    file_size: tuple[int, int], rotation_deg: int
-) -> npt.NDArray[np.float64]:
+def turned_corners(file_size: tuple[int, int], rotation_deg: int) -> npt.NDArray[np.float64]:
     """List the turned picture's top-left, top-right and bottom-left corners.
 
     Parameters

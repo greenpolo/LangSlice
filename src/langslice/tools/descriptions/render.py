@@ -79,9 +79,7 @@ DESCRIPTIONS: dict[str, ToolDescription] = {
     name: _FAMILIES[name] for name, tool in TOOLS.items() if not tool.engine
 }
 
-FULL = DescriptionFacts(
-    prompt=border_correction_tool_prompt("coronal", provider="openai-oauth")
-)
+FULL = DescriptionFacts(prompt=border_correction_tool_prompt("coronal", provider="openai-oauth"))
 
 RETURNS = dict[str, Any]
 
@@ -130,26 +128,20 @@ def declaration(name: str, facts: DescriptionFacts = FULL) -> Declaration:
     return _plugin(name, facts)
 
 
-def _native(
-    name: str, description: ToolDescription, facts: DescriptionFacts
-) -> Declaration:
+def _native(name: str, description: ToolDescription, facts: DescriptionFacts) -> Declaration:
     offered = {
         argument: entry
         for argument, entry in description.arguments.items()
         if is_offered(entry, facts)
     }
-    slots = {
-        key: _slot_text(slot, facts) for key, slot in description.slots.items()
-    }
+    slots = {key: _slot_text(slot, facts) for key, slot in description.slots.items()}
     rendered = functools.partial(
         _rendered, slots=slots, switched_off=facts.switched_off | facts.absent
     )
 
     blocks = [rendered(paragraph) for paragraph in description.body]
     blocks = [block for block in blocks if block]
-    texts = {
-        argument: rendered(entry.text) for argument, entry in offered.items()
-    }
+    texts = {argument: rendered(entry.text) for argument, entry in offered.items()}
     if texts:
         blocks.append(_arguments_block(texts))
     if description.returns:
@@ -162,9 +154,7 @@ def _native(
     doc = f"{summary}\n\n{_indented(below, DOC_INDENT)}\n{' ' * DOC_INDENT}"
 
     annotations: dict[str, object] = {
-        argument: narrowed(
-            name, argument, entry.annotation, facts.switched_off
-        )
+        argument: narrowed(name, argument, entry.annotation, facts.switched_off)
         for argument, entry in offered.items()
     }
     parameters = [
@@ -187,9 +177,7 @@ def _native(
     )
 
 
-def _rendered(
-    text: str, *, slots: Mapping[str, str], switched_off: frozenset[str]
-) -> str:
+def _rendered(text: str, *, slots: Mapping[str, str], switched_off: frozenset[str]) -> str:
     filled = Template(text).substitute(slots)
     return render(filled, switched_off).rstrip(" ")
 
@@ -311,11 +299,7 @@ def argument_texts(doc: str) -> dict[str, str]:
             texts[name] += " " + line.strip()
             continue
         name = None
-        head = (
-            line[12:]
-            if line.startswith(" " * 12) and not line.startswith(" " * 13)
-            else ""
-        )
+        head = line[12:] if line.startswith(" " * 12) and not line.startswith(" " * 13) else ""
         key, colon, text = head.partition(":")
         if colon and key.isidentifier():
             name = key
@@ -323,9 +307,7 @@ def argument_texts(doc: str) -> dict[str, str]:
     return texts
 
 
-def narrowed(
-    name: str, argument: str, annotation: object, off: Collection[str]
-) -> object:
+def narrowed(name: str, argument: str, annotation: object, off: Collection[str]) -> object:
     """Return an argument's type without the options the job switches off.
 
     The options of ``look``'s ``mode`` are values of its enumeration; the
@@ -352,9 +334,7 @@ def narrowed(
     if argument in options.values():
         values: tuple[object, ...] = typing.get_args(annotation)
         kept = tuple(
-            value
-            for value in values
-            if not is_off(off, f"{name}{OPTION_SEPARATOR}{value}")
+            value for value in values if not is_off(off, f"{name}{OPTION_SEPARATOR}{value}")
         )
         return Literal[kept]
     if (name, argument) != ("interactive_transform", "sections"):
@@ -445,9 +425,7 @@ def context_parameter(
     kind = inspect.Parameter.POSITIONAL_OR_KEYWORD
     if inspect.Parameter.KEYWORD_ONLY in kinds:
         kind = inspect.Parameter.KEYWORD_ONLY
-    return inspect.Parameter(
-        "tool_context", kind, default=None, annotation=annotation
-    )
+    return inspect.Parameter("tool_context", kind, default=None, annotation=annotation)
 
 
 def declare(
@@ -484,9 +462,7 @@ def declare(
     """
     declared = declaration(name, facts)
     taken = inspect.signature(body).parameters
-    missing = [
-        arg for arg in declared.signature.parameters if arg not in taken
-    ]
+    missing = [arg for arg in declared.signature.parameters if arg not in taken]
     if missing:
         raise TypeError(f"{name}: the tool body takes no {', '.join(missing)}")
     signature = declared.signature
@@ -511,14 +487,21 @@ def declare(
 
     tool.__name__ = tool.__qualname__ = name
     tool.__doc__ = declared.doc
-    tool.__signature__ = signature  # type: ignore[attr-defined]
     tool.__annotations__ = annotations
-    return tool
+    return signed(tool, signature)
 
 
-def arguments_schema(
-    name: str, facts: DescriptionFacts = FULL
-) -> dict[str, Any]:
+def signed(function: Callable[..., Any], signature: inspect.Signature) -> Callable[..., Any]:
+    """Give *function* the signature its callers and ``inspect`` are shown.
+
+    ``inspect.signature`` reads a function's ``__signature__`` first, which
+    is how a body taking ``*args, **kwargs`` is declared with named arguments.
+    """
+    function.__dict__["__signature__"] = signature
+    return function
+
+
+def arguments_schema(name: str, facts: DescriptionFacts = FULL) -> dict[str, Any]:
     """Return the JSON schema of a tool's arguments.
 
     It is built by pydantic from the declaration, the way FastMCP builds its
@@ -544,8 +527,7 @@ def arguments_schema(
     for parameter in declared.signature.parameters.values():
         default = ... if parameter.default is inspect.Parameter.empty else parameter.default
         fields[parameter.name] = (parameter.annotation, default)
-    model = create_model(f"{name}_arguments", __config__=ConfigDict(extra="forbid"),
-                         **fields)
+    model = create_model(f"{name}_arguments", __config__=ConfigDict(extra="forbid"), **fields)
     schema = model.model_json_schema()
     schema["title"] = name
     schema["description"] = declared.summary

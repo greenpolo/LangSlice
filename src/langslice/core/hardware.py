@@ -85,7 +85,7 @@ def cpu_cores() -> int:
 class _MemoryStatus(ctypes.Structure):
     length: int
     total_physical: int
-    _fields_ = [  # noqa: RUF012
+    _fields_ = [
         ("length", ctypes.c_ulong),
         ("load", ctypes.c_ulong),
         ("total_physical", ctypes.c_ulonglong),
@@ -183,9 +183,7 @@ def section_workers(tasks: int, threads_each: int) -> int:
     return max(1, min(tasks, cpu_cores() // max(1, threads_each)))
 
 
-def map_sections(
-    step: Callable[[_T], _R], items: Sequence[_T], threads_each: int
-) -> list[_R]:
+def map_sections(step: Callable[[_T], _R], items: Sequence[_T], threads_each: int) -> list[_R]:
     """Run *step* on each item, :func:`section_workers` at once, on threads.
 
     Each step runs in a copy of the caller's context, so what the call
@@ -211,10 +209,7 @@ def map_sections(
     if workers <= 1:
         return [step(item) for item in items]
     with ThreadPoolExecutor(workers, thread_name_prefix="section") as pool:
-        futures = [
-            pool.submit(contextvars.copy_context().run, step, item)
-            for item in items
-        ]
+        futures = [pool.submit(contextvars.copy_context().run, step, item) for item in items]
     return [future.result() for future in futures]
 
 
@@ -355,11 +350,11 @@ def drop_process_pool(name: str, pool: ProcessPoolExecutor) -> None:
 class Threader(Protocol):
     """A library's global default thread count (ITK's and SimpleITK's)."""
 
-    def GetGlobalDefaultNumberOfThreads(self, /) -> int:  # noqa: N802
+    def GetGlobalDefaultNumberOfThreads(self, /) -> int:
         """Return the count."""
         ...
 
-    def SetGlobalDefaultNumberOfThreads(self, count: int, /) -> None:  # noqa: N802
+    def SetGlobalDefaultNumberOfThreads(self, count: int, /) -> None:
         """Set the count.
 
         Parameters
@@ -375,9 +370,7 @@ _THREAD_COUNTS_LOCK = threading.Lock()
 
 
 @contextlib.contextmanager
-def global_threads(
-    threader: Threader, count: int
-) -> Generator[None, None, None]:
+def global_threads(threader: Threader, count: int) -> Generator[None, None, None]:
     """Hold a library's global thread count at *count* while any call runs.
 
     Several sections' calls on threads overlap; the count before the first

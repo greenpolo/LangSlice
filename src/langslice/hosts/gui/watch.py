@@ -148,8 +148,9 @@ def _when(record: dict[str, Any]) -> float | None:
     return (moment if moment.tzinfo else moment.astimezone()).timestamp()
 
 
-def _in_time_order(trace: list[dict[str, Any]], events: list[dict[str, Any]]
-                   ) -> list[tuple[float, int, str, dict[str, Any]]]:
+def _in_time_order(
+    trace: list[dict[str, Any]], events: list[dict[str, Any]]
+) -> list[tuple[float, int, str, dict[str, Any]]]:
     """Trace records and events in one order: by time, and within a second a
     model turn before the calls it made and a session's end after them."""
     out: list[tuple[float, int, str, dict[str, Any]]] = []
@@ -336,7 +337,7 @@ class JobWatcher:
                 self.trace = _Tail(newest)
         if self.trace is None:
             last = self.last_change()
-            said = self.words.read(self.folder, self.job.value, last)  # pyright: ignore[reportAny]
+            said = self.words.read(self.folder, self.job.value, last)
             return [dict(record) for record in said], False
         return self.trace.read()
 
@@ -352,13 +353,18 @@ class JobWatcher:
         if kind in ("tool_start", "tool_end"):
             key = str(record.get("execution_id") or record.get("id") or len(self.items))
             item = {
-                "kind": "tool", "phase": "start" if kind == "tool_start" else "end",
-                "key": key, "name": str(record.get("name") or "tool"),
+                "kind": "tool",
+                "phase": "start" if kind == "tool_start" else "end",
+                "key": key,
+                "name": str(record.get("name") or "tool"),
                 "label": str(record.get("name") or "tool"),
                 "title": tool_title(str(record.get("name") or "tool")),
                 "sections": [str(s) for s in record.get("target_ids") or []],
-                "failed": bool(record.get("failed")), "status": record.get("status"),
-                "step": record.get("step"), "door": record.get("door"), "at": at,
+                "failed": bool(record.get("failed")),
+                "status": record.get("status"),
+                "step": record.get("step"),
+                "door": record.get("door"),
+                "at": at,
                 "views": [_view_folder(str(v)) for v in record.get("views") or []],
                 "args": _capped_args(record.get("args")),
             }
@@ -370,14 +376,25 @@ class JobWatcher:
                 self._label_step(item, record.get("step"))
             self._append(item)
         elif kind == "open":
-            self._append({"kind": "note", "text": "Job reopened" if record.get("resumed")
-                          else "Job opened", "at": at})
+            self._append(
+                {
+                    "kind": "note",
+                    "text": "Job reopened" if record.get("resumed") else "Job opened",
+                    "at": at,
+                }
+            )
         elif kind == "script_write":
             what = ", ".join(str(p) for p in _list(record.get("property")))
             words = _sections_words([str(s) for s in _list(record.get("sections"))])
-            self._append({"kind": "note", "at": at,
-                          "text": "A script wrote " + (what or "to the job")
-                          + (f" ({words})" if words else "")})
+            self._append(
+                {
+                    "kind": "note",
+                    "at": at,
+                    "text": "A script wrote "
+                    + (what or "to the job")
+                    + (f" ({words})" if words else ""),
+                }
+            )
         elif kind == "plugins":
             self._append({"kind": "note", "at": at, "text": "Tool plugins loaded"})
 
@@ -404,8 +421,7 @@ class JobWatcher:
                     if self.redo_labels:
                         self.step_labels[depth] = self.redo_labels.pop()
             return
-        if (before is None and name not in _READS) or (
-                before is not None and step > before):
+        if (before is None and name not in _READS) or (before is not None and step > before):
             self.step_labels[step] = label
             self.redo_labels.clear()
 
@@ -416,27 +432,49 @@ class JobWatcher:
         at = record.get("at")
         if kind == "session":
             self.session = {"model": record.get("model"), "agent": record.get("agent")}
-            self._append({"kind": "note", "at": at, "text": "Agent session started"
-                          + (f" ({record['model']})" if record.get("model") else "")})
+            self._append(
+                {
+                    "kind": "note",
+                    "at": at,
+                    "text": "Agent session started"
+                    + (f" ({record['model']})" if record.get("model") else ""),
+                }
+            )
         elif kind == "model":
             if record.get("thought"):
-                self._append({"kind": "reasoning", "at": at,
-                              "text": _short(record["thought"])})
+                self._append({"kind": "reasoning", "at": at, "text": _short(record["thought"])})
             if record.get("text"):
                 self._append({"kind": "agent", "at": at, "text": _short(record["text"])})
         elif kind == "summary":
             self.summary = record
             submitted = bool(record.get("submitted"))
-            self._append({"kind": "note", "at": at, "text": "Agent session ended"
-                          + (", submitted" if submitted else " without a submission")})
+            self._append(
+                {
+                    "kind": "note",
+                    "at": at,
+                    "text": "Agent session ended"
+                    + (", submitted" if submitted else " without a submission"),
+                }
+            )
         elif kind == "error":
             self.trace_error = True
-            self._append({"kind": "note", "at": at, "error": True,
-                          "text": _short(str(record.get("message") or record.get("error")
-                                             or "The agent session failed"), 2000)})
+            self._append(
+                {
+                    "kind": "note",
+                    "at": at,
+                    "error": True,
+                    "text": _short(
+                        str(
+                            record.get("message")
+                            or record.get("error")
+                            or "The agent session failed"
+                        ),
+                        2000,
+                    ),
+                }
+            )
         elif kind == "spend" and record.get("message"):
-            self._append({"kind": "note", "at": at, "text": _short(str(record["message"]),
-                                                                   500)})
+            self._append({"kind": "note", "at": at, "text": _short(str(record["message"]), 500)})
 
     def _add_view(self, record: dict[str, Any]) -> None:
         number, path = record.get("seq"), record.get("path")
@@ -454,15 +492,20 @@ class JobWatcher:
             caption = str(view.get("caption") or "")
         except (OSError, ValueError, AttributeError):
             pass
-        self._append({
-            "kind": "picture", "number": number, "path": _view_folder(path),
-            "tool": str(record.get("tool") or ""),
-            "label": str(record.get("tool") or "picture"),
-            "title": tool_title(str(record.get("tool") or "")),
-            "call": record.get("call"), "sections": [str(s) for s in
-                                                     record.get("sections") or []],
-            "mode": record.get("mode"), "caption": _short(caption, 4000),
-        })
+        self._append(
+            {
+                "kind": "picture",
+                "number": number,
+                "path": _view_folder(path),
+                "tool": str(record.get("tool") or ""),
+                "label": str(record.get("tool") or "picture"),
+                "title": tool_title(str(record.get("tool") or "")),
+                "call": record.get("call"),
+                "sections": [str(s) for s in record.get("sections") or []],
+                "mode": record.get("mode"),
+                "caption": _short(caption, 4000),
+            }
+        )
 
     def _rows(self) -> None:
         """The sections table from ``state.json``: the status rows when this
@@ -482,34 +525,43 @@ class JobWatcher:
                 number = None
                 if record is not None:
                     try:
-                        number = self._histories.registration_number(
-                            state, record)
+                        number = self._histories.registration_number(state, record)
                     except Exception:
                         number = None
                 angles = row.get("cutting_angles_deg") or (
-                    stack_angles_entry(state) if not state.mixed_angles else None)
+                    stack_angles_entry(state) if not state.mixed_angles else None
+                )
                 key = None if record is None else render_key(state, record.id)
-                self.rows.append({
-                    "order": order, "id": row["id"], "position_mm": row.get("position_mm"),
-                    "position_source": row.get("position_source"),
-                    "angles": angles, "flip": row.get("flip"),
-                    "rotation_deg": row.get("rotation_deg"),
-                    "transform": (row.get("transform") or {}).get("kind"),
-                    "deformation": (row.get("deformation") or {}).get("method"),
-                    "damaged": bool(row.get("damaged")), "registration": number,
-                    "render_key": key,
-                })
+                self.rows.append(
+                    {
+                        "order": order,
+                        "id": row["id"],
+                        "position_mm": row.get("position_mm"),
+                        "position_source": row.get("position_source"),
+                        "angles": angles,
+                        "flip": row.get("flip"),
+                        "rotation_deg": row.get("rotation_deg"),
+                        "transform": (row.get("transform") or {}).get("kind"),
+                        "deformation": (row.get("deformation") or {}).get("method"),
+                        "damaged": bool(row.get("damaged")),
+                        "registration": number,
+                        "render_key": key,
+                    }
+                )
             self.stack = state
         except Exception as exc:
             self.rows, self.stack = [], None
-            self.rows_note = ("This job's state is not one this LangSlice reads (an older "
-                              "or newer format); the table shows its raw fields.")
+            self.rows_note = (
+                "This job's state is not one this LangSlice reads (an older "
+                "or newer format); the table shows its raw fields."
+            )
             if not isinstance(exc, ValueError):
                 self.rows_note += f" ({type(exc).__name__})"
             slices = _list(data.get("slices"))
-            ordered = sorted((s for s in slices if isinstance(s, dict)),
-                             key=lambda s: (s.get("index_corrected") is None,
-                                            s.get("index_corrected") or 0))
+            ordered = sorted(
+                (s for s in slices if isinstance(s, dict)),
+                key=lambda s: (s.get("index_corrected") is None, s.get("index_corrected") or 0),
+            )
             for order, s in enumerate(ordered, 1):
                 position = cast("JsonObject", s).get("position_mm")
                 transform = _dict(s.get("transform"))
@@ -518,17 +570,24 @@ class JobWatcher:
                 method = None
                 if deformation:
                     last = steps[-1] if steps and isinstance(steps[-1], dict) else {}
-                    method = last.get("method") or ("trace_borders" if last.get("trace")
-                                                    else "fireants_syn")
-                self.rows.append({
-                    "order": order, "id": s.get("id"),
-                    "position_mm": _number(position),
-                    "angles": s.get("cutting_angles_deg") or data.get("cutting_angles_deg"),
-                    "flip": s.get("flip"), "rotation_deg": s.get("rotation_deg"),
-                    "transform": transform.get("kind"), "deformation": method,
-                    "damaged": bool(s.get("damaged_regions") or s.get("damaged")),
-                    "registration": None, "render_key": None,
-                })
+                    method = last.get("method") or (
+                        "trace_borders" if last.get("trace") else "fireants_syn"
+                    )
+                self.rows.append(
+                    {
+                        "order": order,
+                        "id": s.get("id"),
+                        "position_mm": _number(position),
+                        "angles": s.get("cutting_angles_deg") or data.get("cutting_angles_deg"),
+                        "flip": s.get("flip"),
+                        "rotation_deg": s.get("rotation_deg"),
+                        "transform": transform.get("kind"),
+                        "deformation": method,
+                        "damaged": bool(s.get("damaged_regions") or s.get("damaged")),
+                        "registration": None,
+                        "render_key": None,
+                    }
+                )
 
     def peek(self) -> None:
         """Read only ``job.json`` and ``state.json`` (what the job list shows),
@@ -550,8 +609,14 @@ class JobWatcher:
     def last_change(self) -> float:
         """When any of the job's files last changed (seconds since the epoch)."""
         latest = 0.0
-        for path in (self.events.path, self.views.path, self.state.path, self.history.path,
-                     self.job.path, self.trace.path if self.trace else None):
+        for path in (
+            self.events.path,
+            self.views.path,
+            self.state.path,
+            self.history.path,
+            self.job.path,
+            self.trace.path if self.trace else None,
+        ):
             if path is None:
                 continue
             try:
@@ -597,11 +662,15 @@ class JobWatcher:
             images = self.folder.parent
         path = None if images is None else str(images)
         return {
-            "name": _job_name(self.folder), "path": path, "folder": str(self.folder),
-            "atlas": spec.get("atlas"), "plane": spec.get("plane"),
+            "name": _job_name(self.folder),
+            "path": path,
+            "folder": str(self.folder),
+            "atlas": spec.get("atlas"),
+            "plane": spec.get("plane"),
             "tasks": spec.get("tasks"),
             "model": self.session.get("model") or spec.get("model"),
-            "door": self.door, "exists": self.folder.is_dir(),
+            "door": self.door,
+            "exists": self.folder.is_dir(),
         }
 
     def status(self) -> dict[str, str]:
@@ -610,8 +679,7 @@ class JobWatcher:
         quiet_s = self.clock() - latest
         if state.get("submitted"):
             word = "Submitted"
-        elif self.trace_error or (self.summary is not None
-                                  and not self.summary.get("submitted")):
+        elif self.trace_error or (self.summary is not None and not self.summary.get("submitted")):
             word = "Failed"
         elif self.open_tools or quiet_s < RECENT_S:
             word = "Running"
@@ -625,10 +693,14 @@ class JobWatcher:
             sentence = f"{item['label']}" + (f" on {words}" if words else "") + " (running)"
         else:
             last = next((i for i in reversed(self.items) if i["kind"] == "tool"), None) or next(
-                (i for i in reversed(self.items) if i["kind"] == "picture"), None)
+                (i for i in reversed(self.items) if i["kind"] == "picture"), None
+            )
             if last is None:
-                sentence = ("No activity yet." if self.folder.is_dir()
-                            else "Waiting for the job folder to appear.")
+                sentence = (
+                    "No activity yet."
+                    if self.folder.is_dir()
+                    else "Waiting for the job folder to appear."
+                )
             else:
                 words = _sections_words(last.get("sections") or [])
                 sentence = "Last: " + last["label"] + (f" on {words}" if words else "")
@@ -645,16 +717,18 @@ class JobWatcher:
         undo = _list(index.get("undo"))
         redo = _list(index.get("redo"))
         held = list(reversed(self.redo_labels))
-        return {"undo": [self.step_labels.get(d, f"Step {d}") for d in range(1, len(undo) + 1)],
-                "redo": [held[i] if i < len(held) else f"Step {len(undo) + i + 1}"
-                         for i in range(len(redo))]}
+        return {
+            "undo": [self.step_labels.get(d, f"Step {d}") for d in range(1, len(undo) + 1)],
+            "redo": [
+                held[i] if i < len(held) else f"Step {len(undo) + i + 1}" for i in range(len(redo))
+            ],
+        }
 
     def notes(self) -> dict[str, Any]:
         job = _dict(self.job.value)
         state = _dict(self.state.value)
         run_notes = _list(state.get("notes"))
-        return {"user": str(job.get("notes") or ""),
-                "run": [str(n) for n in run_notes][-50:]}
+        return {"user": str(job.get("notes") or ""), "run": [str(n) for n in run_notes][-50:]}
 
     def spend_facts(self) -> dict[str, Any] | None:
         spend = self.spend.value if isinstance(self.spend.value, dict) else None
@@ -664,13 +738,17 @@ class JobWatcher:
         if spend is None:
             return None
         tokens = _dict(spend.get("tokens"))
-        return {"model": spend.get("model"), "lane": spend.get("lane"),
-                "tokens": {k: v for k, v in tokens.items() if isinstance(v, (int, float))},
-                "usd_estimate": spend.get("usd_estimate"),
-                "quota_used_percent": spend.get("quota_used_percent")}
+        return {
+            "model": spend.get("model"),
+            "lane": spend.get("lane"),
+            "tokens": {k: v for k, v in tokens.items() if isinstance(v, (int, float))},
+            "usd_estimate": spend.get("usd_estimate"),
+            "quota_used_percent": spend.get("quota_used_percent"),
+        }
 
-    def snapshot(self, since: int = 0, generation: int = 0,
-                 state_version: int = -1) -> dict[str, Any]:
+    def snapshot(
+        self, since: int = 0, generation: int = 0, state_version: int = -1
+    ) -> dict[str, Any]:
         """The page's view of the job: the activity items after *since* (all of
         them when *generation* is another watch's), and the tables when
         *state_version* is not the current one."""
@@ -679,16 +757,23 @@ class JobWatcher:
             reset = generation != self.generation
             start = 0 if reset else max(0, since)
             out: dict[str, Any] = {
-                "generation": self.generation, "reset": reset,
-                "cursor": len(self.items), "items": self.items[start:],
-                "header": self.header(), "status": self.status(),
+                "generation": self.generation,
+                "reset": reset,
+                "cursor": len(self.items),
+                "items": self.items[start:],
+                "header": self.header(),
+                "status": self.status(),
                 "focus": to_jsonable(asdict(self._focus())),
                 "state_version": self.state_version,
             }
             if reset or state_version != self.state_version:
-                out.update(sections=self.rows, sections_note=self.rows_note,
-                           history=self.undo(), notes=self.notes(),
-                           spend=self.spend_facts())
+                out.update(
+                    sections=self.rows,
+                    sections_note=self.rows_note,
+                    history=self.undo(),
+                    notes=self.notes(),
+                    spend=self.spend_facts(),
+                )
             return out
 
 
@@ -704,8 +789,7 @@ class JobList:
     recent jobs file's (*recent*, None for none), newest first; only these
     folders are ever read."""
 
-    def __init__(self, folders: list[Path] | None = None, *,
-                 recent: Path | None = None) -> None:
+    def __init__(self, folders: list[Path] | None = None, *, recent: Path | None = None) -> None:
         self.given = [Path(os.path.abspath(f)) for f in folders or []]
         self.recent = recent
         self.lock = threading.Lock()
@@ -768,9 +852,16 @@ class JobList:
             watcher.peek()
             header = watcher.header()
             changed = watcher.last_change()
-            out.append({"index": n, "name": header["name"], "path": header["path"],
-                        "folder": header["folder"], "atlas": header["atlas"],
-                        "changed_at": changed,
-                        "status": watcher.status()["word"],
-                        "given": watcher.folder in self.given})
+            out.append(
+                {
+                    "index": n,
+                    "name": header["name"],
+                    "path": header["path"],
+                    "folder": header["folder"],
+                    "atlas": header["atlas"],
+                    "changed_at": changed,
+                    "status": watcher.status()["word"],
+                    "given": watcher.folder in self.given,
+                }
+            )
         return out

@@ -71,6 +71,8 @@ ENGINE_VERSION = "STalign 2.0.0 8a84bf1f"
 SWAP = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
 
 
+PUBLISHED_SORTING: dict[str, Any] = {}
+
 
 def stalign_lddmm(
     sections: list[str],
@@ -80,7 +82,7 @@ def stalign_lddmm(
     kernel_um: float = 500.0,
     fit: Literal["warp", "both"] = "warp",
     displacement_um: float = 94.0,
-    sorting: dict[str, Any] = {},  # noqa: B006
+    sorting: dict[str, Any] = PUBLISHED_SORTING,
     iterations: int = 2000,
     view: bool = True,
 ) -> dict[str, Any]:
@@ -230,9 +232,7 @@ def stalign_plane_search(
     ...
 
 
-PLANE_PARAMS = {"nt": 4, "sigmaM": 2.0, "sigmaB": 2.0, "sigmaA": 2.0,
-                "muA": 3.0, "muB": 0.0}
-
+PLANE_PARAMS = {"nt": 4, "sigmaM": 2.0, "sigmaB": 2.0, "sigmaA": 2.0, "muA": 3.0, "muB": 0.0}
 
 
 def _homog(m: np.ndarray) -> np.ndarray:
@@ -270,20 +270,33 @@ def _target(frame: Any) -> tuple[np.ndarray, dict[str, Any]]:
     gh, gw = grey.shape
     border = np.concatenate([grey[0], grey[-1], grey[:, 0], grey[:, -1]])
     slide = float(np.median(border))
-    outline = cv2.warpAffine((frame.atlas["annotation"] > 0).astype(np.uint8),
-                             _placed(frame)[:2], (gw, gh), flags=cv2.INTER_NEAREST) > 0
+    outline = (
+        cv2.warpAffine(
+            (frame.atlas["annotation"] > 0).astype(np.uint8),
+            _placed(frame)[:2],
+            (gw, gh),
+            flags=cv2.INTER_NEAREST,
+        )
+        > 0
+    )
     tissue = float(np.median(grey[outline])) if outline.any() else float(grey.mean())
     if abs(tissue - slide) < 1e-6:
-        raise ToolError(RefusalCode.NO_TISSUE,
-                        "the section's tissue and slide look the same")
+        raise ToolError(RefusalCode.NO_TISSUE, "the section's tissue and slide look the same")
     unit = (grey - slide) / (tissue - slide)
     s_um = _scale_um(frame)
     down, (sx, sy) = _down(unit.astype(np.float32), TARGET_UM / s_um)
     return down.astype(np.float64)[None], {
-        "s_um": s_um, "x0": _axis(down.shape[0], sy, s_um), "x1": _axis(down.shape[1], sx, s_um),
-        "outline": cv2.resize(outline.astype(np.uint8), (down.shape[1], down.shape[0]),
-                              interpolation=cv2.INTER_NEAREST) > 0,
-        "grid": (gw, gh)}
+        "s_um": s_um,
+        "x0": _axis(down.shape[0], sy, s_um),
+        "x1": _axis(down.shape[1], sx, s_um),
+        "outline": cv2.resize(
+            outline.astype(np.uint8),
+            (down.shape[1], down.shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
+        > 0,
+        "grid": (gw, gh),
+    }
 
 
 def _source_image(image: np.ndarray) -> np.ndarray:
@@ -299,18 +312,32 @@ def _source(frame: Any, plane_image: np.ndarray, s_um: float) -> tuple[np.ndarra
         atlas[frame.damage_zone] = 0.0
     if frame.applied_map is not None:
         applied = np.asarray(frame.applied_map, np.float32)
-        image = cv2.remap(atlas, applied[..., 0], applied[..., 1], cv2.INTER_LINEAR,
-                          borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
+        image = cv2.remap(
+            atlas,
+            applied[..., 0],
+            applied[..., 1],
+            cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0.0,
+        )
         down, (sx, sy) = _down(image, SOURCE_UM / s_um)
         return _source_image(down.astype(np.float64)), {
-            "x0": _axis(down.shape[0], sy, s_um), "x1": _axis(down.shape[1], sx, s_um),
-            "A0": np.eye(3), "on_grid": True, "applied": applied}
+            "x0": _axis(down.shape[0], sy, s_um),
+            "x1": _axis(down.shape[1], sx, s_um),
+            "A0": np.eye(3),
+            "on_grid": True,
+            "applied": applied,
+        }
     px_x, px_y = (float(v) for v in frame.plane["px_um"])
     down, (sx, sy) = _down(atlas, SOURCE_UM / min(px_x, px_y))
     a_xy = np.diag([s_um, s_um, 1.0]) @ _placed(frame) @ np.diag([1 / px_x, 1 / px_y, 1.0])
     return _source_image(down.astype(np.float64)), {
-        "x0": _axis(down.shape[0], sy, px_y), "x1": _axis(down.shape[1], sx, px_x),
-        "A0": SWAP @ a_xy @ SWAP, "on_grid": False, "px": (px_x, px_y)}
+        "x0": _axis(down.shape[0], sy, px_y),
+        "x1": _axis(down.shape[1], sx, px_x),
+        "A0": SWAP @ a_xy @ SWAP,
+        "on_grid": False,
+        "px": (px_x, px_y),
+    }
 
 
 def _grid_query(gw: int, gh: int, s_um: float) -> np.ndarray:
@@ -318,17 +345,28 @@ def _grid_query(gw: int, gh: int, s_um: float) -> np.ndarray:
     return np.stack([yy.ravel() * s_um, xx.ravel() * s_um], -1)
 
 
-def _native_map(source_um: np.ndarray, src: dict[str, Any], gw: int, gh: int,
-                s_um: float) -> np.ndarray:
+def _native_map(
+    source_um: np.ndarray, src: dict[str, Any], gw: int, gh: int, s_um: float
+) -> np.ndarray:
     """STalign's source points of every fit-grid pixel as native atlas pixels (x, y)."""
     pts = source_um.reshape(gh, gw, 2)
     if src["on_grid"]:
         gx = (pts[..., 1] / s_um).astype(np.float32)
         gy = (pts[..., 0] / s_um).astype(np.float32)
         applied = src["applied"]
-        return np.stack([cv2.remap(np.ascontiguousarray(applied[..., c]), gx, gy,
-                                   cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-                         for c in range(2)], -1).astype(np.float64)
+        return np.stack(
+            [
+                cv2.remap(
+                    np.ascontiguousarray(applied[..., c]),
+                    gx,
+                    gy,
+                    cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_REPLICATE,
+                )
+                for c in range(2)
+            ],
+            -1,
+        ).astype(np.float64)
     px_x, px_y = src["px"]
     return np.stack([pts[..., 1] / px_x, pts[..., 0] / px_y], -1)
 
@@ -337,24 +375,30 @@ def _sorting_params(sorting: dict[str, Any]) -> dict[str, Any]:
     sorting = dict(sorting or {})
     method = str(sorting.pop("method", "classic"))
     if method not in SORTING_METHODS:
-        raise ToolError(RefusalCode.BAD_ARGS,
-                        f"sorting method is one of {', '.join(SORTING_METHODS)}; "
-                        f"got {method!r}")
-    known = {"match_sd": "sigmaM", "background_sd": "sigmaB", "artifact_sd": "sigmaA",
-             "background_mean": "muB", "artifact_mean": "muA"}
+        raise ToolError(
+            RefusalCode.BAD_ARGS,
+            f"sorting method is one of {', '.join(SORTING_METHODS)}; got {method!r}",
+        )
+    known = {
+        "match_sd": "sigmaM",
+        "background_sd": "sigmaB",
+        "artifact_sd": "sigmaA",
+        "background_mean": "muB",
+        "artifact_mean": "muA",
+    }
     artifact = bool(sorting.pop("artifact", False))
     unknown = [key for key in sorting if key not in known]
     if unknown:
-        raise ToolError(RefusalCode.BAD_ARGS,
-                        f"unknown sorting keys {unknown}; the keys are method, "
-                        f"{', '.join(known)}, artifact")
+        raise ToolError(
+            RefusalCode.BAD_ARGS,
+            f"unknown sorting keys {unknown}; the keys are method, {', '.join(known)}, artifact",
+        )
     params: dict[str, Any] = {known[key]: float(value) for key, value in sorting.items()}
     if method == "em":
         params["mixture"] = {"classes": "MAB" if artifact else "MB"}
     elif method == "none":
         params["mixture"] = {"classes": "M"}
     return params
-
 
 
 @dataclass(frozen=True)
@@ -386,21 +430,24 @@ def _engine(
         return engine.run(arrays, {**params, **where})
     except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
-        raise ToolError(RefusalCode.FIT_FAILED,
-                        f"STalign failed: {failure}") from exc
+        raise ToolError(RefusalCode.FIT_FAILED, f"STalign failed: {failure}") from exc
 
 
-def _frame(ctx: ToolContext, name: str, atlas_image: str, section_image: str,
-           ) -> tuple[FitFrame, np.ndarray, str]:
+def _frame(
+    ctx: ToolContext,
+    name: str,
+    atlas_image: str,
+    section_image: str,
+) -> tuple[FitFrame, np.ndarray, str]:
     """The section's fit frame, the atlas image asked for on it and the name that resolved to."""
     frame: FitFrame = _blocks.frame_for(ctx, name, atlas_image, section_image)
     plane_image, resolved = _blocks.atlas_plane(frame, atlas_image)
     return frame, plane_image, resolved
 
 
-
-def _sorting_picture(ctx: ToolContext, frame: Any, weights: np.ndarray,
-                     title: str) -> Image.Image | None:
+def _sorting_picture(
+    ctx: ToolContext, frame: Any, weights: np.ndarray, title: str
+) -> Image.Image | None:
     """The section's image with every set-aside patch outlined, beside the weight map
     (white compared, black ignored); None when the sorting set nothing aside (a map of
     all white says nothing, so no panel is drawn)."""
@@ -429,36 +476,60 @@ def _loss_picture(energy: np.ndarray, path: Path) -> None:
         y = energy[:, 1]
         lo, hi = float(y.min()), float(y.max())
         span = max(hi - lo, 1e-12)
-        pts = [(pad + (w - 2 * pad) * i / (len(y) - 1), h - pad - (h - 2 * pad) * (v - lo) / span)
-               for i, v in enumerate(y)]
+        pts = [
+            (pad + (w - 2 * pad) * i / (len(y) - 1), h - pad - (h - 2 * pad) * (v - lo) / span)
+            for i, v in enumerate(y)
+        ]
         draw.line(pts, fill="black", width=1)
-        draw.text((pad, 6), f"STalign image mismatch per iteration ({len(y)}); "
-                  f"min {lo:.4g}, max {hi:.4g}", fill="black")
+        draw.text(
+            (pad, 6),
+            f"STalign image mismatch per iteration ({len(y)}); min {lo:.4g}, max {hi:.4g}",
+            fill="black",
+        )
     image.save(path)
 
 
-
-def _lddmm(ctx: ToolContext, chosen: _How, sections: list[str], section_image: str,
-           atlas_image: str, mask: str, kernel_um: float, fit: str,
-           displacement_um: float, sorting: dict[str, Any], iterations: int,
-           view: bool) -> ToolResult:
+def _lddmm(
+    ctx: ToolContext,
+    chosen: _How,
+    sections: list[str],
+    section_image: str,
+    atlas_image: str,
+    mask: str,
+    kernel_um: float,
+    fit: str,
+    displacement_um: float,
+    sorting: dict[str, Any],
+    iterations: int,
+    view: bool,
+) -> ToolResult:
     if not sections:
         raise ToolError(RefusalCode.BAD_ARGS, "name one to twenty sections")
     if fit not in FITS:
-        raise ToolError(RefusalCode.BAD_ARGS,
-                        f"fit is one of {', '.join(FITS)}; got {fit!r}")
+        raise ToolError(RefusalCode.BAD_ARGS, f"fit is one of {', '.join(FITS)}; got {fit!r}")
     affine = fit == "both"
     sorted_params = _sorting_params(sorting)
-    params = {**sorted_params, "a": float(kernel_um),
-              "sigma_disp": float(displacement_um), "niter": int(iterations), "nt": 4}
+    params = {
+        **sorted_params,
+        "a": float(kernel_um),
+        "sigma_disp": float(displacement_um),
+        "niter": int(iterations),
+        "nt": 4,
+    }
     if not affine:
         params.update(epL=0.0, epT=0.0)
     estimates = (sorting or {}).get("method", "classic") != "none"
-    settings = {"section_image": section_image, "atlas_image": atlas_image, "mask": mask,
-                "kernel_um": kernel_um, "fit": fit,
-                "displacement_um": displacement_um,
-                "sorting": sorting or {"method": "classic"}, "iterations": iterations,
-                "device": chosen.device}
+    settings = {
+        "section_image": section_image,
+        "atlas_image": atlas_image,
+        "mask": mask,
+        "kernel_um": kernel_um,
+        "fit": fit,
+        "displacement_um": displacement_um,
+        "sorting": sorting or {"method": "classic"},
+        "iterations": iterations,
+        "device": chosen.device,
+    }
     folder = _blocks.call_folder(ctx, "lddmm")
     rows = []
     for name in sections:
@@ -466,129 +537,213 @@ def _lddmm(ctx: ToolContext, chosen: _How, sections: list[str], section_image: s
         sid = view_of.id
         if affine and view_of.deformation:
             refusal = ToolError(
-                RefusalCode.HAS_DEFORMATION, "fit \"both\" would refit the transform, which "
-                "clears the section's deformation; fit \"warp\" to bend on top of it")
+                RefusalCode.HAS_DEFORMATION,
+                'fit "both" would refit the transform, which '
+                'clears the section\'s deformation; fit "warp" to bend on top of it',
+            )
             rows.append({"id": sid, **refusal.payload()})
             continue
         frame, plane_image, resolved = _frame(ctx, sid, atlas_image, section_image)
         if frame.placed_atlas_to_section is None:
-            refusal = ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                                "the section needs a transform first")
+            refusal = ToolError(
+                RefusalCode.INVALID_LINEAR_PLACEMENT, "the section needs a transform first"
+            )
             rows.append({"id": sid, **refusal.payload()})
             continue
         digest = ctx.section_inputs(sid, deformation=True)
-        inputs = _blocks.inputs_block(ctx, frame, section_image=section_image,
-                                      atlas_image=atlas_image, resolved=resolved, mask=None,
-                                      brightness="slide 0, tissue 1")
+        inputs = _blocks.inputs_block(
+            ctx,
+            frame,
+            section_image=section_image,
+            atlas_image=atlas_image,
+            resolved=resolved,
+            mask=None,
+            brightness="slide 0, tissue 1",
+        )
         J, tgt = _target(frame)
-        I, src = _source(frame, plane_image, tgt["s_um"])  # noqa: E741
+        moving, src = _source(frame, plane_image, tgt["s_um"])
         gw, gh = tgt["grid"]
-        arrays = {"mode": np.array("lddmm"), "I": I, "xI0": src["x0"], "xI1": src["x1"],
-                  "J": J, "xJ0": tgt["x0"], "xJ1": tgt["x1"], "A0": src["A0"],
-                  "query": _grid_query(gw, gh, tgt["s_um"])}
+        arrays = {
+            "mode": np.array("lddmm"),
+            "I": moving,
+            "xI0": src["x0"],
+            "xI1": src["x1"],
+            "J": J,
+            "xJ0": tgt["x0"],
+            "xJ1": tgt["x1"],
+            "A0": src["A0"],
+            "query": _grid_query(gw, gh, tgt["s_um"]),
+        }
         here = folder / sid
         start = "the deformation it held" if src["on_grid"] else "its linear placement"
 
-        def land(lctx: ToolContext, sid: str = sid, frame: Any = frame, tgt: dict = tgt,
-                 src: dict = src, arrays: dict = arrays, here: Path = here, start: str = start,
-                 digest: str = digest, gw: int = gw, gh: int = gh, resolved: str = resolved,
-                 inputs: dict = inputs) -> ToolResult:
+        def land(
+            lctx: ToolContext,
+            sid: str = sid,
+            frame: Any = frame,
+            tgt: dict = tgt,
+            src: dict = src,
+            arrays: dict = arrays,
+            here: Path = here,
+            start: str = start,
+            digest: str = digest,
+            gw: int = gw,
+            gh: int = gh,
+            resolved: str = resolved,
+            inputs: dict = inputs,
+        ) -> ToolResult:
             out = _engine(chosen, here, arrays, params)
             native = _native_map(out["source_um"], src, gw, gh, tgt["s_um"])
             what = ("affine and bend" if affine else "bend") + f" on {start}"
             note = f"STalign {what}, atlas {resolved}"
             weights = _blocks.on_fit_grid(out["WM"], (gw, gh)) if estimates else None
             inside_grid = np.asarray(frame.atlas["annotation"] > 0, np.uint8)
-            outline = cv2.warpAffine(inside_grid, _placed(frame)[:2], (gw, gh),
-                                     flags=cv2.INTER_NEAREST) > 0
+            outline = (
+                cv2.warpAffine(inside_grid, _placed(frame)[:2], (gw, gh), flags=cv2.INTER_NEAREST)
+                > 0
+            )
             estimated = _blocks.estimated_block(weights, outline)
-            engine_settings = {"target_um": TARGET_UM, "atlas_um": SOURCE_UM,
-                               **json.loads(str(out["settings"])),
-                               "device": str(out["device"])}
-            blocks = {"inputs": inputs, "estimated": estimated, "settings": settings,
-                      "engine_settings": engine_settings}
+            engine_settings = {
+                "target_um": TARGET_UM,
+                "atlas_um": SOURCE_UM,
+                **json.loads(str(out["settings"])),
+                "device": str(out["device"]),
+            }
+            blocks = {
+                "inputs": inputs,
+                "estimated": estimated,
+                "settings": settings,
+                "engine_settings": engine_settings,
+            }
             begun = "current" if src["on_grid"] else "linear"
             meta = {"inputs": inputs, "estimated": estimated}
-            written_as = {"start": begun, "settings": settings,
-                          "engine_settings": engine_settings, "engine_version": ENGINE_VERSION}
+            written_as = {
+                "start": begun,
+                "settings": settings,
+                "engine_settings": engine_settings,
+                "engine_version": ENGINE_VERSION,
+            }
             energy = np.asarray(out.get("energy", np.zeros((0, 3))))
-            with open(here / "energy.csv", "w",
-                encoding="utf-8", newline="") as fh:
+            with open(here / "energy.csv", "w", encoding="utf-8", newline="") as fh:
                 writer = csv.writer(fh)
-                writer.writerow(["iteration", "total", "image_mismatch", "smoothness",
-                                 "landmarks"][:1 + energy.shape[1]])
+                writer.writerow(
+                    ["iteration", "total", "image_mismatch", "smoothness", "landmarks"][
+                        : 1 + energy.shape[1]
+                    ]
+                )
                 for i, row in enumerate(energy):
                     writer.writerow([i, *[f"{v:.6g}" for v in row]])
             _loss_picture(energy, here / "mismatch.png")
-            (here / "settings.json").write_text(json.dumps(
-                {"asked": {**settings, **params}, **blocks,
-                 "chosen": json.loads(str(out["settings"])), "device": str(out["device"]),
-                 "seconds": float(out["seconds"])}, indent=1, default=str),
-                     encoding="utf-8", newline="\n")
+            (here / "settings.json").write_text(
+                json.dumps(
+                    {
+                        "asked": {**settings, **params},
+                        **blocks,
+                        "chosen": json.loads(str(out["settings"])),
+                        "device": str(out["device"]),
+                        "seconds": float(out["seconds"]),
+                    },
+                    indent=1,
+                    default=str,
+                ),
+                encoding="utf-8",
+                newline="\n",
+            )
             np.savez_compressed(here / "weights.npz", WM=out["WM"], WB=out["WB"], WA=out["WA"])
-            warp = None if affine else lctx.deformation_from_map(
-                sid, native, note=note, meta=meta, weights=weights, **written_as)
+            warp = (
+                None
+                if affine
+                else lctx.deformation_from_map(
+                    sid, native, note=note, meta=meta, weights=weights, **written_as
+                )
+            )
             with lctx.writing():
                 if affine:
                     a_xy = SWAP @ np.asarray(out["A"]) @ SWAP
                     px_x, px_y = src["px"]
-                    placed = (np.diag([1 / tgt["s_um"], 1 / tgt["s_um"], 1.0]) @ a_xy
-                              @ np.diag([px_x, px_y, 1.0]))
-                    proposal = lctx.transform_from_matrix(sid, np.linalg.inv(placed)[:2],
-                                                          note=note)
+                    placed = (
+                        np.diag([1 / tgt["s_um"], 1 / tgt["s_um"], 1.0])
+                        @ a_xy
+                        @ np.diag([px_x, px_y, 1.0])
+                    )
+                    proposal = lctx.transform_from_matrix(sid, np.linalg.inv(placed)[:2], note=note)
                     done = lctx.set_transforms([proposal.row()], expect={sid: digest})
                     if sid not in done.written:
                         raise done.refusal(sid)
                 if warp is None:
-                    warp = lctx.deformation_from_map(sid, native, note=note, meta=meta,
-                                                     weights=weights, **written_as)
-                done = lctx.set_deformations([warp.row()],
-                                             expect=None if affine else {sid: digest})
+                    warp = lctx.deformation_from_map(
+                        sid, native, note=note, meta=meta, weights=weights, **written_as
+                    )
+                done = lctx.set_deformations([warp.row()], expect=None if affine else {sid: digest})
                 if sid not in done.written:
                     raise done.refusal(sid)
             summary = warp.summary
             relative = _blocks.job_path(lctx, here)
             flags = flag_words(summary)
-            left = (f"; its sorting left out {estimated['left_out_fraction']:.0%} of the tissue "
-                    "and is saved with the deformation") if estimated and (
-                        estimated["left_out_fraction"] is not None) else ""
+            left = (
+                (
+                    f"; its sorting left out {estimated['left_out_fraction']:.0%} of the tissue "
+                    "and is saved with the deformation"
+                )
+                if estimated and (estimated["left_out_fraction"] is not None)
+                else ""
+            )
             waited = float(out.get("gpu_wait_s", 0.0))
             queue = {"gpu_wait_s": round(waited)} if waited >= 1.0 else {}
-            text = (f"{note}; displacement median {summary['displacement_mm']['median']} mm, "
-                    f"max {summary['displacement_mm']['max']} mm; fold fraction "
-                    f"{summary.get('fold_fraction', 0)}; flags {flags}{left}. "
-                    + (f"It waited {round(waited)} s for the machine's GPU queue. "
-                       if queue else "")
-                    + f"STalign's mismatch record: "
-                    f"{relative}/energy.csv (plot: {relative}/mismatch.png).")
+            text = (
+                f"{note}; displacement median {summary['displacement_mm']['median']} mm, "
+                f"max {summary['displacement_mm']['max']} mm; fold fraction "
+                f"{summary.get('fold_fraction', 0)}; flags {flags}{left}. "
+                + (f"It waited {round(waited)} s for the machine's GPU queue. " if queue else "")
+                + f"STalign's mismatch record: "
+                f"{relative}/energy.csv (plot: {relative}/mismatch.png)."
+            )
             pictures = []
             if view:
                 pictures = [lctx.caption(lctx.overlay_picture(sid), f"{sid}: {note}")]
-                sorting = _sorting_picture(lctx, frame, out["WM"],
-                                           f"{sid}: STalign's final sorting (outlined: set aside; "
-                                           "right: white compared)")
+                sorting = _sorting_picture(
+                    lctx,
+                    frame,
+                    out["WM"],
+                    f"{sid}: STalign's final sorting (outlined: set aside; right: white compared)",
+                )
                 if sorting is None:
-                    text += (" Its final sorting set nothing aside, so every pixel was compared "
-                             "and no sorting picture is sent.")
+                    text += (
+                        " Its final sorting set nothing aside, so every pixel was compared "
+                        "and no sorting picture is sent."
+                    )
                 else:
                     pictures.append(sorting)
-            return ToolResult({"notice": text, "id": sid, **summary, **queue, **blocks},
-                              pictures)
+            return ToolResult({"notice": text, "id": sid, **summary, **queue, **blocks}, pictures)
 
         try:
             work = ctx.start_work([sid], land)
         except Exception as exc:
             as_payload = getattr(exc, "payload", None)
-            payload = as_payload() if as_payload else {"error": RefusalCode.NOT_STARTED,
-                                                       "message": str(exc)}
-            rows.append({"id": sid, "status": "error", **{k: v for k, v in payload.items()
-                                                          if k != "status"}})
+            payload = (
+                as_payload()
+                if as_payload
+                else {"error": RefusalCode.NOT_STARTED, "message": str(exc)}
+            )
+            rows.append(
+                {
+                    "id": sid,
+                    "status": "error",
+                    **{k: v for k, v in payload.items() if k != "status"},
+                }
+            )
             continue
-        rows.append({"id": sid, "status": "started", "work": work,
-                     "start": "deformation" if src["on_grid"] else "linear placement",
-                     "inputs": inputs, "estimated": None})
+        rows.append(
+            {
+                "id": sid,
+                "status": "started",
+                "work": work,
+                "start": "deformation" if src["on_grid"] else "linear placement",
+                "inputs": inputs,
+                "estimated": None,
+            }
+        )
     return ToolResult({"rows": rows, "settings": settings})
-
 
 
 def _target_to_atlas(frame: Any, s_um: float) -> np.ndarray:
@@ -623,9 +778,7 @@ def _search_section(call: _PlaneCall, name: str) -> ToolResult:
     ctx = call.ctx
     view_of = ctx.section(name)
     sid = view_of.id
-    frame, _plane_image, resolved = _frame(
-        ctx, sid, call.atlas_image, call.section_image
-    )
+    frame, _plane_image, resolved = _frame(ctx, sid, call.atlas_image, call.section_image)
     inputs = _blocks.inputs_block(
         ctx,
         frame,
@@ -717,67 +870,131 @@ def _at_search_edge(starts: list[list[float]], best: int | None) -> bool:
     if not starts or best is None:
         return False
     tilt_a, tilt_b, shift = starts[int(best)]
-    tilted = (
-        abs(abs(tilt_a) - SEARCH_TILT_DEG) < 1e-6
-        or abs(abs(tilt_b) - SEARCH_TILT_DEG) < 1e-6
-    )
+    tilted = abs(abs(tilt_a) - SEARCH_TILT_DEG) < 1e-6 or abs(abs(tilt_b) - SEARCH_TILT_DEG) < 1e-6
     return tilted or abs(abs(shift) - SEARCH_SHIFT_UM) < 1e-6
 
 
-def _plane_search(ctx: ToolContext, how: _How, sections: list[str],
-                  section_image: str, atlas_image: str, view: bool) -> ToolResult:
+def _plane_search(
+    ctx: ToolContext,
+    how: _How,
+    sections: list[str],
+    section_image: str,
+    atlas_image: str,
+    view: bool,
+) -> ToolResult:
     if not sections:
         raise ToolError(RefusalCode.BAD_ARGS, "name one to eight sections")
-    call = _PlaneCall(ctx, how,
-                      _blocks.call_folder(ctx, "plane"), ctx.atlas().name,
-                      section_image, atlas_image, view)
-    done = map_sections(partial(_search_section, call), list(sections),
-                        how.threads)
+    call = _PlaneCall(
+        ctx,
+        how,
+        _blocks.call_folder(ctx, "plane"),
+        ctx.atlas().name,
+        section_image,
+        atlas_image,
+        view,
+    )
+    done = map_sections(partial(_search_section, call), list(sections), how.threads)
     rows = [one.reply for one in done]
     pictures: list[Any] = []
     for one in done:
         pictures.extend(one.pictures)
     ok = [row for row in rows if row["status"] == "ok"]
-    groups = {"positive_yaw": [r["id"] for r in ok if r["yaw_deg"] > 0],
-              "negative_yaw": [r["id"] for r in ok if r["yaw_deg"] < 0],
-              "zero_yaw": [r["id"] for r in ok if r["yaw_deg"] == 0]}
-    summary = {"sections_by_yaw_sign": groups,
-               "middle_pitch_deg": round(float(np.median([r["pitch_deg"] for r in ok])), 2)
-               if ok else None,
-               "middle_yaw_magnitude_deg": round(float(np.median(np.abs(
-                   [r["yaw_deg"] for r in ok]))), 2) if ok else None}
-    return ToolResult({"rows": rows, "stack": summary,
-                       "settings": {"section_image": section_image, "atlas_image": atlas_image}},
-                      pictures)
-
+    groups = {
+        "positive_yaw": [r["id"] for r in ok if r["yaw_deg"] > 0],
+        "negative_yaw": [r["id"] for r in ok if r["yaw_deg"] < 0],
+        "zero_yaw": [r["id"] for r in ok if r["yaw_deg"] == 0],
+    }
+    summary = {
+        "sections_by_yaw_sign": groups,
+        "middle_pitch_deg": round(float(np.median([r["pitch_deg"] for r in ok])), 2)
+        if ok
+        else None,
+        "middle_yaw_magnitude_deg": round(float(np.median(np.abs([r["yaw_deg"] for r in ok]))), 2)
+        if ok
+        else None,
+    }
+    return ToolResult(
+        {
+            "rows": rows,
+            "stack": summary,
+            "settings": {"section_image": section_image, "atlas_image": atlas_image},
+        },
+        pictures,
+    )
 
 
 def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
     options = _How.chosen({**DEFAULTS, **(config or {})})
-    meta = {"method": "STalign 2.0.0", "paper": "Clifton et al. 2023, Nat Commun",
-            "commit": "8a84bf1f", "engine": "langslice.engines.stalign"}
+    meta = {
+        "method": "STalign 2.0.0",
+        "paper": "Clifton et al. 2023, Nat Commun",
+        "commit": "8a84bf1f",
+        "engine": "langslice.engines.stalign",
+    }
 
-    def lddmm(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
-              atlas_image: str = "nissl", mask: str = "none", kernel_um: float = 500.0,
-              fit: str = "warp", displacement_um: float = 94.0,
-              sorting: dict[str, Any] | None = None, iterations: int = 2000,
-              view: bool = True) -> ToolResult:
+    def lddmm(
+        ctx: ToolContext,
+        sections: list[str],
+        section_image: str = "preprocessed",
+        atlas_image: str = "nissl",
+        mask: str = "none",
+        kernel_um: float = 500.0,
+        fit: str = "warp",
+        displacement_um: float = 94.0,
+        sorting: dict[str, Any] | None = None,
+        iterations: int = 2000,
+        view: bool = True,
+    ) -> ToolResult:
         _blocks.refuse_mask("stalign_lddmm", mask, "sorts the section's pixels itself")
-        return _lddmm(ctx, options, sections, section_image, atlas_image, mask,
-                      kernel_um, fit, displacement_um, dict(sorting or {}),
-                      iterations, view)
+        return _lddmm(
+            ctx,
+            options,
+            sections,
+            section_image,
+            atlas_image,
+            mask,
+            kernel_um,
+            fit,
+            displacement_um,
+            dict(sorting or {}),
+            iterations,
+            view,
+        )
 
-    def plane(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
-              atlas_image: str = "nissl", view: bool = True) -> ToolResult:
+    def plane(
+        ctx: ToolContext,
+        sections: list[str],
+        section_image: str = "preprocessed",
+        atlas_image: str = "nissl",
+        view: bool = True,
+    ) -> ToolResult:
         return _plane_search(ctx, options, sections, section_image, atlas_image, view)
 
     return [
-        ToolSpec("stalign_lddmm", stalign_lddmm, lddmm, kind="write", group="Nonlinear",
-                 task="nonlinear", writes=("affine", "deformation"), long=True,
-                 limits={"sections": 20}, version="1", meta=meta),
-        ToolSpec("stalign_plane_search", stalign_plane_search, plane, kind="read",
-                 group="Positioning", task="angles", limits={"sections": 8}, version="1",
-                 meta=meta),
+        ToolSpec(
+            "stalign_lddmm",
+            stalign_lddmm,
+            lddmm,
+            kind="write",
+            group="Nonlinear",
+            task="nonlinear",
+            writes=("affine", "deformation"),
+            long=True,
+            limits={"sections": 20},
+            version="1",
+            meta=meta,
+        ),
+        ToolSpec(
+            "stalign_plane_search",
+            stalign_plane_search,
+            plane,
+            kind="read",
+            group="Positioning",
+            task="angles",
+            limits={"sections": 8},
+            version="1",
+            meta=meta,
+        ),
     ]
 
 

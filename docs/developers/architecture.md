@@ -63,8 +63,7 @@ modules whose tools join the toolbox. `core/plugins.py` holds the plugin types a
 which `job/settings/tool_table.py` (`tools_for(spec)`) and
 `tools/catalog.py` (`verbs_for(spec)`) merge with the native tables for that
 spec; `doors/plugins/` loads them, gives each handler a context that writes
-through the same operations, and builds their declarations, provenance and the
-MCP adapter. The native tables are unchanged, and a job without plugins has
+through the same operations, and builds their declarations and provenance. The native tables are unchanged, and a job without plugins has
 none of this in any declaration, reply or picture.
 
 `state.json` is the checkpoint; every write appends a line to the history of

@@ -42,8 +42,11 @@ def limits_note(limits: Mapping[str, int]) -> str:
     """A verb's per-call limits (``Verb.limits``) as the card words them."""
     if not limits:
         return ""
-    return "; at most " + ", ".join(f"{most} {LIMIT_WORDS.get(what, what)}"
-                                    for what, most in limits.items()) + " per call"
+    return (
+        "; at most "
+        + ", ".join(f"{most} {LIMIT_WORDS.get(what, what)}" for what, most in limits.items())
+        + " per call"
+    )
 
 
 def job_spec(layout: JobLayout) -> JobSpec:
@@ -77,9 +80,12 @@ def transform_cap_line(layout: JobLayout) -> str:
     cap = int((held.get("transform") or {}).get("max_parallel") or MAX_PARALLEL_TRANSFORMS)
     if cap >= MAX_PARALLEL_TRANSFORMS:
         return ""
-    return render(f"\nThis job: at most {cap} sections per [[?elastix_affine `elastix_affine`"
-                  "[[?interactive_transform  or ]]]][[?interactive_transform "
-                  "`interactive_transform`]] call.", disabled_names(layout))
+    return render(
+        f"\nThis job: at most {cap} sections per [[?elastix_affine `elastix_affine`"
+        "[[?interactive_transform  or ]]]][[?interactive_transform "
+        "`interactive_transform`]] call.",
+        disabled_names(layout),
+    )
 
 
 def card_text(layout: JobLayout) -> str:
@@ -95,20 +101,32 @@ def card_text(layout: JobLayout) -> str:
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): "
         f"{summary(name) if name in VERBS else summary(name, variant)}"
-        for name, verb in verbs_for(spec).items() if name in run
+        for name, verb in verbs_for(spec).items()
+        if name in run
     ) + transform_cap_line(layout)
-    example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
-                     'sections=[{"id": "<file>", "position_mm": 5.2}])`]])', disabled)
+    example = render(
+        "(`job.status()`[[?position_sections ,\n`job.position_sections("
+        'sections=[{"id": "<file>", "position_mm": 5.2}])`]])',
+        disabled,
+    )
     history = render("[[?redo undo and redo||undo]]", disabled)
-    histories = (f"`history/undo.json`: the {history} steps; "
-                 "`sections/<name>/history.jsonl`: every registration a section held.")
-    exported = render("[[?export_maps  written by `export_maps`||, not written by this job's "
-                      "verbs]]", disabled)
+    histories = (
+        f"`history/undo.json`: the {history} steps; "
+        "`sections/<name>/history.jsonl`: every registration a section held."
+    )
+    exported = render(
+        "[[?export_maps  written by `export_maps`||, not written by this job's verbs]]", disabled
+    )
     export_command = render(
         "[[?export_maps `export_maps` (answers within 30 s: its result, or its run id; "
-        "`wait [id]`, `runs`), ]]", disabled)
-    background = render("[[?trace_borders `trace_borders` lands in the background: "
-                        "`job.close()`\n(or a `with` block) waits for it. ]]", disabled)
+        "`wait [id]`, `runs`), ]]",
+        disabled,
+    )
+    background = render(
+        "[[?trace_borders `trace_borders` lands in the background: "
+        "`job.close()`\n(or a `with` block) waits for it. ]]",
+        disabled,
+    )
     return f"""# LangSlice job folder
 
 One registration job: the sections in `{images}` placed in a BrainGlobe atlas.

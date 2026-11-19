@@ -257,6 +257,4 @@ def _comment(entry: object) -> Comment | None:
     if not all(isinstance(value, str) for value in fields):
         return None
     comment_id, section, text, at, key = cast("list[str]", fields)
-    return Comment(
-        id=comment_id, section=section, box=corners, text=text, at=at, key=key
-    )
+    return Comment(id=comment_id, section=section, box=corners, text=text, at=at, key=key)

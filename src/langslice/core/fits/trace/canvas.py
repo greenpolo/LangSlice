@@ -163,8 +163,12 @@ def prepare_canvas(
     if frame is not None:
         scale *= min(frame[0] / size[0], frame[1] / size[1])
         size = frame
-    offset = np.array([(size[0] - box_w * scale) / 2.0 - scale * left,
-                       (size[1] - box_h * scale) / 2.0 - scale * top])
+    offset = np.array(
+        [
+            (size[0] - box_w * scale) / 2.0 - scale * left,
+            (size[1] - box_h * scale) / 2.0 - scale * top,
+        ]
+    )
     linear = scale * turn
     shift = linear @ (0.5 - centre) + offset - 0.5
     render_to_canvas = np.array([[*linear[0], shift[0]], [*linear[1], shift[1]], [0.0, 0.0, 1.0]])
@@ -177,8 +181,11 @@ def _cover(length: float) -> int:
 
 
 def _resample(
-    image: Image.Image, matrix: np.ndarray, size: tuple[int, int],
-    fill: tuple[int, int, int], scale: float,
+    image: Image.Image,
+    matrix: np.ndarray,
+    size: tuple[int, int],
+    fill: tuple[int, int, int],
+    scale: float,
 ) -> Image.Image:
     """*image* drawn through *matrix* (3x3, pixel centres) onto a *size* canvas
     filled with *fill*, interpolated once (Lanczos).
@@ -191,7 +198,8 @@ def _resample(
     pasted, not interpolated."""
     rgb = image.convert("RGB")
     whole = np.allclose(matrix[:2, :2], np.eye(2)) and np.allclose(
-        matrix[:2, 2], np.round(matrix[:2, 2]))
+        matrix[:2, 2], np.round(matrix[:2, 2])
+    )
     if whole:
         canvas = Image.new("RGB", size, fill)
         canvas.paste(rgb, (int(round(matrix[0, 2])), int(round(matrix[1, 2]))))
@@ -201,8 +209,12 @@ def _resample(
         kernel = _lanczos_kernel(scale)
         pixels = cv2.sepFilter2D(pixels, -1, kernel, kernel, borderType=cv2.BORDER_REFLECT)
     drawn = cv2.warpAffine(
-        pixels, matrix[:2], size, flags=cv2.INTER_LANCZOS4,
-        borderMode=cv2.BORDER_CONSTANT, borderValue=tuple(float(v) for v in fill),
+        pixels,
+        matrix[:2],
+        size,
+        flags=cv2.INTER_LANCZOS4,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=tuple(float(v) for v in fill),
     )
     return Image.fromarray(np.clip(np.rint(drawn), 0, 255).astype(np.uint8))
 

@@ -102,8 +102,7 @@ def orientation_matrix(size: tuple[int, int], rotation_deg: int, flip: bool) -> 
         turn = np.eye(3)
         turned_width = width
     if flip:
-        turn = np.array([[-1.0, 0.0, turned_width - 1.0], [0.0, 1.0, 0.0],
-                         [0.0, 0.0, 1.0]]) @ turn
+        turn = np.array([[-1.0, 0.0, turned_width - 1.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]) @ turn
     return turn
 
 
@@ -208,9 +207,11 @@ def placement_problem(state: Stack, section: Section) -> str | None:
     return None
 
 
-SCALE_UNKNOWN = ("pixel size unknown: neither the file nor the host gives one, so the "
-                 "section image's width is mapped onto the atlas plane's width at this "
-                 "position (uncalibrated), as the pictures draw it")
+SCALE_UNKNOWN = (
+    "pixel size unknown: neither the file nor the host gives one, so the "
+    "section image's width is mapped onto the atlas plane's width at this "
+    "position (uncalibrated), as the pictures draw it"
+)
 
 
 def scale_problem(frame: SectionFrame) -> str | None:
@@ -226,9 +227,15 @@ def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any
     path = workspace.image_path(record.id)
     settings = workspace.settings
     return (
-        record.id, _file_stamp(path), bool(record.flip), int(record.rotation_deg),
+        record.id,
+        _file_stamp(path),
+        bool(record.flip),
+        int(record.rotation_deg),
         record.position_mm,
-        state.atlas, state.plane, record.pitch_deg, record.yaw_deg,
+        state.atlas,
+        state.plane,
+        record.pitch_deg,
+        record.yaw_deg,
         stored_params(record),
         json.dumps(settings.supplied_pixel_size, default=str),
         json.dumps(settings.host_preprocessing, sort_keys=True, default=str),
@@ -300,9 +307,13 @@ def render_sizes(workspace: Workspace, section_id: str) -> RenderSizes:
         else:
             working, factor = found
     unturned_render = prepared_size(working, max_long_edge=PREVIEW_LONG_EDGE)
-    return RenderSizes(file_size=file_size, working_size=working, working_factor=float(factor),
-                       unturned_render=unturned_render,
-                       render_scale=factor * working[0] / float(unturned_render[0]))
+    return RenderSizes(
+        file_size=file_size,
+        working_size=working,
+        working_factor=float(factor),
+        unturned_render=unturned_render,
+        render_scale=factor * working[0] / float(unturned_render[0]),
+    )
 
 
 def _section_frame(state: Stack, workspace: Workspace, record: Section) -> SectionFrame:
@@ -325,33 +336,55 @@ def _section_frame(state: Stack, workspace: Workspace, record: Section) -> Secti
         raise ValueError(f"{record.id}: the pixel size must be finite and positive")
     rotation = int(record.rotation_deg)
     orient = orientation_matrix(unturned_render, rotation, bool(record.flip))
-    render_size = ((unturned_render[1], unturned_render[0]) if rotation % 180 == 90
-                   else unturned_render)
+    render_size = (
+        (unturned_render[1], unturned_render[0]) if rotation % 180 == 90 else unturned_render
+    )
     file_to_render = orient @ pixel_center_map(file_size, unturned_render)
     plane = state.plane
     position = record.position_mm
     atlas = workspace.atlas
     atlas_to_render, geometry = linear_placement_matrix(
-        render_size, render_um, atlas, position, plane, record.pitch_deg, record.yaw_deg,
-        stored_params(record))
+        render_size,
+        render_um,
+        atlas,
+        position,
+        plane,
+        record.pitch_deg,
+        record.yaw_deg,
+        stored_params(record),
+    )
     facts = atlas_facts(atlas)
     index = plane_index_affine(atlas, position, plane, record.pitch_deg, record.yaw_deg)
     to_um = np.diag(facts["resolution_um"]) @ index
     return SectionFrame(
-        section_id=record.id, file_size=file_size, working_size=working,
-        working_factor=float(factor), render_size=render_size,
-        render_um_per_px=float(render_um), file_um_per_px=float(file_um),
-        calibration_source=str(source or ""), position_mm=position, plane=state.plane,
-        pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg, rotation_deg=rotation,
-        flip=bool(record.flip), file_to_render=file_to_render,
-        atlas_to_render=atlas_to_render, native_to_index=index, native_to_um=to_um,
-        annotation=np.asarray(geometry.annotation), atlas=facts,
+        section_id=record.id,
+        file_size=file_size,
+        working_size=working,
+        working_factor=float(factor),
+        render_size=render_size,
+        render_um_per_px=float(render_um),
+        file_um_per_px=float(file_um),
+        calibration_source=str(source or ""),
+        position_mm=position,
+        plane=state.plane,
+        pitch_deg=record.pitch_deg,
+        yaw_deg=record.yaw_deg,
+        rotation_deg=rotation,
+        flip=bool(record.flip),
+        file_to_render=file_to_render,
+        atlas_to_render=atlas_to_render,
+        native_to_index=index,
+        native_to_um=to_um,
+        annotation=np.asarray(geometry.annotation),
+        atlas=facts,
     )
 
 
-
 def native_points(
-    frame: SectionFrame, warp: DeformableRecord | None, x: np.ndarray, y: np.ndarray,
+    frame: SectionFrame,
+    warp: DeformableRecord | None,
+    x: np.ndarray,
+    y: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Native atlas-plane ``(x, y)`` of file points ``(x, y)`` (pixel centres
     at integers; 2-D arrays). Without *warp* the linear placement; with it,
@@ -367,10 +400,20 @@ def native_points(
     map_x = np.ascontiguousarray(qx, dtype=np.float32)
     map_y = np.ascontiguousarray(qy, dtype=np.float32)
     scale = 1.0 / warp.mm_per_px
-    dx = cv2.remap(np.ascontiguousarray(warp.field_mm[..., 0], dtype=np.float32), map_x,
-                   map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-    dy = cv2.remap(np.ascontiguousarray(warp.field_mm[..., 1], dtype=np.float32), map_x,
-                   map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    dx = cv2.remap(
+        np.ascontiguousarray(warp.field_mm[..., 0], dtype=np.float32),
+        map_x,
+        map_y,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+    dy = cv2.remap(
+        np.ascontiguousarray(warp.field_mm[..., 1], dtype=np.float32),
+        map_x,
+        map_y,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
     px = qx + dx.astype(np.float64) * scale
     py = qy + dy.astype(np.float64) * scale
     return apply(np.linalg.inv(warp.placement.atlas_to_section), px, py)
@@ -395,12 +438,16 @@ def file_to_fit(frame: SectionFrame, fit_size: tuple[int, int]) -> np.ndarray:
     fit grid of *fit_size* ``(width, height)`` (the oriented render a
     deformable record and ``fit_frame`` are on)."""
     fit_unturned = unturned(fit_size, frame.rotation_deg)
-    return (orientation_matrix(fit_unturned, frame.rotation_deg, frame.flip)
-            @ pixel_center_map(frame.file_size, fit_unturned))
+    return orientation_matrix(fit_unturned, frame.rotation_deg, frame.flip) @ pixel_center_map(
+        frame.file_size, fit_unturned
+    )
 
 
 def file_points(
-    frame: SectionFrame, warp: DeformableRecord | None, x: np.ndarray, y: np.ndarray,
+    frame: SectionFrame,
+    warp: DeformableRecord | None,
+    x: np.ndarray,
+    y: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """The file points ``(x, y)`` that show native atlas-plane points ``(x,
     y)``: :func:`native_points` the other way. Without *warp* the linear
@@ -414,22 +461,35 @@ def file_points(
     import cv2
 
     shape, count = np.shape(x), int(np.size(x))
-    px, py = apply(warp.placement.atlas_to_section, np.asarray(x, dtype=np.float64),
-                   np.asarray(y, dtype=np.float64))
+    px, py = apply(
+        warp.placement.atlas_to_section,
+        np.asarray(x, dtype=np.float64),
+        np.asarray(y, dtype=np.float64),
+    )
     map_x = np.ascontiguousarray(point_rows(px), dtype=np.float32)
     map_y = np.ascontiguousarray(point_rows(py), dtype=np.float32)
     scale = 1.0 / warp.mm_per_px
     inverse = warp.inverse_field_mm
-    dx = cv2.remap(np.ascontiguousarray(inverse[..., 0], dtype=np.float32), map_x, map_y,
-                   cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE).ravel()[:count]
-    dy = cv2.remap(np.ascontiguousarray(inverse[..., 1], dtype=np.float32), map_x, map_y,
-                   cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE).ravel()[:count]
+    dx = cv2.remap(
+        np.ascontiguousarray(inverse[..., 0], dtype=np.float32),
+        map_x,
+        map_y,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    ).ravel()[:count]
+    dy = cv2.remap(
+        np.ascontiguousarray(inverse[..., 1], dtype=np.float32),
+        map_x,
+        map_y,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    ).ravel()[:count]
     qx = np.reshape(px, shape) + dx.reshape(shape).astype(np.float64) * scale
     qy = np.reshape(py, shape) + dy.reshape(shape).astype(np.float64) * scale
-    to_file = np.linalg.inv(file_to_fit(frame, (int(warp.section_size[0]),
-                                                int(warp.section_size[1]))))
+    to_file = np.linalg.inv(
+        file_to_fit(frame, (int(warp.section_size[0]), int(warp.section_size[1])))
+    )
     return apply(to_file, qx, qy)
-
 
 
 @dataclass(frozen=True)
@@ -454,7 +514,10 @@ class SectionMaps:
 
 
 def section_maps(
-    workspace: Workspace, frame: SectionFrame, warp: DeformableRecord | None, *,
+    workspace: Workspace,
+    frame: SectionFrame,
+    warp: DeformableRecord | None,
+    *,
     full_resolution: bool = False,
 ) -> SectionMaps:
     """The section's coordinate, label and residual maps (see
@@ -477,13 +540,18 @@ def section_maps(
         gy, gx = np.meshgrid(np.arange(r0, r1, dtype=np.float64), cols, indexing="ij")
         fx, fy = apply(to_file, gx, gy)
         nx, ny = native_points(frame, warp, fx, fy)
-        index = (frame.native_to_index[:, 0:1, None] * ny[None]
-                 + frame.native_to_index[:, 1:2, None] * nx[None]
-                 + frame.native_to_index[:, 2:3, None])
+        index = (
+            frame.native_to_index[:, 0:1, None] * ny[None]
+            + frame.native_to_index[:, 1:2, None] * nx[None]
+            + frame.native_to_index[:, 2:3, None]
+        )
         inside = np.all((index >= -0.5) & (index < shape[:, None, None] - 0.5), axis=0)
         keep = inside
-        um = (frame.native_to_um[:, 0:1, None] * ny[None] + frame.native_to_um[:, 1:2, None]
-              * nx[None] + frame.native_to_um[:, 2:3, None])
+        um = (
+            frame.native_to_um[:, 0:1, None] * ny[None]
+            + frame.native_to_um[:, 1:2, None] * nx[None]
+            + frame.native_to_um[:, 2:3, None]
+        )
         block = np.moveaxis(um, 0, -1).astype(np.float32)
         block[~keep] = np.nan
         coords[r0:r1] = block
@@ -495,15 +563,21 @@ def section_maps(
             residual[r0:r1, :, 0] = (ly - gy).astype(np.float32)
             residual[r0:r1, :, 1] = (lx - gx).astype(np.float32)
     return SectionMaps(
-        section_id=frame.section_id, grid_size=(width, height),
-        full_resolution=bool(full_resolution), um_per_px=frame.grid_um_per_px((width, height)),
-        pixel_to_atlas_um=frame.pixel_to_atlas_um((width, height)), coords=coords,
-        labels=labels, residual=residual,
+        section_id=frame.section_id,
+        grid_size=(width, height),
+        full_resolution=bool(full_resolution),
+        um_per_px=frame.grid_um_per_px((width, height)),
+        pixel_to_atlas_um=frame.pixel_to_atlas_um((width, height)),
+        coords=coords,
+        labels=labels,
+        residual=residual,
     )
 
 
 def marker_grid(
-    size: tuple[int, int], *, divisions: int = MARKER_DIVISIONS,
+    size: tuple[int, int],
+    *,
+    divisions: int = MARKER_DIVISIONS,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Lay out the section points of VisuAlign markers over an image.
 
@@ -545,7 +619,8 @@ def marker_grid(
 
 
 def residual_markers(
-    frame: SectionFrame, warp: DeformableRecord,
+    frame: SectionFrame,
+    warp: DeformableRecord,
 ) -> list[list[float]]:
     """Make VisuAlign markers of a section's deformation.
 

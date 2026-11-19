@@ -69,9 +69,7 @@ class _Keras(Protocol):
 
 
 class _DeviceConfig(Protocol):
-    def set_visible_devices(
-        self, devices: list[object], device_type: str
-    ) -> None: ...
+    def set_visible_devices(self, devices: list[object], device_type: str) -> None: ...
 
 
 class _TensorFlow(Protocol):
@@ -234,11 +232,7 @@ def require_engine() -> None:
     ToolError
         ``ENGINE_MISSING`` when a package of the extra is not installed.
     """
-    missing = [
-        name
-        for name in REQUIRED_MODULES
-        if importlib.util.find_spec(name) is None
-    ]
+    missing = [name for name in REQUIRED_MODULES if importlib.util.find_spec(name) is None]
     if missing:
         raise ToolError(
             RefusalCode.ENGINE_MISSING,
@@ -347,15 +341,11 @@ def _pipeline(request: EngineRequest, started: float) -> EngineRun:
     numbers = table.numbers
     if not request.order:
         numbers = np.arange(1, len(table.ids) + 1)
-    final = _Table(
-        table.ids, anchorings, numbers, table.bad, table.widths, table.heights
-    )
+    final = _Table(table.ids, anchorings, numbers, table.bad, table.widths, table.heights)
     final_json = request.out_folder / "final.json"
     own_json = request.out_folder / "own.json"
     _write_quint(final, final_json, numbered=True)
-    _write_quint(
-        _with_anchorings(table, own), own_json, numbered=bool(request.order)
-    )
+    _write_quint(_with_anchorings(table, own), own_json, numbered=bool(request.order))
 
     timings["total_s"] = time.monotonic() - started
     return EngineRun(
@@ -398,9 +388,7 @@ def hidden_gpus() -> None:
         tensorflow.config.set_visible_devices([], "GPU")
 
 
-def _sorted_table(
-    request: EngineRequest, prediction: network.Prediction
-) -> _Table:
+def _sorted_table(request: EngineRequest, prediction: network.Prediction) -> _Table:
     """Return the predictions as DeepSlice's table: by index, else depth."""
     ids = [section for section, _ in request.images]
     rank = {section: index + 1 for index, section in enumerate(request.order)}
@@ -440,9 +428,7 @@ def _spaced(
     return spaced, spacing
 
 
-def _with_anchorings(
-    table: _Table, anchorings: npt.NDArray[np.float64]
-) -> _Table:
+def _with_anchorings(table: _Table, anchorings: npt.NDArray[np.float64]) -> _Table:
     """Return a table with other anchorings, in the same order."""
     return _Table(
         table.ids,
@@ -479,9 +465,7 @@ def _write_quint(table: _Table, path: Path, *, numbered: bool) -> None:
     )
 
 
-def _answers(
-    final: _Table, own: npt.NDArray[np.float64]
-) -> dict[str, SectionAnswer]:
+def _answers(final: _Table, own: npt.NDArray[np.float64]) -> dict[str, SectionAnswer]:
     """Return each section's answer, in the final table's order."""
     numbers = _ints(final.numbers)
     flags = cast("list[bool]", final.bad.tolist())

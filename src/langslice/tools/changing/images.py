@@ -93,7 +93,10 @@ def image_names(workspace: Workspace, record: Section) -> list[str]:
 
 
 def check_image(
-    job: Job, workspace: Workspace, records: Sequence[Section], name: object,
+    job: Job,
+    workspace: Workspace,
+    records: Sequence[Section],
+    name: object,
 ) -> str:
     """*name* as a fit reads it (empty: ``preprocessed``), once every one of
     *records* has that image; ``UNKNOWN_IMAGE`` otherwise."""
@@ -101,9 +104,13 @@ def check_image(
     for record in records:
         known = images.image_names(workspace, record)
         if label not in known:
-            raise Refused(RefusalCode.UNKNOWN_IMAGE, image=label, images=known,
-                          message=f"{record.id} has no section image {label!r}; its images: "
-                          f"{', '.join(known)}.")
+            raise Refused(
+                RefusalCode.UNKNOWN_IMAGE,
+                image=label,
+                images=known,
+                message=f"{record.id} has no section image {label!r}; its images: "
+                f"{', '.join(known)}.",
+            )
     return label
 
 
@@ -116,15 +123,19 @@ def read(job: Job, workspace: Workspace, record: Section, name: str) -> ImageVie
 def _check_name(workspace: Workspace, state: Stack, name: object) -> str:
     label = str(name or "").strip()
     if label.lower() in RESERVED or not NAME_PATTERN.match(label):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"an image's name is 1 to {images.MAX_NAME} letters, "
-                      "digits, '_' or '-', starting with a letter or digit, and not "
-                      f"{' or '.join(map(repr, RESERVED))}.")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message=f"an image's name is 1 to {images.MAX_NAME} letters, "
+            "digits, '_' or '-', starting with a letter or digit, and not "
+            f"{' or '.join(map(repr, RESERVED))}.",
+        )
     raw = {value for record in state.slices for value in images.raw_names(workspace, record.id)}
     if label in raw:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"{label!r} is a raw channel of the image files; a raw "
-                      "channel is never edited. Make an image from it under another name.")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message=f"{label!r} is a raw channel of the image files; a raw "
+            "channel is never edited. Make an image from it under another name.",
+        )
     return label
 
 
@@ -194,9 +205,7 @@ def make_image_tool(
             gamma=_exponent(gamma),
             invert=bool(invert),
         )
-        done = make_section_image(
-            job, run.workspace, str(name), ids, given, delete=bool(delete)
-        )
+        done = make_section_image(job, run.workspace, str(name), ids, given, delete=bool(delete))
     except Refused:
         raise
     except (TypeError, ValueError):
@@ -277,55 +286,76 @@ def make_section_image(
     records = _records(job, sections)
     if delete:
         if label == PREPROCESSED:
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message="preprocessed is what every fit reads by "
-                          "default and cannot be deleted; make it again instead.")
+            raise Refused(
+                RefusalCode.BAD_ARGS,
+                message="preprocessed is what every fit reads by "
+                "default and cannot be deleted; make it again instead.",
+            )
         holding = [record for record in records if label in record.images]
         if not holding:
-            raise Refused(RefusalCode.UNKNOWN_IMAGE, image=label,
-                          message=f"no section named holds a made image {label!r}.")
+            raise Refused(
+                RefusalCode.UNKNOWN_IMAGE,
+                image=label,
+                message=f"no section named holds a made image {label!r}.",
+            )
         before = job.snapshot()
         for record in holding:
             del record.images[label]
         job.commit(before)
-        return ImagesMade(name=label, sections=[record.id for record in holding],
-                          deleted=True, in_force=_in_force(workspace, job, label),
-                          images=stack_images(workspace, job.state))
+        return ImagesMade(
+            name=label,
+            sections=[record.id for record in holding],
+            deleted=True,
+            in_force=_in_force(workspace, job, label),
+            images=stack_images(workspace, job.state),
+        )
     try:
         weights = dict(given.weights) if given.weights else None
         contrast = list(given.contrast) if given.contrast else None
         recipe = images.validate_recipe(
-            weights=weights, clahe_clip=given.clahe_clip,
-            clahe_tiles=given.clahe_tiles, n4=given.n4,
-            contrast=contrast, gamma=given.gamma or None, invert=given.invert)
+            weights=weights,
+            clahe_clip=given.clahe_clip,
+            clahe_tiles=given.clahe_tiles,
+            n4=given.n4,
+            contrast=contrast,
+            gamma=given.gamma or None,
+            invert=given.invert,
+        )
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     held = recipe["weights"]
     if isinstance(held, Mapping) and label in held:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"an image is made from other images; {label!r} "
-                      "cannot be one of its own sources.")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message=f"an image is made from other images; {label!r} "
+            "cannot be one of its own sources.",
+        )
     if isinstance(held, Mapping):
         for record in records:
             try:
                 images.sources_of(workspace, record.id, record.images, recipe)
             except ValueError as exc:
-                raise Refused(RefusalCode.UNKNOWN_IMAGE, message=str(exc),
-                              images=images.image_names(workspace, record)) from exc
+                raise Refused(
+                    RefusalCode.UNKNOWN_IMAGE,
+                    message=str(exc),
+                    images=images.image_names(workspace, record),
+                ) from exc
     reset = label == PREPROCESSED and recipe == images.OPENING_RECIPE
     tasks = 2 * len(records) if recipe["n4"] and not reset else 0
     with process_pool(tasks, threads_each=ITK_THREADS) as pool:
-        making = _Making(job, workspace, label, recipe, reset,
-                         _InProcesses(pool))
+        making = _Making(job, workspace, label, recipe, reset, _InProcesses(pool))
         made_all = map_sections(partial(_made, making), records, 1)
     entries = {record.id: entry for record, entry in zip(records, made_all, strict=True)}
     before = job.snapshot()
     for record in records:
         record.images[label] = entries[record.id]
     job.commit(before)
-    return ImagesMade(name=label, sections=[record.id for record in records],
-                      in_force=_in_force(workspace, job, label),
-                      images=stack_images(workspace, job.state))
+    return ImagesMade(
+        name=label,
+        sections=[record.id for record in records],
+        in_force=_in_force(workspace, job, label),
+        images=stack_images(workspace, job.state),
+    )
 
 
 @dataclass(frozen=True)
@@ -356,24 +386,29 @@ def _made(making: _Making, section: Section) -> ImageRef:
     try:
         if making.reset:
             return images.opening_entry(making.workspace, layout, section.id)
-        array, used = images.make(making.workspace, section.id, section.images,
-                                  recipe, enhance=making.enhance)
+        array, used = images.make(
+            making.workspace, section.id, section.images, recipe, enhance=making.enhance
+        )
     except (OSError, ValueError, RuntimeError) as exc:
-        raise Refused(RefusalCode.RENDER_FAILED,
-                      message=f"{section.id}: {exc}") from exc
+        raise Refused(RefusalCode.RENDER_FAILED, message=f"{section.id}: {exc}") from exc
     extra = {}
     if not isinstance(recipe["weights"], Mapping):
         extra = {"weights_used": used}
     try:
-        return images.write_file(layout, section.id, making.label, array,
-                                 {"recipe": recipe}, extra=extra)
+        return images.write_file(
+            layout, section.id, making.label, array, {"recipe": recipe}, extra=extra
+        )
     except (OSError, ValueError, RuntimeError) as exc:
-        raise Refused(RefusalCode.RENDER_FAILED,
-                      message=f"{section.id}: {exc}") from exc
+        raise Refused(RefusalCode.RENDER_FAILED, message=f"{section.id}: {exc}") from exc
 
 
 def add_image(
-    job: Job, workspace: Workspace, record: Section, name: str, array: object, note: str = "",
+    job: Job,
+    workspace: Workspace,
+    record: Section,
+    name: str,
+    array: object,
+    note: str = "",
 ) -> dict[str, Any]:
     """Register *array* as made image *name* of *record*, made by a script (its
     *note* recorded as the source). *array* is ``(H, W)`` on the section's
@@ -385,17 +420,21 @@ def add_image(
     held = np.asarray(array)
     width, height = workspace.working_source(record.id)[0].size
     if held.shape != (height, width):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"{record.id}'s images are (H, W) = ({height}, "
-                      f"{width}) on its working grid, in the file's orientation; got "
-                      f"{tuple(held.shape)}.")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message=f"{record.id}'s images are (H, W) = ({height}, "
+            f"{width}) on its working grid, in the file's orientation; got "
+            f"{tuple(held.shape)}.",
+        )
     if held.dtype != np.uint8:
         if not np.issubdtype(held.dtype, np.floating) or not np.isfinite(held).all():
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message="an image is uint8, or finite floats from 0 to 1.")
+            raise Refused(
+                RefusalCode.BAD_ARGS, message="an image is uint8, or finite floats from 0 to 1."
+            )
         held = np.rint(np.clip(held, 0.0, 1.0) * 255.0).astype(np.uint8)
-    entry = images.write_file(job.layout, record.id, label, held,
-                              {"script": str(note or "").strip() or "no note"})
+    entry = images.write_file(
+        job.layout, record.id, label, held, {"script": str(note or "").strip() or "no note"}
+    )
     before = job.snapshot()
     live = job.state.by_id(record.id)
     assert live is not None

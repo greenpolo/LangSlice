@@ -75,20 +75,21 @@ def _package_version(module_name: str) -> str:
         return ""
 
 
-def build(ref: str, factory: Callable[..., Any], *, module_name: str,
-          config: dict[str, Any] | None = None) -> LoadedPlugin:
+def build(
+    ref: str, factory: Callable[..., Any], *, module_name: str, config: dict[str, Any] | None = None
+) -> LoadedPlugin:
     """Call *factory* (with *config* when the job has one for this plugin),
     check its tools and make the :class:`LoadedPlugin` (not yet registered)."""
     try:
         made = factory(config) if config is not None else factory()
     except Exception as exc:
-        raise PluginError(f"plugin {ref}: the factory failed: {type(exc).__name__}: {exc}"
-                          ) from exc
+        raise PluginError(f"plugin {ref}: the factory failed: {type(exc).__name__}: {exc}") from exc
     if isinstance(made, ToolSpec):
         made = [made]
     if not isinstance(made, (list, tuple)):
-        raise PluginError(f"plugin {ref}: the factory returns a list of ToolSpec; got "
-                          f"{type(made).__name__}")
+        raise PluginError(
+            f"plugin {ref}: the factory returns a list of ToolSpec; got {type(made).__name__}"
+        )
     taken: list[str] = []
     engine = ref if ref in core.ENGINES else ""
     for tool in made:
@@ -99,10 +100,13 @@ def build(ref: str, factory: Callable[..., Any], *, module_name: str,
     module = sys.modules.get(module_name)
     declared = getattr(module, "PLUGIN_API_VERSION", PLUGIN_API_VERSION)
     if declared != PLUGIN_API_VERSION:
-        raise PluginError(f"plugin {ref} was written for plugin API {declared}; this "
-                          f"LangSlice has {PLUGIN_API_VERSION}")
-    sources = _source_files([factory, *(tool.handler for tool in made),
-                             *(tool.stub for tool in made)])
+        raise PluginError(
+            f"plugin {ref} was written for plugin API {declared}; this "
+            f"LangSlice has {PLUGIN_API_VERSION}"
+        )
+    sources = _source_files(
+        [factory, *(tool.handler for tool in made), *(tool.stub for tool in made)]
+    )
     provenance = {
         "ref": ref,
         "module": module_name,
@@ -125,14 +129,17 @@ def load(ref: str, config: dict[str, Any] | None = None) -> LoadedPlugin:
     :class:`~langslice.core.plugins.PluginError` (a ``ValueError``), one line,
     when it cannot be loaded or declares an invalid tool."""
     if ref.startswith(INLINE_PREFIX):
-        raise PluginError(f"plugin {ref} was passed to the library as objects in another "
-                          "process; pass a factory function or module:factory to reuse it")
+        raise PluginError(
+            f"plugin {ref} was passed to the library as objects in another "
+            "process; pass a factory function or module:factory to reuse it"
+        )
     module_name, factory_name = _split(ref)
     try:
         module = importlib.import_module(module_name)
     except Exception as exc:
-        raise PluginError(f"plugin {ref}: cannot import {module_name!r}: "
-                          f"{type(exc).__name__}: {exc}") from exc
+        raise PluginError(
+            f"plugin {ref}: cannot import {module_name!r}: {type(exc).__name__}: {exc}"
+        ) from exc
     factory: Any = module
     for part in factory_name.split("."):
         factory = getattr(factory, part, None)
@@ -148,8 +155,11 @@ def as_refs(plugins: Any) -> list[str]:
     function is registered and named ``module:qualname``, ToolSpecs are
     registered under ``inline:<digest>``. The plugins are loaded (and so
     checked) here."""
-    items = [plugins] if isinstance(plugins, (str, ToolSpec)) or callable(plugins) \
+    items = (
+        [plugins]
+        if isinstance(plugins, (str, ToolSpec)) or callable(plugins)
         else list(plugins or ())
+    )
     refs: list[str] = []
     loose: list[ToolSpec] = []
     for item in items:
@@ -161,18 +171,23 @@ def as_refs(plugins: Any) -> list[str]:
             module_name = getattr(item, "__module__", "")
             name = getattr(item, "__qualname__", "")
             if not module_name or not name or "<" in name:
-                raise PluginError("a plugin factory passed as an object is a function "
-                                  "defined at module level (a lambda or local function has "
-                                  "no name to reload it by)")
+                raise PluginError(
+                    "a plugin factory passed as an object is a function "
+                    "defined at module level (a lambda or local function has "
+                    "no name to reload it by)"
+                )
             ref = f"{module_name}:{name}"
             core.register(build(ref, item, module_name=module_name))
             refs.append(ref)
         else:
-            raise PluginError(f"a plugin is module:factory, a factory function or ToolSpecs; "
-                              f"got {type(item).__name__}")
+            raise PluginError(
+                f"a plugin is module:factory, a factory function or ToolSpecs; "
+                f"got {type(item).__name__}"
+            )
     if loose:
-        digest = hashlib.sha256(",".join(sorted(tool.name for tool in loose)).encode()
-                                ).hexdigest()[:10]
+        digest = hashlib.sha256(",".join(sorted(tool.name for tool in loose)).encode()).hexdigest()[
+            :10
+        ]
         ref = f"{INLINE_PREFIX}{digest}"
         core.register(build(ref, lambda: list(loose), module_name=INLINE_PREFIX))
         refs.append(ref)

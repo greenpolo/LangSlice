@@ -152,19 +152,14 @@ def fit_pairs(
         try:
             build = functools.partial(load_matcher, device)
             model, _ = _retried(device, build)
-            answers = [
-                _fit_one(model, device, pair, mode=mode, top_k=top_k)
-                for pair in pairs
-            ]
+            answers = [_fit_one(model, device, pair, mode=mode, top_k=top_k) for pair in pairs]
         finally:
             if device.type == GPU_DEVICE:
                 torch.cuda.empty_cache()
     return EngineRun(answers=answers, gpu_wait_s=turn.waited_s)
 
 
-def _retried(
-    device: torch.device, call: Callable[[], Result]
-) -> tuple[Result, int]:
+def _retried(device: torch.device, call: Callable[[], Result]) -> tuple[Result, int]:
     """Run *call*, again while a process outside the queue fills the GPU.
 
     Returns the call's value and how many times it ran again.
@@ -192,9 +187,7 @@ def _fit_one(
     top_k: int,
 ) -> EngineAnswer:
     """Fit one section, its failure kept as its answer's error."""
-    fit = functools.partial(
-        fit_pair, model, device, pair, mode=mode, top_k=top_k
-    )
+    fit = functools.partial(fit_pair, model, device, pair, mode=mode, top_k=top_k)
     try:
         answer, retries = _retried(device, fit)
     except ENGINE_FAILURES as error:
@@ -232,19 +225,11 @@ def fit_pair(
     """
     h, w = cast("tuple[int, int]", pair.target.shape[:2])
     to_grid = CORNER @ resize_map((w, h), (W, H))
-    from_grid = np.linalg.inv(resize_map((w, h), (W, H))) @ np.linalg.inv(
-        CORNER
-    )
-    atlas_grid, section_grid, certainty = ranked_matches(
-        model, device, pair.target, pair.source
-    )
-    chosen = choose_pairs(
-        pair, atlas_grid, section_grid, certainty, from_grid, top_k=top_k
-    )
+    from_grid = np.linalg.inv(resize_map((w, h), (W, H))) @ np.linalg.inv(CORNER)
+    atlas_grid, section_grid, certainty = ranked_matches(model, device, pair.target, pair.source)
+    chosen = choose_pairs(pair, atlas_grid, section_grid, certainty, from_grid, top_k=top_k)
     if chosen.n_pairs < 3:
-        return chosen.answer(
-            error=f"only {chosen.n_pairs} matches outside the marked damage"
-        )
+        return chosen.answer(error=f"only {chosen.n_pairs} matches outside the marked damage")
 
     atlas_grid = atlas_grid[chosen.fitted]
     section_grid = section_grid[chosen.fitted]
@@ -257,17 +242,11 @@ def fit_pair(
     moved = (linear_raw @ np.hstack([section_grid, ones]).T).T
     displacement = smoothed_field(moved, atlas_grid, pair.smoothing_px)
     affine_raw = homogeneous(linear_raw) @ to_grid
-    residual, sitk_max_px = field_on_canvas(
-        displacement, affine_raw, from_grid, matrix, (w, h)
-    )
-    return chosen.answer(
-        matrix=matrix, residual=residual, sitk_max_px=sitk_max_px
-    )
+    residual, sitk_max_px = field_on_canvas(displacement, affine_raw, from_grid, matrix, (w, h))
+    return chosen.answer(matrix=matrix, residual=residual, sitk_max_px=sitk_max_px)
 
 
-def resize_map(
-    size_from: tuple[int, int], size_to: tuple[int, int]
-) -> npt.NDArray[np.float64]:
+def resize_map(size_from: tuple[int, int], size_to: tuple[int, int]) -> npt.NDArray[np.float64]:
     """Map pixel centres through a plain resize between two sizes.
 
     Parameters
@@ -281,9 +260,7 @@ def resize_map(
         The homogeneous map from the first image's px to the second's.
     """
     sx, sy = size_to[0] / size_from[0], size_to[1] / size_from[1]
-    return np.array(
-        [[sx, 0, 0.5 * sx - 0.5], [0, sy, 0.5 * sy - 0.5], [0, 0, 1.0]]
-    )
+    return np.array([[sx, 0, 0.5 * sx - 0.5], [0, sy, 0.5 * sy - 0.5], [0, 0, 1.0]])
 
 
 def homogeneous(matrix: npt.ArrayLike) -> npt.NDArray[np.float64]:
@@ -397,20 +374,14 @@ def choose_pairs(
     outside_damage = pair.keep[_rows(atlas_at, h), _cols(atlas_at, w)]
     inside_mask = np.ones_like(outside_damage)
     if pair.section_keep is not None:
-        inside_mask = pair.section_keep[
-            _rows(section_at, h), _cols(section_at, w)
-        ]
+        inside_mask = pair.section_keep[_rows(section_at, h), _cols(section_at, w)]
 
     kept = outside_damage & inside_mask
     reach = int(np.searchsorted(np.cumsum(kept), top_k)) + 1
     passed = ~kept[:reach]
-    by_mask = int(
-        np.count_nonzero(outside_damage[:reach] & ~inside_mask[:reach])
-    )
+    by_mask = int(np.count_nonzero(outside_damage[:reach] & ~inside_mask[:reach]))
     fitted = np.flatnonzero(kept)[:top_k]
-    table = np.column_stack((atlas_at, section_at, certainty)).astype(
-        np.float32
-    )
+    table = np.column_stack((atlas_at, section_at, certainty)).astype(np.float32)
     return ChosenPairs(
         fitted=fitted,
         used=table[fitted],
@@ -585,25 +556,16 @@ def field_on_canvas(
 
     w, h = size
     image = sitk.GetImageFromArray(displacement, isVector=True)
-    image.SetSpacing(  # pyright: ignore[reportUnknownMemberType]
-        [1.0, 1.0]
-    )
+    image.SetSpacing([1.0, 1.0])
     transform = sitk.DisplacementFieldTransform(image)
 
     rng = np.random.default_rng(0)
-    probe = np.column_stack(
-        (rng.uniform(0, w - 1, N_PROBES), rng.uniform(0, h - 1, N_PROBES))
-    )
+    probe = np.column_stack((rng.uniform(0, w - 1, N_PROBES), rng.uniform(0, h - 1, N_PROBES)))
     grid_points = probe @ affine_raw[:2, :2].T + affine_raw[:2, 2]
     points = cast("list[list[float]]", grid_points.tolist())
     moved = cast(
         "list[tuple[float, float]]",
-        [
-            transform.TransformPoint(  # pyright: ignore[reportUnknownMemberType]
-                (x, y)
-            )
-            for x, y in points
-        ],
+        [transform.TransformPoint((x, y)) for x, y in points],
     )
     own = np.array(moved, dtype=np.float64)
     own = own @ from_grid[:2, :2].T + from_grid[:2, 2]

@@ -109,16 +109,18 @@ def _build_metadata(
     route: str,
 ) -> dict[str, Any]:
     metadata = dict(request.metadata)
-    metadata.update({
-        "provider": provider,
-        "route": route,
-        "request": {
-            "provider": request.provider.lower(),
-            "model": request.model,
-            "size_tier": request.size_tier,
-            "prompt": request.prompt,
-        },
-    })
+    metadata.update(
+        {
+            "provider": provider,
+            "route": route,
+            "request": {
+                "provider": request.provider.lower(),
+                "model": request.model,
+                "size_tier": request.size_tier,
+                "prompt": request.prompt,
+            },
+        }
+    )
     return metadata
 
 
@@ -162,15 +164,11 @@ def _generate_google_segmentation(request: BorderTraceRequest) -> GeneratedSegme
         request.prompt,
     ]
     config = _gemini_image_config(request)
-    response = client.models.generate_content(
-        model=model, contents=contents, config=config
-    )
+    response = client.models.generate_content(model=model, contents=contents, config=config)
     try:
         image = _extract_last_inline_image(response)
     except RuntimeError:
-        response = client.models.generate_content(
-            model=model, contents=contents, config=config
-        )
+        response = client.models.generate_content(model=model, contents=contents, config=config)
         image = _extract_last_inline_image(response)
     route = "google_genai"
     return GeneratedSegmentation(

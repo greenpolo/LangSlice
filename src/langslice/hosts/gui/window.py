@@ -29,9 +29,17 @@ from pathlib import Path
 
 WINDOW_SIZE = (1440, 960)
 PATH_NAMES = (
-    "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
-    "microsoft-edge", "microsoft-edge-stable", "brave-browser", "brave",
-    "chrome.exe", "msedge.exe", "brave.exe",
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+    "microsoft-edge",
+    "microsoft-edge-stable",
+    "brave-browser",
+    "brave",
+    "chrome.exe",
+    "msedge.exe",
+    "brave.exe",
 )
 WINDOWS_PATHS = (
     "Google/Chrome/Application/chrome.exe",
@@ -91,17 +99,22 @@ def candidates(platform: str, env: dict[str, str], home: Path) -> list[Path]:
     return found
 
 
-def find_browser(*, platform: str = sys.platform, env: dict[str, str] | None = None,
-                 home: Path | None = None,
-                 which: Callable[[str], str | None] = shutil.which,
-                 is_file: Callable[[Path], bool] = Path.is_file) -> str | None:
+def find_browser(
+    *,
+    platform: str = sys.platform,
+    env: dict[str, str] | None = None,
+    home: Path | None = None,
+    which: Callable[[str], str | None] = shutil.which,
+    is_file: Callable[[Path], bool] = Path.is_file,
+) -> str | None:
     """The first app-window browser found, or None."""
     for name in PATH_NAMES:
         path = which(name)
         if path:
             return path
-    for path in candidates(platform, dict(os.environ) if env is None else env,
-                           Path.home() if home is None else home):
+    for path in candidates(
+        platform, dict(os.environ) if env is None else env, Path.home() if home is None else home
+    ):
         if is_file(path):
             return str(path)
     return None
@@ -127,13 +140,19 @@ def own_window_command(url: str) -> list[str] | None:
     return [sys.executable, "-m", OWN_WINDOW_MODULE, url] + size
 
 
-def app_arguments(browser: str, url: str, profile: str,
-                  size: tuple[int, int] = WINDOW_SIZE) -> list[str]:
+def app_arguments(
+    browser: str, url: str, profile: str, size: tuple[int, int] = WINDOW_SIZE
+) -> list[str]:
     args = [
-        browser, f"--app={url}", f"--user-data-dir={profile}",
-        f"--window-size={size[0]},{size[1]}", "--no-first-run",
-        "--no-default-browser-check", "--disable-session-crashed-bubble",
-        "--disable-background-mode", "--disable-extensions",
+        browser,
+        f"--app={url}",
+        f"--user-data-dir={profile}",
+        f"--window-size={size[0]},{size[1]}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-session-crashed-bubble",
+        "--disable-background-mode",
+        "--disable-extensions",
     ]
     if os.name == "posix" and os.environ.get("DISPLAY"):
         args.append("--ozone-platform=x11")
@@ -164,15 +183,15 @@ class Opened:
             shutil.rmtree(self.profile, ignore_errors=True)
 
 
-def _own_window(url: str, popen: Callable[..., subprocess.Popen[bytes]]
-                ) -> subprocess.Popen[bytes] | None:
+def _own_window(
+    url: str, popen: Callable[..., subprocess.Popen[bytes]]
+) -> subprocess.Popen[bytes] | None:
     """Start LangSlice's own window; None when it cannot be shown."""
     command = own_window_command(url)
     if not command:
         return None
     try:
-        process = popen(command, stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL)
+        process = popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         return None
     try:
@@ -182,11 +201,15 @@ def _own_window(url: str, popen: Callable[..., subprocess.Popen[bytes]]
     return None
 
 
-def open_window(url: str, *, browser: str | None = None,
-                find: Callable[[], str | None] = find_browser,
-                popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
-                open_tab: Callable[[str], bool] = webbrowser.open,
-                say: Callable[[str], None] = print) -> Opened:
+def open_window(
+    url: str,
+    *,
+    browser: str | None = None,
+    find: Callable[[], str | None] = find_browser,
+    popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+    open_tab: Callable[[str], bool] = webbrowser.open,
+    say: Callable[[str], None] = print,
+) -> Opened:
     """Open *url* in a window of its own, else a tab, else print it."""
     own = None if browser else _own_window(url, popen)
     if own is not None:
@@ -195,8 +218,11 @@ def open_window(url: str, *, browser: str | None = None,
     if browser:
         profile = tempfile.mkdtemp(prefix="langslice-gui-")
         try:
-            process = popen(app_arguments(browser, url, profile),
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            process = popen(
+                app_arguments(browser, url, profile),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except OSError:
             shutil.rmtree(profile, ignore_errors=True)
         else:

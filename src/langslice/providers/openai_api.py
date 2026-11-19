@@ -45,9 +45,11 @@ def get_openai_image_client() -> openai.OpenAI:
         return _image_client_instance
     api_key = read_env("OPENAI_IMAGE_API_KEY") or read_env("OPENAI_API_KEY")
     if api_key is None:
-        raise RuntimeError("The openai-api image model needs OPENAI_API_KEY (or "
-                           "OPENAI_IMAGE_API_KEY), in the environment, a .env file or "
-                           "saved by LangSlice's setup.")
+        raise RuntimeError(
+            "The openai-api image model needs OPENAI_API_KEY (or "
+            "OPENAI_IMAGE_API_KEY), in the environment, a .env file or "
+            "saved by LangSlice's setup."
+        )
     base_url = read_env("OPENAI_IMAGE_BASE_URL") or read_env("OPENAI_BASE_URL") or DEFAULT_BASE_URL
     client_cls = cast(Callable[..., "openai.OpenAI"], importlib.import_module("openai").OpenAI)
     logger.info("Creating the OpenAI image client: base_url=%s", base_url)

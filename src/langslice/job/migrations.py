@@ -299,9 +299,7 @@ class FolderMigration:
         """Write a section image and return its entry, or None (logged)."""
         try:
             array, extra = make_pixels()
-            image = write_file(
-                self.layout, section_id, name, array, source, extra=extra
-            )
+            image = write_file(self.layout, section_id, name, array, source, extra=extra)
         except Exception:
             logger.warning(
                 "section image %s of %s could not be made from its recipe",
@@ -390,18 +388,14 @@ def _section_3_to_4(
     for name in names:
         if workspace is None:
             break
-        entry = _image_3_to_4(
-            section_id, name, recipes.get(name), images, folder, workspace
-        )
+        entry = _image_3_to_4(section_id, name, recipes.get(name), images, folder, workspace)
         if entry is not None:
             images[name] = entry
 
     section = to_jsonable(row)
     masks = row.get("masks")
     if isinstance(masks, Mapping):
-        section["masks"] = {
-            name: _mask_3_to_4(entry) for name, entry in masks.items()
-        }
+        section["masks"] = {name: _mask_3_to_4(entry) for name, entry in masks.items()}
     if images:
         section["images"] = images
     return section
@@ -434,9 +428,7 @@ def _image_3_to_4(
         return folder.section_image(section_id, name, source, pixels)
 
     try:
-        recipe = _recipe_3_to_4(
-            as_object(name, old), raw_names(workspace, section_id)
-        )
+        recipe = _recipe_3_to_4(as_object(name, old), raw_names(workspace, section_id))
     except (ValueError, OSError):
         logger.warning(
             "recipe %s of %s cannot be read; left out",
@@ -450,9 +442,7 @@ def _image_3_to_4(
     return folder.section_image(section_id, name, source, pixels)
 
 
-def _opening_pixels(
-    workspace: Workspace, section_id: str
-) -> tuple[np.ndarray, JsonObject]:
+def _opening_pixels(workspace: Workspace, section_id: str) -> tuple[np.ndarray, JsonObject]:
     """Return the opening image's pixels; its entry records nothing else."""
     array = np.asarray(opening_render(workspace, section_id), dtype=np.uint8)
     return array, {}
@@ -468,10 +458,7 @@ def _recipe_pixels(
 
     The recipe may read the section images made before it (*made*).
     """
-    images = {
-        name: image_from_json(as_object(name, entry))
-        for name, entry in made.items()
-    }
+    images = {name: image_from_json(as_object(name, entry)) for name, entry in made.items()}
     array, weights_used = make(workspace, section_id, images, recipe)
     if isinstance(recipe["weights"], Mapping):
         return array, {}
@@ -497,8 +484,7 @@ def _recipe_3_to_4(old: JsonObject, raw: Sequence[str]) -> JsonObject:
     weights: dict[str, float] | None = None
     if old.get("weights"):
         weights = {
-            name: as_number(name, value)
-            for name, value in object_at(old, "weights").items()
+            name: as_number(name, value) for name, value in object_at(old, "weights").items()
         }
     elif old.get("channel_weights"):
         values = numbers_at(old, "channel_weights")[: len(raw)]
@@ -597,9 +583,7 @@ def drop_removed_keys(data: JsonObject) -> Dropped:
 
     fields = {k: v for k, v in data.items() if k not in REMOVED_STACK_KEYS}
     if "slices" in fields:
-        fields["slices"] = [
-            _without(row, REMOVED_SECTION_KEYS) for row in rows
-        ]
+        fields["slices"] = [_without(row, REMOVED_SECTION_KEYS) for row in rows]
     return Dropped(fields=fields, counts=counts)
 
 
@@ -680,8 +664,7 @@ def _warn_dropped_key(name: str, count: int) -> None:
     if name.startswith("slices."):
         where = f"{count} section(s)"
     logger.warning(
-        "The job's state holds %r (in %s), which this LangSlice no longer "
-        "reads; it is dropped.",
+        "The job's state holds %r (in %s), which this LangSlice no longer reads; it is dropped.",
         name.removeprefix("slices."),
         where,
     )
@@ -757,9 +740,7 @@ def lines_from_registration_list(text: str) -> list[Fields]:
             continue
         if fields is None or not isinstance(fields.get("id"), int):
             continue
-        converted: Fields = {
-            key: to_jsonable(fields.get(key)) for key in _LISTED_ROW_KEYS
-        }
+        converted: Fields = {key: to_jsonable(fields.get(key)) for key in _LISTED_ROW_KEYS}
         converted.update(
             {
                 "seq": len(lines) + 1,

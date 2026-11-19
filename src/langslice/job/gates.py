@@ -25,11 +25,7 @@ def _gate(code: RefusalCode, message: str, **facts: object) -> Refused:
 def missing_positions(state: Stack) -> Refused | None:
     """``None`` when every section's position was supplied or written, else
     the refusal naming the sections still at their initial position."""
-    missing = [
-        record.id
-        for record in state.in_order()
-        if record.position_source == INITIAL
-    ]
+    missing = [record.id for record in state.in_order() if record.position_source == INITIAL]
     if not missing:
         return None
     return _gate(
@@ -46,12 +42,9 @@ def strict_interval_error(state: Stack, breaks: list[int]) -> Refused | None:
     if breaks:
         return _gate(
             RefusalCode.STRICT_INTERVAL,
-            "strict_interval is on: interval_breaks must be empty, "
-            f"{len(breaks)} were reported.",
+            f"strict_interval is on: interval_breaks must be empty, {len(breaks)} were reported.",
             reported_breaks=[
-                record.id
-                for record in state.in_order()
-                if record.index_corrected in set(breaks)
+                record.id for record in state.in_order() if record.index_corrected in set(breaks)
             ],
         )
     interval = float(state.interval_mm or 0.0)
@@ -94,8 +87,7 @@ def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
         return None
     ordered = state.in_order()
     deltas = [
-        abs(b.position_mm - a.position_mm)
-        for a, b in zip(ordered, ordered[1:], strict=False)
+        abs(b.position_mm - a.position_mm) for a, b in zip(ordered, ordered[1:], strict=False)
     ]
     if not deltas:
         return None
@@ -111,11 +103,7 @@ def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
         if position is None or position == 0:
             failures.append(
                 {
-                    **(
-                        {"id": ordered[position].id}
-                        if position is not None
-                        else {}
-                    ),
+                    **({"id": ordered[position].id} if position is not None else {}),
                     "error": RefusalCode.NOT_A_GAP,
                     "reason": (
                         "no section comes before it in the stack's order; a break "
@@ -151,9 +139,7 @@ def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
 
 def missing_transforms(state: Stack) -> Refused | None:
     """``None`` when every section carries a transform, else the refusal."""
-    missing = [
-        record.id for record in state.in_order() if record.transform is None
-    ]
+    missing = [record.id for record in state.in_order() if record.transform is None]
     if not missing:
         return None
     return _gate(
@@ -216,9 +202,7 @@ def submit_errors(
             return refusal
     if spec.has("nonlinear") and spec.nonlinear.require_deformation:
         frozen = {
-            record.id
-            for record in state.slices
-            if "deformation" in spec.frozen_for(record.id)
+            record.id for record in state.slices if "deformation" in spec.frozen_for(record.id)
         }
         return missing_deformations(state, frozen)
     return None

@@ -41,15 +41,22 @@ if TYPE_CHECKING:
 OPENAI_OAUTH_AGENT_MODELS: tuple[str, ...] = tuple(
     f"openai-oauth/{name}"
     for name in (
-        "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
-        "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
     )
 )
 OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-6.1-sol"
 OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare")
 OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_IMAGE_MODELS[0]
 GEMINI_IMAGE_MODELS: tuple[str, ...] = (
-    "gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image",
+    "gemini-3.1-flash-image",
+    "gemini-3.1-flash-lite-image",
+    "gemini-3-pro-image",
 )
 GEMINI_DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
 
@@ -59,8 +66,11 @@ def openai_oauth_credentials_path() -> Path:
     600): ``LANGSLICE_OPENAI_AUTH`` when set (another account for one
     process), else ``~/.langslice/openai_auth.json``. Read at call time."""
     override = os.environ.get("LANGSLICE_OPENAI_AUTH", "").strip()
-    return Path(override).expanduser() if override else (
-        Path.home() / ".langslice" / "openai_auth.json")
+    return (
+        Path(override).expanduser()
+        if override
+        else (Path.home() / ".langslice" / "openai_auth.json")
+    )
 
 
 def default_image_model(provider: str) -> str | None:
@@ -85,8 +95,10 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
     if canonical == "none":
         raise ValueError("The image correction tool requires an image-model provider")
     if canonical == CUSTOM_PROVIDER:
-        raise ValueError("This job's image model is the caller's own (provider 'custom'): "
-                         "hand it to the library, langslice.open_job(..., image_model=...)")
+        raise ValueError(
+            "This job's image model is the caller's own (provider 'custom'): "
+            "hand it to the library, langslice.open_job(..., image_model=...)"
+        )
     if canonical not in CANONICAL_PROVIDERS:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -98,6 +110,7 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
         return generate_warped_segmentation_image(request)
 
     return ImageModel(provider=canonical, model=model or default_image_model(canonical), call=call)
+
 
 __all__ = [
     "CANONICAL_PROVIDERS",

@@ -31,9 +31,7 @@ SEE_PROPOSAL = (
     "To see the stack at its current positions, use the positioning view of "
     "look; view true here draws the proposal."
 )
-SEE_WRITTEN = (
-    "The positioning view of look shows the sections at these positions."
-)
+SEE_WRITTEN = "The positioning view of look shows the sections at these positions."
 IDENTITY = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
 COLUMNS = (
     "section",
@@ -177,9 +175,7 @@ def rounded(value: float | None, digits: int) -> float | None:
     return None if value is None else round(float(value), digits) + 0.0
 
 
-def answered(
-    answer: Answer, pictures: list[Image.Image], *, view_sentence: bool
-) -> ToolResult:
+def answered(answer: Answer, pictures: list[Image.Image], *, view_sentence: bool) -> ToolResult:
     """Word a call's reply.
 
     Parameters
@@ -233,10 +229,7 @@ def _stack(answer: Answer) -> _Stack:
         yaw_deg=_Angle(now=now_yaw, proposed=yaw),
         angles=answer.angles,
         spacing=_spacing(answer),
-        bad_sections=[
-            _Bad(id=section, why=why)
-            for section, why in answer.facts.bad.items()
-        ],
+        bad_sections=[_Bad(id=section, why=why) for section, why in answer.facts.bad.items()],
     )
 
 

@@ -412,18 +412,14 @@ def refine(
     while len(current.points_px) < budget and np.max(error) > tolerance_mm:
         count = min(BATCH, budget - len(current.points_px))
         order = np.argsort(-error, kind="stable")
-        batch = _batch(
-            candidates, order, blocked, current.points_px, spacing, count
-        )
+        batch = _batch(candidates, order, blocked, current.points_px, spacing, count)
         if len(batch) == 0:
             break
         rounds += 1
 
         added = pairs_at(exact, candidates[batch])
         stretch = search.stretch[search.in_region][batch]
-        nearby = _near(
-            checked.points_px, added.points_px, NEAR_GAPS * spacing.min_gap_px
-        )
+        nearby = _near(checked.points_px, added.points_px, NEAR_GAPS * spacing.min_gap_px)
         tested = checked.subset(nearby | watched)
         grown = _grow(current, added, stretch, exact, tested, spacing)
         block_px = BLOCK_GAPS * spacing.min_gap_px
@@ -492,9 +488,7 @@ def _grow(
     return _Grown(pairs=current, kernel=None, dropped_px=added.points_px)
 
 
-def _around(
-    points_px: FloatArray, stretch: FloatArray, gap_px: float
-) -> FloatArray:
+def _around(points_px: FloatArray, stretch: FloatArray, gap_px: float) -> FloatArray:
     """Lay a fine square lattice around each point.
 
     Each spans :data:`LOCAL_SPAN` gaps either side, with
@@ -648,9 +642,7 @@ def _atlas_error(kernel: ThinPlateKernel, search: Samples) -> FloatArray:
     estimate = kernel.forward(search.target_mm[inside])
     section = estimate - search.source_mm[inside]
     stretch = search.stretch[inside]
-    atlas = (
-        stretch[:, :, 0] * section[:, :1] + stretch[:, :, 1] * section[:, 1:]
-    )
+    atlas = stretch[:, :, 0] * section[:, :1] + stretch[:, :, 1] * section[:, 1:]
     return _lengths(atlas)
 
 

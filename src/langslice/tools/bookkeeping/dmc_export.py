@@ -151,10 +151,7 @@ def export_dmc_brainmap(
     channel_folder = folder / "sharpy_track" / channel
 
     logger.info("Writing %d sections for DMC-BrainMap", len(state.slices))
-    rows = [
-        _row(state, workspace, section, frame, section_image)
-        for section in state.in_order()
-    ]
+    rows = [_row(state, workspace, section, frame, section_image) for section in state.in_order()]
     written = [row.filename for row in rows if row.image is not None]
     names = sorted(written, key=natural_key)
 
@@ -246,9 +243,7 @@ def _row(
     except (OSError, ValueError) as error:
         reason = f"image not written: {error}"
         return _Row(section.id, filename, None, None, reason)
-    resized = Image.fromarray(plane).resize(
-        (frame.x.size, frame.y.size), Image.Resampling.BILINEAR
-    )
+    resized = Image.fromarray(plane).resize((frame.x.size, frame.y.size), Image.Resampling.BILINEAR)
     image = np.asarray(resized, dtype=np.uint8)
 
     problem = placement_problem(state, section)
@@ -256,9 +251,7 @@ def _row(
         return _Row(section.id, filename, image, None, problem)
     try:
         linear = section_frame(state, workspace, section)
-        placement = dmc_placement(
-            linear.pixel_to_atlas_um(), linear.file_size, frame
-        )
+        placement = dmc_placement(linear.pixel_to_atlas_um(), linear.file_size, frame)
     except (OSError, ValueError) as error:
         return _Row(section.id, filename, image, None, str(error))
     return _Row(section.id, filename, image, placement, None)
@@ -274,9 +267,7 @@ def _remove_stale_images(channel_folder: Path, names: set[str]) -> None:
             path.unlink()
 
 
-def _write_registration(
-    path: Path, rows: list[_Row], names: list[str]
-) -> None:
+def _write_registration(path: Path, rows: list[_Row], names: list[str]) -> None:
     """Write SHARPy-track's ``registration.json``.
 
     Every image is named, and each placed section has its plane and pairs,
@@ -305,9 +296,7 @@ def _write_registration(
     write_json_atomic(str(path), document, indent=None)
 
 
-def _write_params(
-    path: Path, frame: DmcFrame, animal: str, channel: str
-) -> None:
+def _write_params(path: Path, frame: DmcFrame, animal: str, channel: str) -> None:
     """Write DMC's ``params.json``: the animal, channel and atlas frame."""
     xyz = {
         key: [axis.name, axis.size, axis.resolution_um]
@@ -325,9 +314,7 @@ def _write_params(
     write_json_atomic(str(path), document)
 
 
-def _write_record(
-    path: Path, job: Job, result: DmcExported, rows: list[_Row]
-) -> None:
+def _write_record(path: Path, job: Job, result: DmcExported, rows: list[_Row]) -> None:
     """Write ``langslice_export.json``: what the export holds and left out."""
     sections = [
         {
@@ -348,8 +335,7 @@ def _write_record(
         "section_image": result.section_image,
         "sections": sections,
         "not_registered": [
-            {"section": skip.section, "reason": skip.reason}
-            for skip in result.skipped
+            {"section": skip.section, "reason": skip.reason} for skip in result.skipped
         ],
     }
     write_json_atomic(str(path), document)

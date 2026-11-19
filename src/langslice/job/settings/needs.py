@@ -60,8 +60,9 @@ def is_met(needs: str, off: Collection[str]) -> bool:
     return True
 
 
-def _group(tokens: list[str], index: int, kind: str, off: Collection[str],
-           source: str) -> tuple[str, int]:
+def _group(
+    tokens: list[str], index: int, kind: str, off: Collection[str], source: str
+) -> tuple[str, int]:
     """The group opened by *kind* at *tokens[index]* rendered, and the index
     after its closing mark."""
     branches: list[str] = [""]

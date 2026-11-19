@@ -90,9 +90,7 @@ class Options:
     cache_folder: str = ""
 
     @classmethod
-    def from_configs(
-        cls, configs: Sequence[Mapping[str, ConfigValue]]
-    ) -> Options:
+    def from_configs(cls, configs: Sequence[Mapping[str, ConfigValue]]) -> Options:
         """Read the options a job's ``plugin_config`` gives.
 
         Parameters
@@ -117,8 +115,7 @@ class Options:
         unknown = sorted(set(given) - set(OPTIONS))
         if unknown:
             raise ValueError(
-                f"deepslice_place takes the options {', '.join(OPTIONS)}; "
-                f"got {', '.join(unknown)}"
+                f"deepslice_place takes the options {', '.join(OPTIONS)}; got {', '.join(unknown)}"
             )
         return cls(
             ensemble=bool(given.get("ensemble", cls.ensemble)),
@@ -132,10 +129,14 @@ class Options:
         return Path(self.cache_folder) if self.cache_folder else CACHE_FOLDER
 
 
+EVERY_SECTION: list[str] = []
+FOLDER_ORDER: list[str] = []
+
+
 def deepslice_place(
     *,
-    sections: list[str] = [],  # noqa: B006
-    order: list[str] = [],  # noqa: B006
+    sections: list[str] = EVERY_SECTION,
+    order: list[str] = FOLDER_ORDER,
     bad_sections: list[str] | None = None,
     write: list[str] | None = None,
     view: bool = False,
@@ -304,9 +305,7 @@ def _listed(names: list[str] | None) -> list[str] | None:
     return None if names is None else list(names)
 
 
-def place(
-    context: ToolContext, options: Options, arguments: Arguments
-) -> ToolResult:
+def place(context: ToolContext, options: Options, arguments: Arguments) -> ToolResult:
     """Run DeepSlice on a call's sections and write the parts it asks.
 
     Parameters
@@ -343,8 +342,7 @@ def place(
     weights = engine.fetched_weights(options.weights_folder)
     folder = _call_folder(context)
     images = tuple(
-        (section, _write_png(context, section, folder, options.long_edge))
-        for section in run_ids
+        (section, _write_png(context, section, folder, options.long_edge)) for section in run_ids
     )
     request = EngineRequest(
         images=images,
@@ -393,58 +391,42 @@ def _proposed_order(row: ProposalRow) -> tuple[bool, float, str]:
     return row.position_mm is None, row.position_mm or 0.0, row.id
 
 
-def _run_and_order(
-    context: ToolContext, arguments: Arguments
-) -> tuple[list[str], list[str]]:
+def _run_and_order(context: ToolContext, arguments: Arguments) -> tuple[list[str], list[str]]:
     """Return the section ids run and the cutting order as ids."""
     run = [section.id for section in context.sections()]
     if arguments.sections:
         run = [context.section(name).id for name in arguments.sections]
     if len(set(run)) != len(run):
-        raise ToolError(
-            RefusalCode.BAD_ARGS, "a section is named twice in sections"
-        )
+        raise ToolError(RefusalCode.BAD_ARGS, "a section is named twice in sections")
 
     ordered = [context.section(name).id for name in arguments.order]
     repeated = len(set(ordered)) != len(ordered)
     if ordered and (repeated or set(ordered) != set(run)):
         raise ToolError(
             RefusalCode.BAD_ARGS,
-            "order must list every section run exactly once, anterior "
-            "to posterior",
+            "order must list every section run exactly once, anterior to posterior",
         )
     if ordered and len(run) < 2:
-        raise ToolError(
-            RefusalCode.BAD_ARGS, "order needs at least two sections"
-        )
+        raise ToolError(RefusalCode.BAD_ARGS, "order needs at least two sections")
 
     return run, ordered
 
 
-def _bad_sections(
-    context: ToolContext, run: list[str], names: list[str] | None
-) -> dict[str, str]:
+def _bad_sections(context: ToolContext, run: list[str], names: list[str] | None) -> dict[str, str]:
     """Return the bad sections and why: those named, else the marked."""
     if names is None:
-        bad = {
-            section: MARKED
-            for section in run
-            if context.section(section).damaged_regions
-        }
+        bad = {section: MARKED for section in run if context.section(section).damaged_regions}
     else:
         bad = _named_bad(context, run, names)
     if len(bad) >= len(run):
         raise ToolError(
             RefusalCode.BAD_ARGS,
-            "every section is a bad section; DeepSlice needs at least "
-            "one section to vote",
+            "every section is a bad section; DeepSlice needs at least one section to vote",
         )
     return bad
 
 
-def _named_bad(
-    context: ToolContext, run: list[str], names: list[str]
-) -> dict[str, str]:
+def _named_bad(context: ToolContext, run: list[str], names: list[str]) -> dict[str, str]:
     """Return the bad sections a call names, each run."""
     named = [context.section(name).id for name in names]
     outside = [section for section in named if section not in run]
@@ -475,8 +457,7 @@ def _asked(
         takes = " and ".join(repr(str(part)) for part in available)
         raise ToolError(
             RefusalCode.BAD_ARGS,
-            f"write takes {takes} (a list; empty writes nothing); "
-            f"got {unknown}",
+            f"write takes {takes} (a list; empty writes nothing); got {unknown}",
         )
     parts = [part for part in available if part in write]
     return PartChoice(available=available, parts=parts, propose_only=not write)
@@ -536,19 +517,13 @@ def _call_folder(context: ToolContext) -> Path:
     """Make the call's folder, the next ``calls/<n>`` of the tool's own."""
     calls = context.work_dir() / "calls"
     calls.mkdir(parents=True, exist_ok=True)
-    numbers = [
-        int(path.name)
-        for path in calls.iterdir()
-        if path.is_dir() and path.name.isdigit()
-    ]
+    numbers = [int(path.name) for path in calls.iterdir() if path.is_dir() and path.name.isdigit()]
     folder = calls / f"{max(numbers, default=0) + 1:04d}"
     folder.mkdir()
     return folder
 
 
-def _write_png(
-    context: ToolContext, section: str, folder: Path, long_edge: int
-) -> Path:
+def _write_png(context: ToolContext, section: str, folder: Path, long_edge: int) -> Path:
     """Write a section as the agent oriented it, its delivered pixels."""
     array = context.section_raster(section, level=long_edge, raw=True).array
     name = section if section.lower().endswith(".png") else f"{section}.png"
@@ -558,9 +533,7 @@ def _write_png(
     return path
 
 
-def _pictures(
-    context: ToolContext, answer: Answer, *, view: bool
-) -> list[Image.Image]:
+def _pictures(context: ToolContext, answer: Answer, *, view: bool) -> list[Image.Image]:
     """Return the positioning pictures, none without ``view``.
 
     The written sections as they now stand; with nothing written, the
@@ -571,15 +544,11 @@ def _pictures(
     if _has_landed(answer.choice, answer.written):
         positions = answer.written.positions
         moved = [row.id for row in answer.rows if row.id in positions]
-        return context.positioning_picture(
-            moved or [row.id for row in answer.rows]
-        )
+        return context.positioning_picture(moved or [row.id for row in answer.rows])
     return _proposal_pictures(context, answer)
 
 
-def _proposal_pictures(
-    context: ToolContext, answer: Answer
-) -> list[Image.Image]:
+def _proposal_pictures(context: ToolContext, answer: Answer) -> list[Image.Image]:
     """Return the positioning pictures of the proposal, not written."""
     proposed = answer.choice.shown
     with_position = AnswerPart.POSITIONS in proposed

@@ -79,20 +79,24 @@ def box_fractions(box: Sequence[float], shown: Sequence[float]) -> tuple[float, 
     try:
         values = [float(v) for v in box]
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_BOX,
-                      "box must be four numbers [x0, y0, x1, y1]") from None
+        raise Refused(RefusalCode.BAD_BOX, "box must be four numbers [x0, y0, x1, y1]") from None
     if len(values) != 4:
-        raise Refused(RefusalCode.BAD_BOX,
-                      "box must be four numbers [x0, y0, x1, y1]")
+        raise Refused(RefusalCode.BAD_BOX, "box must be four numbers [x0, y0, x1, y1]")
     width, height = max(float(shown[0]), 1.0), max(float(shown[1]), 1.0)
     x0, x1 = sorted((values[0], values[2]))
     y0, y1 = sorted((values[1], values[3]))
-    out = (min(max(x0 / width, 0.0), 1.0), min(max(y0 / height, 0.0), 1.0),
-           min(max(x1 / width, 0.0), 1.0), min(max(y1 / height, 0.0), 1.0))
+    out = (
+        min(max(x0 / width, 0.0), 1.0),
+        min(max(y0 / height, 0.0), 1.0),
+        min(max(x1 / width, 0.0), 1.0),
+        min(max(y1 / height, 0.0), 1.0),
+    )
     if (out[2] - out[0]) * width < 2 or (out[3] - out[1]) * height < 2:
-        raise Refused(RefusalCode.EMPTY_BOX,
-                      f"box {values} has no area inside the picture "
-                      f"({int(width)} x {int(height)} px above its caption)")
+        raise Refused(
+            RefusalCode.EMPTY_BOX,
+            f"box {values} has no area inside the picture "
+            f"({int(width)} x {int(height)} px above its caption)",
+        )
     return out
 
 
@@ -101,8 +105,12 @@ def compose(window: Sequence[float], inner: Sequence[float]) -> tuple[float, ...
     of the unzoomed picture; empty: whole) as fractions of the unzoomed
     picture."""
     x0, y0, x1, y1 = window if window else (0.0, 0.0, 1.0, 1.0)
-    return (x0 + inner[0] * (x1 - x0), y0 + inner[1] * (y1 - y0),
-            x0 + inner[2] * (x1 - x0), y0 + inner[3] * (y1 - y0))
+    return (
+        x0 + inner[0] * (x1 - x0),
+        y0 + inner[1] * (y1 - y0),
+        x0 + inner[2] * (x1 - x0),
+        y0 + inner[3] * (y1 - y0),
+    )
 
 
 def _shown(recipe: dict[str, Any] | None, picture: Image.Image | None) -> tuple[float, float]:
@@ -124,13 +132,13 @@ def _image(picture: Image.Image | bytes | str | Path | None) -> Image.Image | No
 
 
 Redrawer = Callable[
-    [dict[str, Json], Sequence[float], Workspace, Stack, "RecordStore | None",
-     int | None],
+    [dict[str, Json], Sequence[float], Workspace, Stack, "RecordStore | None", int | None],
     looks.LookPicture,
 ]
 RENDERERS: dict[str, Redrawer] = {
     looks.RENDERER: lambda recipe, window, ws, state, store, edge: looks.redraw(
-        recipe, window, ws, state, store=store, zoom_edge=edge),
+        recipe, window, ws, state, store=store, zoom_edge=edge
+    ),
 }
 
 STALE_NOTE = "drawn as the stack was then; it has changed since"
@@ -165,21 +173,23 @@ def redraw(
     """
     renderer = (recipe or {}).get("renderer")
     if not isinstance(region, str):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      "region must be one atlas acronym or numeric id.")
+        raise Refused(RefusalCode.BAD_ARGS, "region must be one atlas acronym or numeric id.")
     region = region.strip()
     if region and box:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      "Give either box or region, not both.")
+        raise Refused(RefusalCode.BAD_ARGS, "Give either box or region, not both.")
     window = None
     if region:
-        if (recipe is None or renderer != looks.RENDERER or state is None
-                or (recipe.get("args") or {}).get("mode") != "overlay"):
-            raise Refused(RefusalCode.BAD_REGION_PICTURE,
-                          "region needs an overlay picture; give an "
-                          "overlay's picture number.")
-        recipe, window = looks.overlay_region_window(workspace, state, recipe, region,
-                                                     store=store)
+        if (
+            recipe is None
+            or renderer != looks.RENDERER
+            or state is None
+            or (recipe.get("args") or {}).get("mode") != "overlay"
+        ):
+            raise Refused(
+                RefusalCode.BAD_REGION_PICTURE,
+                "region needs an overlay picture; give an overlay's picture number.",
+            )
+        recipe, window = looks.overlay_region_window(workspace, state, recipe, region, store=store)
     source = _image(picture)
     if recipe is not None and renderer in RENDERERS and state is not None:
         if window is None:
@@ -190,8 +200,14 @@ def redraw(
         except Refused as exc:
             if region or exc.code not in CROPPED_INSTEAD or source is None:
                 raise
-            return _crop(None, box, source, long_edge or picture_edge(workspace), stale=True,
-                         note_text=exc.message)
+            return _crop(
+                None,
+                box,
+                source,
+                long_edge or picture_edge(workspace),
+                stale=True,
+                note_text=exc.message,
+            )
         image, text = drawn.image, drawn.caption
         if drawn.stale:
             image = caption(image, STALE_NOTE)
@@ -203,47 +219,77 @@ def redraw(
         if image is drawn.image:
             annotate(image, recipe=out_recipe, caption=text)
         else:
-            note(image, sections=drawn.sections, mode=drawn.mode, recipe=out_recipe,
-                 caption=text)
-        return Zoomed(image=image, caption=text, recipe=out_recipe, redrawn=True,
-                      stale=drawn.stale, sections=drawn.sections, mode=drawn.mode,
-                      um_per_px=drawn.um_per_px)
+            note(image, sections=drawn.sections, mode=drawn.mode, recipe=out_recipe, caption=text)
+        return Zoomed(
+            image=image,
+            caption=text,
+            recipe=out_recipe,
+            redrawn=True,
+            stale=drawn.stale,
+            sections=drawn.sections,
+            mode=drawn.mode,
+            um_per_px=drawn.um_per_px,
+        )
     if source is None:
-        raise Refused(RefusalCode.NO_PICTURE,
-                      "this picture cannot be redrawn and no saved copy was "
-                      "given to crop")
-    return _crop(recipe, box, source,
-                 long_edge or picture_edge(workspace),
-                 stale=bool(recipe and state and recipe.get("state")
-                            and looks.changed_since(state, recipe["state"])),
-                 note_text=STALE_NOTE)
+        raise Refused(
+            RefusalCode.NO_PICTURE,
+            "this picture cannot be redrawn and no saved copy was given to crop",
+        )
+    return _crop(
+        recipe,
+        box,
+        source,
+        long_edge or picture_edge(workspace),
+        stale=bool(
+            recipe and state and recipe.get("state") and looks.changed_since(state, recipe["state"])
+        ),
+        note_text=STALE_NOTE,
+    )
 
 
 def _crop(
-    recipe: dict[str, Any] | None, box: Sequence[float], source: Image.Image,
-    long_edge: int, *, stale: bool = False, note_text: str = "",
+    recipe: dict[str, Any] | None,
+    box: Sequence[float],
+    source: Image.Image,
+    long_edge: int,
+    *,
+    stale: bool = False,
+    note_text: str = "",
 ) -> Zoomed:
     """*box* cropped from *source* and enlarged towards *long_edge* (at
     most :data:`MAX_CROP_ENLARGE`, never shrunk); *recipe* a ``crop``
     recipe when *source* is the picture an earlier crop was cut from."""
-    parent = ((recipe or {}).get("args", {}).get("box")
-              if (recipe or {}).get("renderer") == CROP_RENDERER else None)
+    parent = (
+        (recipe or {}).get("args", {}).get("box")
+        if (recipe or {}).get("renderer") == CROP_RENDERER
+        else None
+    )
     shown = _shown(recipe, source)
     inner = box_fractions(box, shown)
     if parent:
         px0, py0, px1, py1 = (float(v) for v in parent)
-        on_source = (px0 + inner[0] * (px1 - px0), py0 + inner[1] * (py1 - py0),
-                     px0 + inner[2] * (px1 - px0), py0 + inner[3] * (py1 - py0))
+        on_source = (
+            px0 + inner[0] * (px1 - px0),
+            py0 + inner[1] * (py1 - py0),
+            px0 + inner[2] * (px1 - px0),
+            py0 + inner[3] * (py1 - py0),
+        )
     else:
-        on_source = (inner[0] * shown[0], inner[1] * shown[1],
-                     inner[2] * shown[0], inner[3] * shown[1])
+        on_source = (
+            inner[0] * shown[0],
+            inner[1] * shown[1],
+            inner[2] * shown[0],
+            inner[3] * shown[1],
+        )
     left, top, right, bottom = (round(v) for v in on_source)
     cut = source.crop((left, top, right, bottom))
     target = float(long_edge)
     factor = max(1.0, min(target / max(cut.size), MAX_CROP_ENLARGE))
     if factor > 1.0:
-        cut = cut.resize((max(1, round(cut.width * factor)), max(1, round(cut.height * factor))),
-                         Image.Resampling.LANCZOS)
+        cut = cut.resize(
+            (max(1, round(cut.width * factor)), max(1, round(cut.height * factor))),
+            Image.Resampling.LANCZOS,
+        )
     where = ", ".join(str(round(v)) for v in on_source)
     label = f"crop of an earlier picture, not redrawn: box [{where}]"
     if factor > 1.0:
@@ -251,22 +297,25 @@ def _crop(
     if stale:
         label += f" ({note_text})" if note_text else ""
     image = caption(cut, label)
-    out_recipe = {**{k: v for k, v in (recipe or {}).items() if k not in ("args", "shown")},
-                  "renderer": CROP_RENDERER,
-                  "args": {"box": [round(v, 2) for v in on_source]},
-                  "shown": [cut.width, cut.height]}
-    source_panels = (recipe or {}).get("source_endpoint_panels",
-                                           (recipe or {}).get("endpoint_panels", []))
+    out_recipe = {
+        **{k: v for k, v in (recipe or {}).items() if k not in ("args", "shown")},
+        "renderer": CROP_RENDERER,
+        "args": {"box": [round(v, 2) for v in on_source]},
+        "shown": [cut.width, cut.height],
+    }
+    source_panels = (recipe or {}).get(
+        "source_endpoint_panels", (recipe or {}).get("endpoint_panels", [])
+    )
     out_recipe["source_endpoint_panels"] = copy.deepcopy(source_panels)
     panels = []
-    sx, sy = (right-left)/cut.width, (bottom-top)/cut.height
-    to_source = np.array([[sx, 0, left+(sx-1)/2], [0, sy, top+(sy-1)/2], [0, 0, 1.]])
+    sx, sy = (right - left) / cut.width, (bottom - top) / cut.height
+    to_source = np.array([[sx, 0, left + (sx - 1) / 2], [0, sy, top + (sy - 1) / 2], [0, 0, 1.0]])
     for panel in copy.deepcopy(source_panels):
         x0, y0, x1, y1 = panel["bounds"]
         lower, upper = np.maximum([x0, y0], [left, top]), np.minimum([x1, y1], [right, bottom])
         if np.any(lower >= upper):
             continue
-        panel["bounds"] = [*(lower-[left, top])/[sx, sy], *(upper-[left, top])/[sx, sy]]
+        panel["bounds"] = [*(lower - [left, top]) / [sx, sy], *(upper - [left, top]) / [sx, sy]]
         for key in ("pixel_to_file_fraction", "pixel_to_native", "pixel_to_render"):
             if key in panel:
                 panel[key] = (np.asarray(panel[key]) @ to_source).tolist()
@@ -275,10 +324,16 @@ def _crop(
     if (frame := source_frame(out_recipe)) is not None:
         draw_grid(image, frame)
     note(image, mode="zoom", recipe=out_recipe, caption=label)
-    return Zoomed(image=image, caption=label, recipe=out_recipe, redrawn=False, stale=stale,
-                  mode="zoom")
+    return Zoomed(
+        image=image, caption=label, recipe=out_recipe, redrawn=False, stale=stale, mode="zoom"
+    )
 
 
 __all__ = [
-    "CROP_RENDERER", "RENDERERS", "Zoomed", "box_fractions", "compose", "redraw",
+    "CROP_RENDERER",
+    "RENDERERS",
+    "Zoomed",
+    "box_fractions",
+    "compose",
+    "redraw",
 ]

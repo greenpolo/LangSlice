@@ -54,8 +54,9 @@ DEFAULT_ATLAS_OPACITY = 0.5
 DEFAULT_BORDER_THICKNESS = 1.0
 
 
-def zoom_fractions(zoom: tuple[float, ...] | list[float],
-                   shown: tuple[int, int]) -> tuple[float, ...]:
+def zoom_fractions(
+    zoom: tuple[float, ...] | list[float], shown: tuple[int, int]
+) -> tuple[float, ...]:
     """A pixel zoom as fractions of the content it was read on.
 
     *zoom* is ``[x0, y0, x1, y1]`` in pixels of the picture the call returns
@@ -69,8 +70,12 @@ def zoom_fractions(zoom: tuple[float, ...] | list[float],
     width, height = max(int(shown[0]), 1), max(int(shown[1]), 1)
     x0, x1 = sorted((float(zoom[0]), float(zoom[2])))
     y0, y1 = sorted((float(zoom[1]), float(zoom[3])))
-    return (min(max(x0 / width, 0.0), 1.0), min(max(y0 / height, 0.0), 1.0),
-            min(max(x1 / width, 0.0), 1.0), min(max(y1 / height, 0.0), 1.0))
+    return (
+        min(max(x0 / width, 0.0), 1.0),
+        min(max(y0 / height, 0.0), 1.0),
+        min(max(x1 / width, 0.0), 1.0),
+        min(max(y1 / height, 0.0), 1.0),
+    )
 
 
 @dataclass(frozen=True)
@@ -164,6 +169,7 @@ class DisplayOptions:
             return images[0]
         return " + ".join(f"{kind} {word}" for kind, word, _rgb in channel_colors(images))
 
+
 def available_atlas_channels(ctx: Workspace) -> tuple[str, ...]:
     """The atlas channels of this run's atlas: its images
     (:func:`langslice.core.atlas.images.atlas_images`), then ``borders``."""
@@ -171,16 +177,25 @@ def available_atlas_channels(ctx: Workspace) -> tuple[str, ...]:
 
 
 def default_options(
-    mode: str, *, atlas_channels: tuple[str, ...] | None = None,
+    mode: str,
+    *,
+    atlas_channels: tuple[str, ...] | None = None,
     long_edge: int = PICTURE_EDGES["low"][1],
 ) -> DisplayOptions:
     """The options a picture uses when called with none (internal callers)."""
     rule = MODE_RULES[mode]
     return DisplayOptions(
-        mode=mode, zoom=(), channels=(), image="",
+        mode=mode,
+        zoom=(),
+        channels=(),
+        image="",
         atlas_channels=rule.atlas_default if atlas_channels is None else atlas_channels,
-        atlas_opacity=0.0, regions=(), outlines="all", border_color=AUTO_BORDER_COLOR,
-        border_thickness=DEFAULT_BORDER_THICKNESS, long_edge=long_edge,
+        atlas_opacity=0.0,
+        regions=(),
+        outlines="all",
+        border_color=AUTO_BORDER_COLOR,
+        border_thickness=DEFAULT_BORDER_THICKNESS,
+        long_edge=long_edge,
     )
 
 

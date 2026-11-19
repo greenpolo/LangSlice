@@ -57,7 +57,9 @@ def _mark_last_block(messages: list[Any]) -> list[Any]:
     if isinstance(content, list) and content:
         blocks = [dict(b) if isinstance(b, dict) else b for b in content]
         if isinstance(blocks[-1], dict) and blocks[-1].get("type") not in (
-                "thinking", "redacted_thinking"):
+            "thinking",
+            "redacted_thinking",
+        ):
             blocks[-1] = {**blocks[-1], "cache_control": _EPHEMERAL}
         last["content"] = blocks
     out[-1] = last
@@ -71,23 +73,33 @@ class AnthropicApiLlm(AnthropicLlm):
     reasoning_effort: str | None = None
 
     def _build_anthropic_kwargs(
-        self, llm_request, messages, tools, tool_choice, thinking,
+        self,
+        llm_request,
+        messages,
+        tools,
+        tool_choice,
+        thinking,
     ):
         kwargs = super()._build_anthropic_kwargs(
-            llm_request, messages, tools, tool_choice, thinking)
+            llm_request, messages, tools, tool_choice, thinking
+        )
         effort = self.reasoning_effort
         if effort and "output_config" not in kwargs:
             if effort not in EFFORTS:
                 raise ValueError(
-                    f"Unknown reasoning effort {effort!r} for Claude: use one of {EFFORTS}")
+                    f"Unknown reasoning effort {effort!r} for Claude: use one of {EFFORTS}"
+                )
             kwargs["output_config"] = {"effort": effort}
             if not isinstance(kwargs.get("thinking"), dict):
                 kwargs["thinking"] = {"type": "adaptive"}
             for name in ("temperature", "top_p", "top_k"):
                 kwargs.pop(name, None)
         thinking_param = kwargs.get("thinking")
-        if (isinstance(thinking_param, dict) and thinking_param.get("type") == "adaptive"
-                and "display" not in thinking_param):
+        if (
+            isinstance(thinking_param, dict)
+            and thinking_param.get("type") == "adaptive"
+            and "display" not in thinking_param
+        ):
             kwargs["thinking"] = {**thinking_param, "display": "summarized"}
         system = kwargs.get("system")
         if isinstance(system, str) and system:
@@ -100,10 +112,16 @@ class AnthropicApiLlm(AnthropicLlm):
         import httpx2 as httpx
         from anthropic import AsyncAnthropic
 
-        proxy = next((os.environ[n]
-                      for n in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
-                      if os.environ.get(n)), None)
+        proxy = next(
+            (
+                os.environ[n]
+                for n in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
+                if os.environ.get(n)
+            ),
+            None,
+        )
         options: dict[str, Any] = {"proxy": proxy} if proxy else {}
         http_client = httpx.AsyncClient(
-            trust_env=False, timeout=httpx.Timeout(600.0, connect=15.0), **options)
+            trust_env=False, timeout=httpx.Timeout(600.0, connect=15.0), **options
+        )
         return AsyncAnthropic(api_key=api_key(), max_retries=4, http_client=http_client)

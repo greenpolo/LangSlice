@@ -54,14 +54,22 @@ class LiveEvents:
 
     def start(self, agent: Any, seed: Any) -> None:
         instruction = getattr(agent, "instruction", "")
-        self.emit("session", model=_model_name(getattr(agent, "model", "")),
-                  text=instruction if isinstance(instruction, str) else "")
+        self.emit(
+            "session",
+            model=_model_name(getattr(agent, "model", "")),
+            text=instruction if isinstance(instruction, str) else "",
+        )
         parts = getattr(seed, "parts", None) or []
-        self.emit("seed", text="\n".join(
-            part.text for part in parts
-            if isinstance(getattr(part, "text", None), str)
-            and not getattr(part, "thought", False)
-        ), images=_images(parts, label="Agent input"))
+        self.emit(
+            "seed",
+            text="\n".join(
+                part.text
+                for part in parts
+                if isinstance(getattr(part, "text", None), str)
+                and not getattr(part, "thought", False)
+            ),
+            images=_images(parts, label="Agent input"),
+        )
 
     def event(self, event: Any) -> None:
         partial = bool(getattr(event, "partial", False))
@@ -80,7 +88,7 @@ class LiveEvents:
             elif text:
                 previous = self._streamed[kind]
                 if text.startswith(previous):
-                    remaining = text[len(previous):]
+                    remaining = text[len(previous) :]
                     if remaining:
                         self.emit(kind, text=remaining)
                 else:
@@ -91,11 +99,19 @@ class LiveEvents:
         for part in parts:
             call = getattr(part, "function_call", None)
             if call is not None:
-                self.emit("tool_call", name=getattr(call, "name", ""),
-                          id=getattr(call, "id", None), args=plain(getattr(call, "args", {})))
+                self.emit(
+                    "tool_call",
+                    name=getattr(call, "name", ""),
+                    id=getattr(call, "id", None),
+                    args=plain(getattr(call, "args", {})),
+                )
             response = getattr(part, "function_response", None)
             if response is not None:
                 name = getattr(response, "name", "")
-                self.emit("tool_result", name=name, id=getattr(response, "id", None),
-                          response=plain(getattr(response, "response", None)),
-                          images=_images(getattr(response, "parts", None), label=name))
+                self.emit(
+                    "tool_result",
+                    name=name,
+                    id=getattr(response, "id", None),
+                    response=plain(getattr(response, "response", None)),
+                    images=_images(getattr(response, "parts", None), label=name),
+                )

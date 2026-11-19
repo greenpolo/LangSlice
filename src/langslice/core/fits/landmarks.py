@@ -149,9 +149,12 @@ def warp_report(state: Stack, section: Section) -> dict[str, Any]:
     if built is None:
         if not pairs:
             return {}
-        return {"built_from": [], "not_applied": pairs,
-                "note": "No landmark warp is applied to this section yet; "
-                        "landmark_triangulation applies the pairs."}
+        return {
+            "built_from": [],
+            "not_applied": pairs,
+            "note": "No landmark warp is applied to this section yet; "
+            "landmark_triangulation applies the pairs.",
+        }
     states = pair_states(state, section)
     new = [i for i in pairs if states[i] == "pending"]
     moved = [i for i in pairs if states[i] == "moved"]
@@ -169,8 +172,7 @@ def warp_report(state: Stack, section: Section) -> dict[str, Any]:
     if new:
         parts.append(f"Added, not in it yet: {', '.join(new)}.")
     if moved:
-        parts.append(f"Moved since, so it still holds their earlier endpoints: "
-                     f"{', '.join(moved)}.")
+        parts.append(f"Moved since, so it still holds their earlier endpoints: {', '.join(moved)}.")
     if stale_ids:
         parts.append(f"Placed against an earlier atlas plane: {', '.join(stale_ids)}.")
     if gone:
@@ -193,12 +195,16 @@ def landmark_counts(state: Stack, section: Section) -> dict[str, Any]:
         return {}
     report = warp_report(state, section)
     matches = bool(report) and "not_applied" not in report
-    return {"total": len(states),
-            "pending": states.count("pending") + states.count("moved"),
-            "stale": states.count("stale"),
-            "warp": "matches the pairs" if matches else
-            "none applied" if applied_pairs(section) is None
-            else "differs from the pairs; run landmark_triangulation again"}
+    return {
+        "total": len(states),
+        "pending": states.count("pending") + states.count("moved"),
+        "stale": states.count("stale"),
+        "warp": "matches the pairs"
+        if matches
+        else "none applied"
+        if applied_pairs(section) is None
+        else "differs from the pairs; run landmark_triangulation again",
+    }
 
 
 def section_panel(
@@ -257,8 +263,15 @@ def section_picture_point(panel: dict[str, Any], fractions: Any, warp: Any = Non
     return transform(np.linalg.inv(panel["pixel_to_render"]), p)
 
 
-def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = False,
-          taken: list[tuple[float, float, float, float]] | None = None) -> None:
+def glyph(
+    image: Image.Image,
+    xy: Any,
+    label: str,
+    role: str,
+    *,
+    old: bool = False,
+    taken: list[tuple[float, float, float, float]] | None = None,
+) -> None:
     """Open-centre circle (section) / diamond (atlas), dual contrast outlines.
 
     *taken* lists the label boxes already drawn on the picture: a label that
@@ -311,7 +324,10 @@ FOLD_COLOUR = "#ff2bd6"
 
 
 def draw_folds(
-    image: Image.Image, panel: dict[str, Any], section: Section, *,
+    image: Image.Image,
+    panel: dict[str, Any],
+    section: Section,
+    *,
     warp: DeformableRecord | None = None,
 ) -> None:
     """Outline the folded triangles of the applied landmark warp, between the
@@ -325,7 +341,8 @@ def draw_folds(
     for ids in triangles:
         points = [
             tuple(float(v) for v in section_picture_point(panel, by_id[i], warp))
-            for i in ids if i in by_id
+            for i in ids
+            if i in by_id
         ]
         if len(points) < 2:
             continue
@@ -358,8 +375,9 @@ def draw_landmarks(
             )
             x0, y0, x1, y1 = panel["bounds"]
             if x0 <= xy[0] < x1 and y0 <= xy[1] < y1:
-                placed.append((role, np.asarray(xy, dtype=float), pair.id,
-                               stale(state, section, pair)))
+                placed.append(
+                    (role, np.asarray(xy, dtype=float), pair.id, stale(state, section, pair))
+                )
     groups: list[list[tuple[str, np.ndarray, str, bool]]] = []
     for item in placed:
         for group in groups:
@@ -375,9 +393,12 @@ def draw_landmarks(
     for group in groups:
         first = group[0]
         label = ", ".join(member[2] for member in group)
-        if any(other[0][0] != first[0] and {m[2] for m in other} == {m[2] for m in group}
-               and any(np.hypot(*(a[1] - b[1])) <= MERGE_PX for a in other for b in group)
-               for other in labelled):
+        if any(
+            other[0][0] != first[0]
+            and {m[2] for m in other} == {m[2] for m in group}
+            and any(np.hypot(*(a[1] - b[1])) <= MERGE_PX for a in other for b in group)
+            for other in labelled
+        ):
             label = ""
         else:
             labelled.append(group)

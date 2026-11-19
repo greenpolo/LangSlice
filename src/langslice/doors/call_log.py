@@ -45,8 +45,9 @@ class HostTrace:
     ``<prefix>_<folder name>_<id>.jsonl``.
     """
 
-    def __init__(self, trace_dir: str | Path, folder: str, *, prefix: str = "mcp",
-                 name: str | None = None) -> None:
+    def __init__(
+        self, trace_dir: str | Path, folder: str, *, prefix: str = "mcp", name: str | None = None
+    ) -> None:
         stem = Path(folder).name or "stack"
         self.path = Path(trace_dir) / (name or f"{prefix}_{stem}_{uuid.uuid4().hex[:8]}.jsonl")
 
@@ -68,8 +69,10 @@ def cli_trace(job_folder: str | Path, trace_dir: str | None) -> HostTrace | None
 
 def log_call(logs_folder: Path, record: dict[str, Any]) -> None:
     """Append one agent-CLI call to ``logs/calls.jsonl`` (never raises)."""
-    _append(Path(logs_folder) / CALLS_FILE,
-            {"at": datetime.now().isoformat(timespec="seconds"), **record})
+    _append(
+        Path(logs_folder) / CALLS_FILE,
+        {"at": datetime.now().isoformat(timespec="seconds"), **record},
+    )
 
 
 def save_reply(logs_folder: Path, verb: str, text: str) -> Path | None:
@@ -104,5 +107,12 @@ def _append(path: Path, record: dict[str, Any]) -> None:
         logger.warning("Could not write a record to %s", path, exc_info=True)
 
 
-__all__ = ["CALLS_FILE", "REPLIES_DIR", "TRACE_DIR_ENV", "HostTrace", "cli_trace", "log_call",
-           "save_reply"]
+__all__ = [
+    "CALLS_FILE",
+    "REPLIES_DIR",
+    "TRACE_DIR_ENV",
+    "HostTrace",
+    "cli_trace",
+    "log_call",
+    "save_reply",
+]

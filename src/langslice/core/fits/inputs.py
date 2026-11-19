@@ -19,13 +19,21 @@ from typing import Any
 NATIVE_BRIGHTNESS = "1st-99th percentile inside the atlas outline to 0-1"
 
 
-def mask_block(name: str = "none", kind: str | None = None, stale: bool = False,
-               earlier_registration: bool = False) -> dict[str, Any]:
+def mask_block(
+    name: str = "none",
+    kind: str | None = None,
+    stale: bool = False,
+    earlier_registration: bool = False,
+) -> dict[str, Any]:
     """The mask entry of ``inputs``, one shape whether a mask was used or not: ``name``
     (``"none"`` when the fit read no section mask), ``kind`` (``em`` / ``fit``, null for
     none), ``stale`` and ``earlier_registration``."""
-    return {"name": name, "kind": kind, "stale": bool(stale),
-            "earlier_registration": bool(earlier_registration)}
+    return {
+        "name": name,
+        "kind": kind,
+        "stale": bool(stale),
+        "earlier_registration": bool(earlier_registration),
+    }
 
 
 def damage_block(regions: list[str] | tuple[str, ...], margin_mm: float) -> dict[str, Any]:
@@ -50,10 +58,12 @@ class InputsBlock:
     def payload(self) -> dict[str, Any]:
         return {
             "section_image": dict(self.section_image),
-            "atlas_image": self.atlas_image, "atlas_image_resolved": self.atlas_image_resolved,
+            "atlas_image": self.atlas_image,
+            "atlas_image_resolved": self.atlas_image_resolved,
             **({"atlas_image_note": self.atlas_image_note} if self.atlas_image_note else {}),
             "mask": dict(self.mask),
-            "damage": dict(self.damage), "restrict_to": list(self.restrict_to),
+            "damage": dict(self.damage),
+            "restrict_to": list(self.restrict_to),
             "brightness": self.brightness,
         }
 

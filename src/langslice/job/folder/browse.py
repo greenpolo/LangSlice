@@ -63,17 +63,23 @@ def _missing(root: Path, text: str, candidate: Path) -> Refused:
     if root not in nearest.parents and nearest != root:
         nearest = root
     try:
-        names = sorted((p for p in nearest.iterdir() if not is_hidden(root, p)),
-                       key=lambda p: (not p.is_dir(), p.name))
+        names = sorted(
+            (p for p in nearest.iterdir() if not is_hidden(root, p)),
+            key=lambda p: (not p.is_dir(), p.name),
+        )
     except OSError:
         names = []
     holds = [p.name + ("/" if p.is_dir() else "") for p in names[:NEAREST_NAMES]]
     more = max(len(names) - NEAREST_NAMES, 0)
     shown = nearest.relative_to(root).as_posix() or "."
     listed = (", ".join(holds) + (f" and {more} more" if more else "")) if holds else "nothing"
-    return Refused(RefusalCode.NO_SUCH_PATH,
-                   f"'{text}' does not exist in the job folder; the nearest folder above "
-                   f"it that does, '{shown}', holds: {listed}.", nearest=shown, holds=holds)
+    return Refused(
+        RefusalCode.NO_SUCH_PATH,
+        f"'{text}' does not exist in the job folder; the nearest folder above "
+        f"it that does, '{shown}', holds: {listed}.",
+        nearest=shown,
+        holds=holds,
+    )
 
 
 @dataclass(frozen=True)
@@ -110,12 +116,15 @@ def resolve(folder: Path, path: str = ".") -> Path:
     candidate = given if given.is_absolute() else root / given
     resolved = Path(os.path.realpath(candidate))
     if resolved != root and root not in resolved.parents:
-        raise Refused(RefusalCode.BAD_PATH,
-                      f"'{text}' is outside the job folder; only files inside it can be read.")
+        raise Refused(
+            RefusalCode.BAD_PATH,
+            f"'{text}' is outside the job folder; only files inside it can be read.",
+        )
     if is_hidden(root, resolved):
-        raise Refused(RefusalCode.BAD_PATH,
-                      f"'{text}' is in {TRACE_DIR}/, the agent "
-                      "transcripts, which these tools do not open.")
+        raise Refused(
+            RefusalCode.BAD_PATH,
+            f"'{text}' is in {TRACE_DIR}/, the agent transcripts, which these tools do not open.",
+        )
     if not resolved.exists():
         raise _missing(root, text, resolved)
     return resolved
@@ -186,8 +195,9 @@ def _entry(root: Path, path: Path) -> Entry:
     return Entry(Path(os.path.abspath(path)).relative_to(root).as_posix() or ".", kind, size)
 
 
-def list_entries(folder: Path, start: Path, pattern: str = "",
-                 cap: int = LIST_ENTRIES) -> tuple[list[Entry], int]:
+def list_entries(
+    folder: Path, start: Path, pattern: str = "", cap: int = LIST_ENTRIES
+) -> tuple[list[Entry], int]:
     """``(shown, hidden)``: the items under *start* and how many the cap left out.
 
     Without *pattern*, the items directly in *start* (folders first). With one,
@@ -224,8 +234,9 @@ def cut(line: str) -> str:
     return line
 
 
-def search(folder: Path, start: Path, query: str, glob: str = "",
-           cap: int = SEARCH_MATCHES) -> tuple[list[str], int, int]:
+def search(
+    folder: Path, start: Path, query: str, glob: str = "", cap: int = SEARCH_MATCHES
+) -> tuple[list[str], int, int]:
     """``(lines, hidden, files)``: matches as ``path:line: text`` (at most *cap* and
     :data:`TEXT_BYTES`), the matches not shown, and the files searched.
 

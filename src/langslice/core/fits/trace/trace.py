@@ -62,10 +62,14 @@ BORDER_WIDTH_PX = 2.0
 
 INPUT_VERSION = "supplied-2"
 
-_GPT_ATTACHMENTS = (("Image 1: clean photograph", "original"),
-                    ("Image 2: placed borders", "rough_overlay"))
-_GEMINI_ATTACHMENTS = (("Image 1: placed borders", "rough_overlay"),
-                       ("Image 2: clean photograph", "original"))
+_GPT_ATTACHMENTS = (
+    ("Image 1: clean photograph", "original"),
+    ("Image 2: placed borders", "rough_overlay"),
+)
+_GEMINI_ATTACHMENTS = (
+    ("Image 1: placed borders", "rough_overlay"),
+    ("Image 2: clean photograph", "original"),
+)
 
 
 PLANE_PLACEHOLDER = "{plane}"
@@ -147,22 +151,23 @@ def _saved_result(result_path: Path) -> dict[str, Any] | None:
     except (OSError, ValueError) as exc:
         saved, problem = None, str(exc)
     if not isinstance(saved, dict):
-        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR,
-                      f"The saved image reply {result_path} cannot be read "
-                      f"({problem}); nothing was started. The file is "
-                      "damaged: tell the user.")
+        raise Refused(
+            RefusalCode.BORDER_TRACE_IO_ERROR,
+            f"The saved image reply {result_path} cannot be read "
+            f"({problem}); nothing was started. The file is "
+            "damaged: tell the user.",
+        )
     result = cast("dict[str, Any]", saved)
     call_directory = result_path.parent
     directory = result.get("artifact_dir")
     if isinstance(directory, str):
-        result["artifact_dir"] = _path_in_call(
-            directory, call_directory, levels=1)
+        result["artifact_dir"] = _path_in_call(directory, call_directory, levels=1)
     paths = result.get("artifact_paths")
     if isinstance(paths, dict):
         named = cast("dict[str, str]", paths)
         result["artifact_paths"] = {
-            key: _path_in_call(path, call_directory, levels=2)
-            for key, path in named.items()}
+            key: _path_in_call(path, call_directory, levels=2) for key, path in named.items()
+        }
     return result
 
 
@@ -187,7 +192,9 @@ CLAIM_WAIT_S = 1.0
 
 
 def _open_attempt(
-    call_directory: Path, section_id: str, fingerprint: str,
+    call_directory: Path,
+    section_id: str,
+    fingerprint: str,
 ) -> tuple[FileLock, Path, int] | dict[str, Any]:
     """``(claim, attempt directory, attempt)`` for a new attempt under a call
     key, the result an attempt that held the claim meanwhile saved, or
@@ -199,8 +206,7 @@ def _open_attempt(
     recorded transport failure.
     """
     call_directory.mkdir(parents=True, exist_ok=True)
-    claim = FileLock(str(call_directory / _CLAIM), timeout=CLAIM_WAIT_S,
-                     thread_local=False)
+    claim = FileLock(str(call_directory / _CLAIM), timeout=CLAIM_WAIT_S, thread_local=False)
     try:
         retried(claim.acquire)
     except Timeout:
@@ -210,7 +216,8 @@ def _open_attempt(
             "choice is still running in another process (its folder is "
             "artifact_dir); no new call was made. Its reply is saved there "
             "when it lands: trace the section again then.",
-            id=section_id, geometry_fingerprint=fingerprint,
+            id=section_id,
+            geometry_fingerprint=fingerprint,
             artifact_dir=str(call_directory),
         ).payload()
     try:
@@ -232,7 +239,9 @@ def _open_attempt(
 
 
 def _finish_attempt(
-    directory: Path, result_path: Path, claim: FileLock,
+    directory: Path,
+    result_path: Path,
+    claim: FileLock,
     result: dict[str, Any],
 ) -> dict[str, Any]:
     """Save an attempt's outcome (its own and the call key's) and release the key."""
@@ -241,8 +250,9 @@ def _finish_attempt(
     stored = {
         **result,
         "artifact_dir": _relative_in_call(str(directory), call_directory),
-        "artifact_paths": {key: _relative_in_call(path, call_directory)
-                           for key, path in paths.items()},
+        "artifact_paths": {
+            key: _relative_in_call(path, call_directory) for key, path in paths.items()
+        },
     }
     _write_json(directory / "result.json", stored)
     _write_json(result_path, stored)
@@ -267,14 +277,18 @@ def footprint(labels: np.ndarray, atlas_to_render: np.ndarray) -> np.ndarray:
     if not contours:
         return np.zeros((0, 2))
     centres = np.concatenate([c.reshape(-1, 2) for c in contours]).astype(np.float64)
-    corners = (centres[:, None, :] + np.array([[-0.5, -0.5], [0.5, -0.5],
-                                               [-0.5, 0.5], [0.5, 0.5]])).reshape(-1, 2)
+    corners = (
+        centres[:, None, :] + np.array([[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]])
+    ).reshape(-1, 2)
     matrix = np.asarray(atlas_to_render, dtype=np.float64)
     return corners @ matrix[:2, :2].T + matrix[:2, 2]
 
 
 def _canvas_and_placement(
-    prepared: LinearRegistrationInput, ctx: Workspace, provider: str, model: str | None,
+    prepared: LinearRegistrationInput,
+    ctx: Workspace,
+    provider: str,
+    model: str | None,
 ) -> tuple[Image.Image, np.ndarray, np.ndarray, Upright, np.ndarray]:
     """``(canvas, labels, atlas_to_canvas, stance, render_to_canvas)``: the
     model-facing canvas of the section render, turned upright
@@ -287,21 +301,39 @@ def _canvas_and_placement(
     pixel centres to canvas pixel centres, the turn and crop included; what
     ``fit_deformable`` maps the traced lines back through,
     ``core.fits.deformation.traced_lines``)."""
-    stance = upright(ctx.atlas, prepared.plane, prepared.position_mm, prepared.pitch_deg,
-                     prepared.yaw_deg, prepared.atlas_to_slice)
-    labels = np.asarray(annotation_slice(
-        ctx.atlas, prepared.position_mm, plane=prepared.plane,
-        pitch_deg=prepared.pitch_deg, yaw_deg=prepared.yaw_deg,
-    ))
+    stance = upright(
+        ctx.atlas,
+        prepared.plane,
+        prepared.position_mm,
+        prepared.pitch_deg,
+        prepared.yaw_deg,
+        prepared.atlas_to_slice,
+    )
+    labels = np.asarray(
+        annotation_slice(
+            ctx.atlas,
+            prepared.position_mm,
+            plane=prepared.plane,
+            pitch_deg=prepared.pitch_deg,
+            yaw_deg=prepared.yaw_deg,
+        )
+    )
     if labels.ndim != 2 or not np.issubdtype(labels.dtype, np.integer):
         raise ValueError("Atlas annotation must be a two-dimensional integer label map")
     canvas, render_to_canvas = prepare_canvas(
-        prepared.image, provider=provider, image_model=model, upright=stance,
-        footprint=footprint(labels, prepared.atlas_to_slice))
+        prepared.image,
+        provider=provider,
+        image_model=model,
+        upright=stance,
+        footprint=footprint(labels, prepared.atlas_to_slice),
+    )
     placement = render_to_canvas @ prepared.atlas_to_slice
     placed = cv2.warpAffine(
-        labels.astype(np.float64), placement[:2], canvas.size,
-        flags=cv2.INTER_NEAREST, borderValue=0,
+        labels.astype(np.float64),
+        placement[:2],
+        canvas.size,
+        flags=cv2.INTER_NEAREST,
+        borderValue=0,
     ).astype(labels.dtype)
     if not placed.any():
         raise ValueError("The supplied linear placement contains no atlas regions on the image")
@@ -309,8 +341,11 @@ def _canvas_and_placement(
 
 
 def shown_labels(
-    atlas: Any, labels: np.ndarray, prepared: LinearRegistrationInput,
-    include: tuple[str, ...] = (), exclude: tuple[str, ...] = (),
+    atlas: Any,
+    labels: np.ndarray,
+    prepared: LinearRegistrationInput,
+    include: tuple[str, ...] = (),
+    exclude: tuple[str, ...] = (),
 ) -> np.ndarray:
     """The region map whose borders the model is shown: every region at
     :data:`~langslice.core.atlas.levels.MODEL_DEPTH`.
@@ -329,11 +364,21 @@ def shown_labels(
     if not include and not exclude:
         return shown
     entries = [*include, *exclude]
-    left = (native_left(atlas, prepared.position_mm, prepared.plane, prepared.pitch_deg,
-                        prepared.yaw_deg, prepared.atlas_to_slice)
-            if has_sides(entries) else None)
-    keep = (regions_mask(atlas, labels, include, left) if include
-            else np.ones(labels.shape, dtype=bool))
+    left = (
+        native_left(
+            atlas,
+            prepared.position_mm,
+            prepared.plane,
+            prepared.pitch_deg,
+            prepared.yaw_deg,
+            prepared.atlas_to_slice,
+        )
+        if has_sides(entries)
+        else None
+    )
+    keep = (
+        regions_mask(atlas, labels, include, left) if include else np.ones(labels.shape, dtype=bool)
+    )
     if exclude:
         keep &= ~regions_mask(atlas, labels, exclude, left)
     if not keep.any():
@@ -341,7 +386,8 @@ def shown_labels(
             RefusalCode.BAD_ARGS,
             "The regions chosen (restrict_to, less the section's marked "
             "damage) leave no atlas region on this section's atlas plane; "
-            "nothing was started. Choose regions the plane shows.")
+            "nothing was started. Choose regions the plane shows.",
+        )
     return np.where(keep, shown, 0).astype(shown.dtype)
 
 
@@ -402,18 +448,23 @@ def start_correction(
     """
     provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      "prompt is text; nothing was started.")
+        raise Refused(RefusalCode.BAD_ARGS, "prompt is text; nothing was started.")
     prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)
     key: dict[str, Any] = {
-        "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
+        "geometry": fingerprint,
+        "provider": provider,
+        "model": model,
+        "inputs": INPUT_VERSION,
     }
     remade = prepared.metadata.get("section_image")
     if remade is not None:
         key["section_image"] = remade
-    regions = {name: list(entries) for name, entries in
-               (("include", include), ("exclude", exclude)) if entries}
+    regions = {
+        name: list(entries)
+        for name, entries in (("include", include), ("exclude", exclude))
+        if entries
+    }
     if regions:
         key["regions"] = regions
     own_prompt = getattr(image_model, "prompt", None)
@@ -424,15 +475,17 @@ def start_correction(
     call_directory = _calls_folder(calls_dir, out, section_id).resolve() / call_key[:24]
     result_path = call_directory / "result.json"
     previous = _saved_result(result_path)
-    if previous is not None and (previous.get("status") == "ok"
-                                 or previous.get("raw_received")):
+    if previous is not None and (previous.get("status") == "ok" or previous.get("raw_received")):
         return {**previous, "cached": True}, None
 
     canvas, labels, placement, stance, render_to_canvas = _canvas_and_placement(
-        prepared, ctx, provider, model)
+        prepared, ctx, provider, model
+    )
     shown = shown_labels(ctx.atlas, labels, prepared, include, exclude)
     rough = smooth_border_overlay(
-        canvas, shown, placement,
+        canvas,
+        shown,
+        placement,
         width_px=BORDER_WIDTH_PX * max(canvas.size) / 1536,
     )
     base_prompt, gpt_twin = profile_prompt(image_model, prepared.plane)
@@ -443,21 +496,40 @@ def start_correction(
     if isinstance(opened, dict):
         return opened, None
     claim, directory, attempt = opened
-    paths = {key: str(directory / filename) for key, filename in {
-        "raw_reply": "raw_reply.png", "prompt": "prompt.txt",
-        "base_prompt": "base_prompt.txt", "prompt_diff": "prompt_diff.txt",
-    }.items()}
+    paths = {
+        key: str(directory / filename)
+        for key, filename in {
+            "raw_reply": "raw_reply.png",
+            "prompt": "prompt.txt",
+            "base_prompt": "base_prompt.txt",
+            "prompt_diff": "prompt_diff.txt",
+        }.items()
+    }
     sent_images = {"original": canvas, "rough_overlay": rough}
-    _save_texts(paths, {"prompt": sent, "base_prompt": base_prompt,
-                        "prompt_diff": prompt_diff(base_prompt, sent) + "\n"})
+    _save_texts(
+        paths,
+        {
+            "prompt": sent,
+            "base_prompt": base_prompt,
+            "prompt_diff": prompt_diff(base_prompt, sent) + "\n",
+        },
+    )
     request = {
-        "id": section_id, "geometry_fingerprint": fingerprint,
+        "id": section_id,
+        "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,
-        "provider": provider, "model": model, **marks, **regions,
-        "linear_handoff": prepared.metadata, "atlas_to_canvas": placement.tolist(),
+        "provider": provider,
+        "model": model,
+        **marks,
+        **regions,
+        "linear_handoff": prepared.metadata,
+        "atlas_to_canvas": placement.tolist(),
         "render_to_canvas": render_to_canvas.tolist(),
-        "upright": {"turn_deg": stance.turn_deg, "midline_centred": stance.through is not None,
-                    "atlas_margin": FOOTPRINT_MARGIN},
+        "upright": {
+            "turn_deg": stance.turn_deg,
+            "midline_centred": stance.through is not None,
+            "atlas_margin": FOOTPRINT_MARGIN,
+        },
         "attachments": [
             {"role": role, "sha256": _png_sha256(sent_images[key])}
             for role, key in (_GPT_ATTACHMENTS if gpt_twin else _GEMINI_ATTACHMENTS)
@@ -465,29 +537,44 @@ def start_correction(
     }
     _write_json(directory / "request.json", request)
     result: dict[str, Any] = {
-        "id": section_id, "geometry_fingerprint": fingerprint,
+        "id": section_id,
+        "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,
-        "provider": provider, "model": model, **marks, **regions,
-        "output_kind": "border_annotation", "fit_performed": False,
-        "artifact_dir": str(directory), "artifact_paths": paths, "cached": False,
-        "attempt": attempt, "raw_received": False,
+        "provider": provider,
+        "model": model,
+        **marks,
+        **regions,
+        "output_kind": "border_annotation",
+        "fit_performed": False,
+        "artifact_dir": str(directory),
+        "artifact_paths": paths,
+        "cached": False,
+        "attempt": attempt,
+        "raw_received": False,
     }
     submitted = {**result, "status": "running"}
 
     def job() -> dict[str, Any]:
         try:
             first, second = (canvas, rough) if gpt_twin else (rough, canvas)
-            generated = image_model.call(BorderTraceRequest(
-                slice_image=first, reference_images=[second], prompt=sent,
-                provider=provider, model=model,
-            ))
+            generated = image_model.call(
+                BorderTraceRequest(
+                    slice_image=first,
+                    reference_images=[second],
+                    prompt=sent,
+                    provider=provider,
+                    model=model,
+                )
+            )
             result["raw_received"] = True
             raw = generated.image.convert("RGB")
             raw.save(paths["raw_reply"])
             mask = extract_thinned_lines(raw, canvas.size)
             Image.fromarray(mask.astype(np.uint8) * 255).save(directory / "extracted_lines.png")
             result.update(
-                status="ok", route=generated.route, raw_size=list(raw.size),
+                status="ok",
+                route=generated.route,
+                raw_size=list(raw.size),
                 model_border_pixels=int(mask.sum()),
             )
         except Exception as exc:
@@ -498,7 +585,9 @@ def start_correction(
 
 
 def reply_on_grid(
-    directory: Path, file_size: tuple[int, int], grid_size: tuple[int, int],
+    directory: Path,
+    file_size: tuple[int, int],
+    grid_size: tuple[int, int],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """One completed trace attempt's reply in the image FILE's frame, on a
     resize of the file to *grid_size* (width, height): ``(borders, reply,
@@ -517,8 +606,7 @@ def reply_on_grid(
 
     directory = Path(directory)
     try:
-        request = json.loads((directory / "request.json").read_text(
-            encoding="utf-8"))
+        request = json.loads((directory / "request.json").read_text(encoding="utf-8"))
         with Image.open(directory / "extracted_lines.png") as opened:
             lines = np.asarray(opened.convert("L"), dtype=np.float32) / 255.0
         with Image.open(directory / "raw_reply.png") as opened:
@@ -528,26 +616,33 @@ def reply_on_grid(
         raise ValueError(f"the trace's files in {directory} cannot be read: {exc}") from exc
     handoff = request["linear_handoff"]
     canvas_size = (int(lines.shape[1]), int(lines.shape[0]))
-    canvas_from_render = (np.asarray(request["atlas_to_canvas"], dtype=np.float64)
-                          @ np.linalg.inv(np.asarray(handoff["atlas_to_slice"],
-                                                     dtype=np.float64)))
+    canvas_from_render = np.asarray(request["atlas_to_canvas"], dtype=np.float64) @ np.linalg.inv(
+        np.asarray(handoff["atlas_to_slice"], dtype=np.float64)
+    )
     rotation = int(handoff["orientation"]["rotation_deg"])
     flip = bool(handoff["orientation"]["flip"])
     render_size = (int(handoff["image_size"][0]), int(handoff["image_size"][1]))
     plain = unturned(render_size, rotation)
-    render_from_file = (orientation_matrix(plain, rotation, flip)
-                        @ pixel_center_map(file_size, plain))
-    canvas_from_grid = (canvas_from_render @ render_from_file
-                        @ pixel_center_map(grid_size, file_size))
+    render_from_file = orientation_matrix(plain, rotation, flip) @ pixel_center_map(
+        file_size, plain
+    )
+    canvas_from_grid = (
+        canvas_from_render @ render_from_file @ pixel_center_map(grid_size, file_size)
+    )
     grid_from_canvas = np.linalg.inv(canvas_from_grid)
     size = (int(grid_size[0]), int(grid_size[1]))
-    warped = cv2.warpAffine(lines, grid_from_canvas[:2], size, flags=cv2.INTER_LINEAR,
-                            borderValue=0)
+    warped = cv2.warpAffine(
+        lines, grid_from_canvas[:2], size, flags=cv2.INTER_LINEAR, borderValue=0
+    )
     from langslice.core.fits.trace.canvas import crop_to_aspect
 
     framed = crop_to_aspect(raw, canvas_size[0] / canvas_size[1])
-    picture = np.asarray(framed.resize(canvas_size, Image.Resampling.LANCZOS)
-                         if framed.size != canvas_size else framed)
-    reply = cv2.warpAffine(picture, grid_from_canvas[:2], size, flags=cv2.INTER_LINEAR,
-                           borderValue=(0, 0, 0))
+    picture = np.asarray(
+        framed.resize(canvas_size, Image.Resampling.LANCZOS)
+        if framed.size != canvas_size
+        else framed
+    )
+    reply = cv2.warpAffine(
+        picture, grid_from_canvas[:2], size, flags=cv2.INTER_LINEAR, borderValue=(0, 0, 0)
+    )
     return warped > 0.05, reply, grid_from_canvas

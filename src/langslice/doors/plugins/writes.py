@@ -56,9 +56,12 @@ class WriteResult:
 
     @classmethod
     def refused(cls, refusal: Refused) -> WriteResult:
-        return cls(ok=False, error=refusal.code, message=str(refusal),
-                   details={key: value for key, value in refusal.facts.items()
-                            if key != "message"})
+        return cls(
+            ok=False,
+            error=refusal.code,
+            message=str(refusal),
+            details={key: value for key, value in refusal.facts.items() if key != "message"},
+        )
 
     def refusal(self, section: str) -> ToolError:
         """Return why *section* was not written, as the error to raise.
@@ -114,22 +117,25 @@ class ContextWrites(ContextProposals):
             with self.writing():
                 live = self._run.state.by_id(record.id) or record
                 given = cast("object", array)
-                return ops_images.add_image(self._run.job, self._run.workspace, live, str(name),
-                                            given, note)
+                return ops_images.add_image(
+                    self._run.job, self._run.workspace, live, str(name), given, note
+                )
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
 
     def _require(self, *properties: str) -> None:
         caller = self._caller
         if caller.kind != "write":
-            raise ToolError(RefusalCode.READ_TOOL_WRITES,
-                            f"{caller.name} is declared a read tool and "
-                            "writes nothing; declare kind='write'")
+            raise ToolError(
+                RefusalCode.READ_TOOL_WRITES,
+                f"{caller.name} is declared a read tool and writes nothing; declare kind='write'",
+            )
         outside = [name for name in properties if name not in caller.writes]
         if outside:
-            raise ToolError(RefusalCode.WRITE_NOT_DECLARED,
-                            f"{caller.name} writes {outside} but "
-                            f"declares writes={list(caller.writes)}")
+            raise ToolError(
+                RefusalCode.WRITE_NOT_DECLARED,
+                f"{caller.name} writes {outside} but declares writes={list(caller.writes)}",
+            )
 
     @contextlib.contextmanager
     def writing(self) -> Iterator[Self]:
@@ -157,8 +163,11 @@ class ContextWrites(ContextProposals):
                 if outermost and job.pushed > mark and job.undo_stack:
                     self._step = (mark, job.pushed, job.undo_stack[-1].step)
 
-    def _stale(self, ids: Sequence[str], expect: Mapping[str, str] | None,
-               ) -> dict[str, dict[str, Any]]:
+    def _stale(
+        self,
+        ids: Sequence[str],
+        expect: Mapping[str, str] | None,
+    ) -> dict[str, dict[str, Any]]:
         """The rows of sections whose inputs differ from *expect*."""
         rows: dict[str, dict[str, Any]] = {}
         for name in ids:
@@ -167,15 +176,20 @@ class ContextWrites(ContextProposals):
             record = self._run.state.by_id(name)
             if record is None:
                 continue
-            now = {section_inputs(self._run.state, record, deformation=flag)
-                   for flag in (False, True)}
+            now = {
+                section_inputs(self._run.state, record, deformation=flag) for flag in (False, True)
+            }
             if expect[name] not in now:
                 rows[name] = stale_refusal().payload(section_id=name)
         return rows
 
-    def set_positions(self, rows: Sequence[Mapping[str, Any]], *,
-                      cutting_angles: Mapping[str, float] | None = None,
-                      expect: Mapping[str, str] | None = None) -> WriteResult:
+    def set_positions(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        cutting_angles: Mapping[str, float] | None = None,
+        expect: Mapping[str, str] | None = None,
+    ) -> WriteResult:
         """Set positions (``rows``: ``{"id", "position_mm"}``; atlas
         millimetres, clamped into the atlas range and reported) and, with
         *cutting_angles* (``{"pitch_deg", "yaw_deg"}``), the stack's angles.
@@ -201,14 +215,17 @@ class ContextWrites(ContextProposals):
                 else:
                     todo.append(row)
             try:
-                done = positions.position_sections(job, workspace, todo, cutting_angles) \
-                    if todo or cutting_angles is not None else None
+                done = (
+                    positions.position_sections(job, workspace, todo, cutting_angles)
+                    if todo or cutting_angles is not None
+                    else None
+                )
             except Refused as refusal:
                 return WriteResult.refused(refusal)
             written = [] if done is None else [name for name, _mm in done.written]
-            for name, mm in ([] if done is None else done.written):
+            for name, mm in [] if done is None else done.written:
                 out[name] = {"id": name, "status": "ok", "position_mm": round(float(mm), 4)}
-            for name, asked, used in ([] if done is None else done.clamped):
+            for name, asked, used in [] if done is None else done.clamped:
                 out[name]["clamped_from_mm"] = round(float(asked), 4)
                 out[name]["position_mm"] = round(float(used), 4)
             cleared = self._cleared()
@@ -235,8 +252,9 @@ class ContextWrites(ContextProposals):
         """Return the refusal of a write row whose ``id`` names no section."""
         return unknown_sections(self._run.state, [ref])
 
-    def set_transforms(self, rows: Sequence[Mapping[str, Any]], *,
-                       expect: Mapping[str, str] | None = None) -> WriteResult:
+    def set_transforms(
+        self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
+    ) -> WriteResult:
         """Set in-plane transforms. A row is ``{"id", "transform": record}``
         (a :class:`TransformProposal`'s ``record``, or :meth:`TransformProposal.row`)
         or ``{"id", "params": [six numbers], "note"?}``. A frozen affine, or
@@ -264,12 +282,11 @@ class ContextWrites(ContextProposals):
                 try:
                     if record is None:
                         if "params" not in row:
-                            raise ToolError(RefusalCode.BAD_ARGS,
-                                            "a row is {id, transform} or "
-                                            "{id, params}")
+                            raise ToolError(
+                                RefusalCode.BAD_ARGS, "a row is {id, transform} or {id, params}"
+                            )
                         note = str(row.get("note") or "")
-                        stored = self.transform_from_params(
-                            name, row["params"], note=note).affine
+                        stored = self.transform_from_params(name, row["params"], note=note).affine
                     else:
                         stored = affine_from_json(cast("JsonObject", record))
                     assert stored is not None
@@ -289,8 +306,9 @@ class ContextWrites(ContextProposals):
             reply.details["deformation_cleared"] = cleared
         return reply
 
-    def set_deformations(self, rows: Sequence[Mapping[str, Any]], *,
-                         expect: Mapping[str, str] | None = None) -> WriteResult:
+    def set_deformations(
+        self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
+    ) -> WriteResult:
         """Set deformations. A row is ``{"id", "map": native_xy, "note"?,
         "meta"?}`` (the full map :meth:`deformation_from_map` takes) or
         ``{"id", "deformation": proposal}`` (:meth:`DeformationProposal.row`).
@@ -326,16 +344,18 @@ class ContextWrites(ContextProposals):
             try:
                 if proposal is None:
                     if "map" not in row:
-                        raise ToolError(RefusalCode.BAD_ARGS,
-                                        "a row is {id, map, note?, meta?} or "
-                                        "{id, deformation}")
+                        raise ToolError(
+                            RefusalCode.BAD_ARGS,
+                            "a row is {id, map, note?, meta?} or {id, deformation}",
+                        )
                     proposal = self.deformation_from_map(
-                        name, row["map"], note=str(row.get("note") or ""),
-                        meta=row.get("meta"))
+                        name, row["map"], note=str(row.get("note") or ""), meta=row.get("meta")
+                    )
                 elif not isinstance(proposal, DeformationProposal) or proposal.id != name:
-                    raise ToolError(RefusalCode.BAD_ARGS,
-                                    "deformation is this section's "
-                                    "DeformationProposal (deformation_from_map)")
+                    raise ToolError(
+                        RefusalCode.BAD_ARGS,
+                        "deformation is this section's DeformationProposal (deformation_from_map)",
+                    )
             except ToolError as exc:
                 out[name] = Refused(exc.code, message=exc.message).payload(section_id=name)
                 continue
@@ -346,14 +366,16 @@ class ContextWrites(ContextProposals):
             stale = self._stale([proposal.id for proposal in proposals], expect)
             out.update(stale)
             done = warps.apply_warps(
-                job, [proposal._warp for proposal in proposals if proposal.id not in stale])
+                job, [proposal._warp for proposal in proposals if proposal.id not in stale]
+            )
             for applied in done.rows:
                 out[applied.id] = _warp_row(applied)
             written = list(done.written)
         return WriteResult(written=written, rows=list(out.values()))
 
-    def mark_damage(self, rows: Sequence[Mapping[str, Any]], *,
-                    expect: Mapping[str, str] | None = None) -> WriteResult:
+    def mark_damage(
+        self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
+    ) -> WriteResult:
         """Mark atlas regions a section has lost (``rows``: ``{"id", "regions",
         "note"?}``; empty regions clear the marks), as ``mark_damage`` does."""
         from langslice.tools.changing import damage
@@ -374,13 +396,24 @@ class ContextWrites(ContextProposals):
                     out.append(stale[name])
                     continue
                 try:
-                    done = damage.mark_damage(job, workspace, name, list(row.get("regions") or ()),
-                                              str(row.get("note") or ""))
+                    done = damage.mark_damage(
+                        job,
+                        workspace,
+                        name,
+                        list(row.get("regions") or ()),
+                        str(row.get("note") or ""),
+                    )
                 except Refused as refusal:
                     out.append(refusal.payload(section_id=name))
                     continue
-                out.append({"id": name, "status": "ok", "regions": list(done.regions),
-                            "written": done.written})
+                out.append(
+                    {
+                        "id": name,
+                        "status": "ok",
+                        "regions": list(done.regions),
+                        "written": done.written,
+                    }
+                )
                 if done.written:
                     written.append(name)
         return WriteResult(written=written, rows=out)
@@ -400,17 +433,27 @@ class ContextWrites(ContextProposals):
         job = self._run.job
         if layer.frame == "oriented":
             held = self._record(section)
-            layer = replace(layer, frame="section_px", raster=unorient_raster(
-                np.asarray(layer.raster), held.rotation_deg, held.flip))
+            layer = replace(
+                layer,
+                frame="section_px",
+                raster=unorient_raster(np.asarray(layer.raster), held.rotation_deg, held.flip),
+            )
         with self.writing():
             record = self._run.state.by_id(record_id)
             assert record is not None
             before = job.snapshot()
-            ref = register_layer(job.layout, record, self._caller.name, self.call, layer,
-                                 persist=job.persist)
+            ref = register_layer(
+                job.layout, record, self._caller.name, self.call, layer, persist=job.persist
+            )
             job.commit(before)
-        return LayerRef(id=ref["id"], section=record.id, name=ref["name"], kind=ref["kind"],
-                        frame=ref["frame"], file=ref["file"])
+        return LayerRef(
+            id=ref["id"],
+            section=record.id,
+            name=ref["name"],
+            kind=ref["kind"],
+            frame=ref["frame"],
+            file=ref["file"],
+        )
 
 
 def _warp_row(applied: WarpApplied) -> Written:

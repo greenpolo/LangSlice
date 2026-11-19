@@ -50,7 +50,8 @@ FAINT_ALPHA = 0.35
 
 
 def composed_native_grid(
-    record: DeformableRecord, supersample: int,
+    record: DeformableRecord,
+    supersample: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Native atlas-plane (x, y) of every supersampled section position, float32.
 
@@ -61,10 +62,20 @@ def composed_native_grid(
     """
     map_x, map_y = supersampled_positions(record.section_size, supersample)
     scale = 1.0 / record.mm_per_px
-    dx = cv2.remap(np.ascontiguousarray(record.field_mm[..., 0], dtype=np.float32),
-                   map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-    dy = cv2.remap(np.ascontiguousarray(record.field_mm[..., 1], dtype=np.float32),
-                   map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    dx = cv2.remap(
+        np.ascontiguousarray(record.field_mm[..., 0], dtype=np.float32),
+        map_x,
+        map_y,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+    dy = cv2.remap(
+        np.ascontiguousarray(record.field_mm[..., 1], dtype=np.float32),
+        map_x,
+        map_y,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
     px = map_x + dx * scale
     py = map_y + dy * scale
     inverse = np.linalg.inv(record.placement.atlas_to_section)
@@ -74,11 +85,18 @@ def composed_native_grid(
 
 
 def warped_border_layers(
-    record: DeformableRecord, atlas: Any, *,
-    highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
-    warped: bool = True, depth: int = OVERLAY_DEPTH,
-    width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
-    native: np.ndarray | None = None, extra_px: float = 0.0,
+    record: DeformableRecord,
+    atlas: Any,
+    *,
+    highlight: Iterable[str | int] = (),
+    marked: Iterable[str | int] = (),
+    warped: bool = True,
+    depth: int = OVERLAY_DEPTH,
+    width_px: float = 2.0,
+    smoothing_px: float = BORDER_SMOOTHING_PX,
+    supersample: int = 3,
+    native: np.ndarray | None = None,
+    extra_px: float = 0.0,
 ) -> dict[str, np.ndarray]:
     """Border coverage in [0, 1] on the section grid, per layer.
 
@@ -98,10 +116,14 @@ def warped_border_layers(
     leaf = native if native is not None else native_labels(atlas, record.placement)
     highlight, marked = list(highlight), list(marked)
     left = placement_left(atlas, record.placement, (*highlight, *marked))
-    flagged = (regions_mask(atlas, leaf, highlight, left) if highlight
-               else np.zeros(leaf.shape, dtype=bool))
-    flagged_marks = (regions_mask(atlas, leaf, marked, left) if marked
-                     else np.zeros(leaf.shape, dtype=bool))
+    flagged = (
+        regions_mask(atlas, leaf, highlight, left)
+        if highlight
+        else np.zeros(leaf.shape, dtype=bool)
+    )
+    flagged_marks = (
+        regions_mask(atlas, leaf, marked, left) if marked else np.zeros(leaf.shape, dtype=bool)
+    )
     big = leaf.astype(np.int64)
     level = labels_at(leaf, atlas, depth).astype(np.int64)
     grouped = np.where(flagged_marks, big * 4 + 3, np.where(flagged, big * 4 + 1, level * 4))
@@ -121,8 +143,9 @@ def warped_border_layers(
     size = (width, height)
     return {
         "faint": stroke_boundaries(edges & ~strong_edges & ~marked_edges, size, s, width_px),
-        "strong": stroke_boundaries(strong_edges, size, s,
-                                    width_px * (HIGHLIGHT_WIDTH if highlight else 1.0)),
+        "strong": stroke_boundaries(
+            strong_edges, size, s, width_px * (HIGHLIGHT_WIDTH if highlight else 1.0)
+        ),
         "marked": stroke_boundaries(marked_edges, size, s, width_px),
     }
 
@@ -130,16 +153,23 @@ def warped_border_layers(
 def _without_field(record: DeformableRecord) -> DeformableRecord:
     from dataclasses import replace
 
-    return replace(
-        record, field_mm=np.zeros_like(record.field_mm), stored_step=None
-    )
+    return replace(record, field_mm=np.zeros_like(record.field_mm), stored_step=None)
 
 
 def _drawn_layers(
-    record: DeformableRecord, atlas: Any, *,
-    highlight: Iterable[str | int], marked: Iterable[str | int], warped: bool, outlines: str,
-    depth: int, width_px: float, smoothing_px: float, supersample: int,
-    native: np.ndarray | None, extra_px: float = 0.0,
+    record: DeformableRecord,
+    atlas: Any,
+    *,
+    highlight: Iterable[str | int],
+    marked: Iterable[str | int],
+    warped: bool,
+    outlines: str,
+    depth: int,
+    width_px: float,
+    smoothing_px: float,
+    supersample: int,
+    native: np.ndarray | None,
+    extra_px: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """``(faint, strong, marked)``: the coverage :func:`draw_warped_borders`
     draws, each layer as the *outlines* choice leaves it."""
@@ -147,8 +177,16 @@ def _drawn_layers(
         raise ValueError("outlines must be all or none")
     highlight = list(highlight)
     layers = warped_border_layers(
-        record, atlas, highlight=highlight, marked=marked, warped=warped, depth=depth,
-        width_px=width_px, smoothing_px=smoothing_px, supersample=supersample, native=native,
+        record,
+        atlas,
+        highlight=highlight,
+        marked=marked,
+        warped=warped,
+        depth=depth,
+        width_px=width_px,
+        smoothing_px=smoothing_px,
+        supersample=supersample,
+        native=native,
         extra_px=extra_px,
     )
     blank = np.zeros_like(layers["faint"])
@@ -162,27 +200,53 @@ def _drawn_layers(
 
 
 def drawn_border_coverage(
-    record: DeformableRecord, atlas: Any, *,
-    highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
-    warped: bool = True, outlines: str = "all", depth: int = OVERLAY_DEPTH,
-    width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
+    record: DeformableRecord,
+    atlas: Any,
+    *,
+    highlight: Iterable[str | int] = (),
+    marked: Iterable[str | int] = (),
+    warped: bool = True,
+    outlines: str = "all",
+    depth: int = OVERLAY_DEPTH,
+    width_px: float = 2.0,
+    smoothing_px: float = BORDER_SMOOTHING_PX,
+    supersample: int = 3,
     native: np.ndarray | None = None,
 ) -> np.ndarray:
     """Every line :func:`draw_warped_borders` draws with these arguments, as
     coverage in [0, 1] at full strength (the faint lines too): a picture's
     borders layer."""
-    layers = _drawn_layers(record, atlas, highlight=highlight, marked=marked, warped=warped,
-                           outlines=outlines, depth=depth, width_px=width_px,
-                           smoothing_px=smoothing_px, supersample=supersample, native=native)
+    layers = _drawn_layers(
+        record,
+        atlas,
+        highlight=highlight,
+        marked=marked,
+        warped=warped,
+        outlines=outlines,
+        depth=depth,
+        width_px=width_px,
+        smoothing_px=smoothing_px,
+        supersample=supersample,
+        native=native,
+    )
     return np.maximum.reduce(layers)
 
 
 def draw_warped_borders(
-    image: Image.Image, record: DeformableRecord, atlas: Any, *,
-    highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
-    warped: bool = True, outlines: str = "all", depth: int = OVERLAY_DEPTH,
-    width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
-    core: str = "black", marked_color: tuple[int, int, int] = MARKED_COLOR,
+    image: Image.Image,
+    record: DeformableRecord,
+    atlas: Any,
+    *,
+    highlight: Iterable[str | int] = (),
+    marked: Iterable[str | int] = (),
+    warped: bool = True,
+    outlines: str = "all",
+    depth: int = OVERLAY_DEPTH,
+    width_px: float = 2.0,
+    smoothing_px: float = BORDER_SMOOTHING_PX,
+    supersample: int = 3,
+    core: str = "black",
+    marked_color: tuple[int, int, int] = MARKED_COLOR,
     native: np.ndarray | None = None,
 ) -> Image.Image:
     """The fitted atlas borders, smooth and antialiased, on the original section.
@@ -198,9 +262,17 @@ def draw_warped_borders(
     """
     from langslice.core.pictures.canvas import CASING_PX, composite_cased
 
-    kwargs = {"highlight": highlight, "marked": marked, "warped": warped, "outlines": outlines,
-              "depth": depth, "width_px": width_px, "smoothing_px": smoothing_px,
-              "supersample": supersample, "native": native}
+    kwargs = {
+        "highlight": highlight,
+        "marked": marked,
+        "warped": warped,
+        "outlines": outlines,
+        "depth": depth,
+        "width_px": width_px,
+        "smoothing_px": smoothing_px,
+        "supersample": supersample,
+        "native": native,
+    }
     faint, strong, marked_lines = _drawn_layers(record, atlas, **kwargs)
     faint_casing, strong_casing, _ = _drawn_layers(record, atlas, extra_px=2 * CASING_PX, **kwargs)
     base = np.asarray(image.convert("RGB"), dtype=np.float32)
@@ -214,7 +286,8 @@ def draw_warped_borders(
 
 
 def resampled_record(
-    record: DeformableRecord, size: tuple[int, int],
+    record: DeformableRecord,
+    size: tuple[int, int],
     box: tuple[int, int, int, int] | None = None,
 ) -> DeformableRecord:
     """The same deformation on a resized (and optionally cropped) section grid.
@@ -229,12 +302,20 @@ def resampled_record(
     from langslice.core.geometry.affine import pixel_center_map
 
     width, height = record.section_size
-    field = np.stack([
-        cv2.resize(np.ascontiguousarray(record.field_mm[..., k], dtype=np.float32), size,
-                   interpolation=cv2.INTER_LINEAR) for k in range(2)
-    ], axis=-1)
-    footprint = cv2.resize(record.footprint.astype(np.uint8), size,
-                           interpolation=cv2.INTER_NEAREST) > 0
+    field = np.stack(
+        [
+            cv2.resize(
+                np.ascontiguousarray(record.field_mm[..., k], dtype=np.float32),
+                size,
+                interpolation=cv2.INTER_LINEAR,
+            )
+            for k in range(2)
+        ],
+        axis=-1,
+    )
+    footprint = (
+        cv2.resize(record.footprint.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
+    )
     matrix = pixel_center_map((width, height), size) @ record.placement.atlas_to_section
     mm = record.mm_per_px * width / float(size[0])
     if box is not None:
@@ -244,9 +325,15 @@ def resampled_record(
         size = (x1 - x0, y1 - y0)
     placement = replace(record.placement, atlas_to_section=matrix, section_mm_per_px=mm)
     return replace(
-        record, placement=placement, section_size=size, field_mm=field,
-        inverse_field_mm=None, labels=np.zeros(footprint.shape, dtype=record.labels.dtype),
-        footprint=footprint, parent=None, stored_step=None,
+        record,
+        placement=placement,
+        section_size=size,
+        field_mm=field,
+        inverse_field_mm=None,
+        labels=np.zeros(footprint.shape, dtype=record.labels.dtype),
+        footprint=footprint,
+        parent=None,
+        stored_step=None,
     )
 
 
@@ -263,13 +350,21 @@ def warp_section_image(image: Image.Image, record: DeformableRecord) -> Image.Im
     inverse, mm = _inverse_pixels(record, (width, height))
     yy, xx = np.indices((height, width), dtype=np.float32)
     pixels = np.asarray(image.convert("RGB"), dtype=np.uint8)
-    out = cv2.remap(pixels, xx + inverse[..., 0] / mm, yy + inverse[..., 1] / mm,
-                    cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    out = cv2.remap(
+        pixels,
+        xx + inverse[..., 0] / mm,
+        yy + inverse[..., 1] / mm,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
     return Image.fromarray(out)
 
 
 def warp_source_points(
-    record: DeformableRecord, size: tuple[int, int], x: np.ndarray, y: np.ndarray,
+    record: DeformableRecord,
+    size: tuple[int, int],
+    x: np.ndarray,
+    y: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """The section points that :func:`warp_section_image` shows at points
     ``(x, y)`` of its result for a render of *size*: ``q + inverse_field(q)``
@@ -278,14 +373,23 @@ def warp_source_points(
     inverse, mm = _inverse_pixels(record, size)
     mx = np.asarray(x, dtype=np.float32)
     my = np.asarray(y, dtype=np.float32)
-    shift = [cv2.remap(np.ascontiguousarray(inverse[..., k]), mx, my, cv2.INTER_LINEAR,
-                       borderMode=cv2.BORDER_REPLICATE) for k in range(2)]
-    return (np.asarray(x, dtype=np.float64) + shift[0] / mm,
-            np.asarray(y, dtype=np.float64) + shift[1] / mm)
+    shift = [
+        cv2.remap(
+            np.ascontiguousarray(inverse[..., k]),
+            mx,
+            my,
+            cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+        for k in range(2)
+    ]
+    return (
+        np.asarray(x, dtype=np.float64) + shift[0] / mm,
+        np.asarray(y, dtype=np.float64) + shift[1] / mm,
+    )
 
 
-def _inverse_pixels(record: DeformableRecord, size: tuple[int, int]
-                    ) -> tuple[np.ndarray, float]:
+def _inverse_pixels(record: DeformableRecord, size: tuple[int, int]) -> tuple[np.ndarray, float]:
     """``(inverse field resized to *size*, mm per pixel of that size)``."""
     if record.inverse_field_mm is None:
         raise ValueError("A record resampled for drawing has no inverse field")
@@ -293,9 +397,16 @@ def _inverse_pixels(record: DeformableRecord, size: tuple[int, int]
     mm = record.mm_per_px * record.section_size[0] / float(width)
 
     def resized(field: np.ndarray) -> np.ndarray:
-        return np.stack([
-            cv2.resize(np.ascontiguousarray(field[..., k], dtype=np.float32), (width, height),
-                       interpolation=cv2.INTER_LINEAR) for k in range(2)
-        ], axis=-1)
+        return np.stack(
+            [
+                cv2.resize(
+                    np.ascontiguousarray(field[..., k], dtype=np.float32),
+                    (width, height),
+                    interpolation=cv2.INTER_LINEAR,
+                )
+                for k in range(2)
+            ],
+            axis=-1,
+        )
 
     return resized(record.inverse_field_mm), mm

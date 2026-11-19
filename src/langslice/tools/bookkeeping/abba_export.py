@@ -184,9 +184,7 @@ def warp_pairs(
     )
 
 
-def _warp_step(
-    section: Section, landmarks: WarpLandmarks
-) -> tuple[AbbaWarp, dict[str, float]]:
+def _warp_step(section: Section, landmarks: WarpLandmarks) -> tuple[AbbaWarp, dict[str, float]]:
     """Make the landmarks a warp step, with its error in micrometres."""
     atlas = landmarks.accuracy.atlas
     error = {
@@ -282,9 +280,7 @@ def _with_warps(prepared: list[_Section], landmarks: int) -> _Warped:
     """Add each deformation's warp step, placed in worker processes."""
     skipped: list[dict[str, str]] = []
     errors: dict[str, dict[str, float]] = {}
-    warped = [
-        (entry, entry.record) for entry in prepared if entry.record is not None
-    ]
+    warped = [(entry, entry.record) for entry in prepared if entry.record is not None]
     futures: dict[str, Future[WarpLandmarks]] = {}
     with ExitStack() as stack:
         if warped:
@@ -292,9 +288,7 @@ def _with_warps(prepared: list[_Section], landmarks: int) -> _Warped:
             workers = max(1, min(MAX_WARP_PROCESSES, cores, len(warped)))
             stack.enter_context(started_with_threads(thread_share(cores)))
             context = multiprocessing.get_context("spawn")
-            pool = stack.enter_context(
-                ProcessPoolExecutor(workers, mp_context=context)
-            )
+            pool = stack.enter_context(ProcessPoolExecutor(workers, mp_context=context))
             for entry, record in warped:
                 futures[entry.section.id] = pool.submit(
                     warp_pairs, entry.frame, record, entry.placement, landmarks
@@ -308,9 +302,7 @@ def _with_warps(prepared: list[_Section], landmarks: int) -> _Warped:
             try:
                 step, error = _warp_step(entry.section, future.result())
             except (OSError, ValueError) as exc:
-                logger.warning(
-                    "No warp for ABBA: %s", entry.section.id, exc_info=True
-                )
+                logger.warning("No warp for ABBA: %s", entry.section.id, exc_info=True)
                 skipped.append({"id": entry.section.id, "reason": str(exc)})
                 continue
             errors[entry.section.id] = error
@@ -374,13 +366,9 @@ def export_abba(
     prepared: list[_Section] = []
     for entry in framed:
         try:
-            prepared.append(
-                _prepare(job, workspace, state, entry, angles, warps)
-            )
+            prepared.append(_prepare(job, workspace, state, entry, angles, warps))
         except (OSError, ValueError) as exc:
-            logger.warning(
-                "Not exported to ABBA: %s", entry[0].id, exc_info=True
-            )
+            logger.warning("Not exported to ABBA: %s", entry[0].id, exc_info=True)
             skipped.append({"id": entry[0].id, "reason": str(exc)})
     warped = _with_warps(prepared, landmarks)
     skipped += warped.skipped

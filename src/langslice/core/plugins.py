@@ -124,26 +124,47 @@ class Layer:
     image: Any = None
 
     @classmethod
-    def points(cls, points: Any, *, labels: Sequence[str] = (),
-                     values: Sequence[float] = (), frame: str = "section_px",
-                     name: str = "") -> Layer:
+    def points(
+        cls,
+        points: Any,
+        *,
+        labels: Sequence[str] = (),
+        values: Sequence[float] = (),
+        frame: str = "section_px",
+        name: str = "",
+    ) -> Layer:
         array = np.asarray(points, dtype=np.float64)
-        layer = cls("points", frame, name=name, xy=array,
-                    tags=tuple(str(item) for item in labels),
-                    values=tuple(float(item) for item in values))
+        layer = cls(
+            "points",
+            frame,
+            name=name,
+            xy=array,
+            tags=tuple(str(item) for item in labels),
+            values=tuple(float(item) for item in values),
+        )
         layer.check()
         return layer
 
     @classmethod
-    def lines(cls, lines: Sequence[Any], *, closed: bool | Sequence[bool] = False,
-                    labels: Sequence[str] = (), frame: str = "section_px",
-                    name: str = "") -> Layer:
-        flags = list(closed) if isinstance(closed, Sequence) and not isinstance(
-            closed, (str, bytes)) else [bool(closed)] * len(lines)
-        made = tuple((np.asarray(line, dtype=np.float64), bool(flag))
-                     for line, flag in zip(lines, flags, strict=True))
-        layer = cls("lines", frame, name=name, paths=made,
-                    tags=tuple(str(item) for item in labels))
+    def lines(
+        cls,
+        lines: Sequence[Any],
+        *,
+        closed: bool | Sequence[bool] = False,
+        labels: Sequence[str] = (),
+        frame: str = "section_px",
+        name: str = "",
+    ) -> Layer:
+        flags = (
+            list(closed)
+            if isinstance(closed, Sequence) and not isinstance(closed, (str, bytes))
+            else [bool(closed)] * len(lines)
+        )
+        made = tuple(
+            (np.asarray(line, dtype=np.float64), bool(flag))
+            for line, flag in zip(lines, flags, strict=True)
+        )
+        layer = cls("lines", frame, name=name, paths=made, tags=tuple(str(item) for item in labels))
         layer.check()
         return layer
 
@@ -155,8 +176,13 @@ class Layer:
 
     @classmethod
     def scalar(cls, raster: Any, *, frame: str, level: float = 0.5, name: str = "") -> Layer:
-        layer = cls("scalar", frame, name=name,
-                    raster=np.asarray(raster, dtype=np.float32), level=float(level))
+        layer = cls(
+            "scalar",
+            frame,
+            name=name,
+            raster=np.asarray(raster, dtype=np.float32),
+            level=float(level),
+        )
         layer.check()
         return layer
 
@@ -169,50 +195,54 @@ class Layer:
     def check(self) -> None:
         """``ToolError`` ``BAD_LAYER`` naming what is wrong."""
         if self.kind not in LAYER_KINDS:
-            raise ToolError(RefusalCode.BAD_LAYER,
-                            f"a layer's kind is one of {', '.join(LAYER_KINDS)}; "
-                            f"got {self.kind!r}")
+            raise ToolError(
+                RefusalCode.BAD_LAYER,
+                f"a layer's kind is one of {', '.join(LAYER_KINDS)}; got {self.kind!r}",
+            )
         if self.frame not in KIND_FRAMES[self.kind]:
-            raise ToolError(RefusalCode.BAD_LAYER,
-                            f"a {self.kind} layer's frame is "
-                            f"{' or '.join(KIND_FRAMES[self.kind])}; got {self.frame!r}")
+            raise ToolError(
+                RefusalCode.BAD_LAYER,
+                f"a {self.kind} layer's frame is "
+                f"{' or '.join(KIND_FRAMES[self.kind])}; got {self.frame!r}",
+            )
         if len(self.name) > MAX_LAYER_NAME:
-            raise ToolError(RefusalCode.BAD_LAYER,
-                            f"a layer's name is at most {MAX_LAYER_NAME} characters")
+            raise ToolError(
+                RefusalCode.BAD_LAYER, f"a layer's name is at most {MAX_LAYER_NAME} characters"
+            )
         width = 2 if self.frame == "section_px" else 3
         if self.kind == "points":
             if self.xy is None or self.xy.ndim != 2 or self.xy.shape[1] != width:
-                raise ToolError(RefusalCode.BAD_LAYER,
-                                f"points in {self.frame} are an (N, {width}) array")
+                raise ToolError(
+                    RefusalCode.BAD_LAYER, f"points in {self.frame} are an (N, {width}) array"
+                )
             if not np.isfinite(self.xy).all():
                 raise ToolError(RefusalCode.BAD_LAYER, "points must be finite")
             if self.tags and len(self.tags) != len(self.xy):
-                raise ToolError(RefusalCode.BAD_LAYER,
-                                "points take one label each, or none")
+                raise ToolError(RefusalCode.BAD_LAYER, "points take one label each, or none")
             if self.values and len(self.values) != len(self.xy):
-                raise ToolError(RefusalCode.BAD_LAYER,
-                                "points take one value each, or none")
+                raise ToolError(RefusalCode.BAD_LAYER, "points take one value each, or none")
         elif self.kind == "lines":
             for coordinates, _closed in self.paths:
-                if coordinates.ndim != 2 or coordinates.shape[1] != width \
-                        or len(coordinates) < 2 or not np.isfinite(coordinates).all():
-                    raise ToolError(RefusalCode.BAD_LAYER,
-                                    f"each line in {self.frame} is a finite "
-                                    f"(M, {width}) array with at least two points")
+                if (
+                    coordinates.ndim != 2
+                    or coordinates.shape[1] != width
+                    or len(coordinates) < 2
+                    or not np.isfinite(coordinates).all()
+                ):
+                    raise ToolError(
+                        RefusalCode.BAD_LAYER,
+                        f"each line in {self.frame} is a finite "
+                        f"(M, {width}) array with at least two points",
+                    )
             if self.tags and len(self.tags) != len(self.paths):
-                raise ToolError(RefusalCode.BAD_LAYER,
-                                "lines take one label each, or none")
+                raise ToolError(RefusalCode.BAD_LAYER, "lines take one label each, or none")
         elif self.kind in ("labels", "scalar"):
             raster = self.raster
             if raster is None or raster.ndim != 2 or raster.size == 0:
-                raise ToolError(RefusalCode.BAD_LAYER,
-                                f"a {self.kind} layer is a 2-D raster")
+                raise ToolError(RefusalCode.BAD_LAYER, f"a {self.kind} layer is a 2-D raster")
             if self.kind == "labels" and not np.issubdtype(raster.dtype, np.integer):
-                raise ToolError(RefusalCode.BAD_LAYER,
-                                "a labels raster holds integers")
+                raise ToolError(RefusalCode.BAD_LAYER, "a labels raster holds integers")
             if self.kind == "labels" and raster.size and int(raster.min()) < 0:
-                raise ToolError(RefusalCode.BAD_LAYER,
-                                "label ids are not negative")
+                raise ToolError(RefusalCode.BAD_LAYER, "label ids are not negative")
         elif self.image is None:
-            raise ToolError(RefusalCode.BAD_LAYER,
-                            "a picture layer holds an image")
+            raise ToolError(RefusalCode.BAD_LAYER, "a picture layer holds an image")

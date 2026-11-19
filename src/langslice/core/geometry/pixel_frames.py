@@ -25,8 +25,9 @@ def cropped_geometry(
     return image
 
 
-def resized_recipe(recipe: dict[str, Any] | None, source: tuple[int, int],
-                   target: tuple[int, int]) -> dict[str, Any] | None:
+def resized_recipe(
+    recipe: dict[str, Any] | None, source: tuple[int, int], target: tuple[int, int]
+) -> dict[str, Any] | None:
     """Saved-picture geometry after a door resizes the entire captioned image.
 
     Look recipes remain redrawable at native detail. Other recipes become
@@ -36,7 +37,7 @@ def resized_recipe(recipe: dict[str, Any] | None, source: tuple[int, int],
         return None
     out = copy.deepcopy(recipe)
     sx, sy = source[0] / target[0], source[1] / target[1]
-    to_source = np.array([[sx, 0, (sx-1)/2], [0, sy, (sy-1)/2], [0, 0, 1.]])
+    to_source = np.array([[sx, 0, (sx - 1) / 2], [0, sy, (sy - 1) / 2], [0, 0, 1.0]])
     for panel in out.get("endpoint_panels", []):
         panel["bounds"] = (np.asarray(panel["bounds"]) / [sx, sy, sx, sy]).tolist()
         for key in (*KEYS, "pixel_to_render"):

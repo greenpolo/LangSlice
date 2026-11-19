@@ -76,9 +76,7 @@ def _write(layout: JobLayout, record: dict[str, Any]) -> None:
 
 def _read(layout: JobLayout, run_id: str) -> dict[str, Any] | None:
     try:
-        data = json.loads(
-            record_path(layout, run_id).read_text(encoding="utf-8")
-        )
+        data = json.loads(record_path(layout, run_id).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
@@ -152,14 +150,10 @@ class Detached:
 
 
 _CREATION_FLAGS = _DETACHED_FLAGS if WINDOWS else 0
-DETACHED = Detached(
-    creationflags=_CREATION_FLAGS, start_new_session=not WINDOWS
-)
+DETACHED = Detached(creationflags=_CREATION_FLAGS, start_new_session=not WINDOWS)
 
 
-def start(
-    layout: JobLayout, verb: str, arguments: dict[str, Any], *, verbose: bool
-) -> str:
+def start(layout: JobLayout, verb: str, arguments: dict[str, Any], *, verbose: bool) -> str:
     """Start *verb* on the job in a detached process; its run id."""
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
     log = runs_dir(layout) / f"{run_id}.log"
@@ -190,7 +184,7 @@ def start(
         subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
-            stdout=out,  # noqa: S603
+            stdout=out,
             stderr=subprocess.STDOUT,
             creationflags=DETACHED.creationflags,
             start_new_session=DETACHED.start_new_session,
@@ -248,9 +242,7 @@ def _interrupt_on_request(path: Path) -> None:
     signal.raise_signal(signal.SIGINT)
 
 
-def finish(
-    layout: JobLayout, run_id: str, envelope: dict[str, Any], exit: int
-) -> None:
+def finish(layout: JobLayout, run_id: str, envelope: dict[str, Any], exit: int) -> None:
     """In the background process: the run's answer."""
     record = _read(layout, run_id) or {"id": run_id}
     _write(
@@ -277,11 +269,7 @@ def read(layout: JobLayout, run_id: str) -> dict[str, Any] | None:
         return record
     if not _alive(pid):
         again = _read(layout, run_id) or record
-        return (
-            again
-            if again.get("state") != "running"
-            else {**again, "state": "lost"}
-        )
+        return again if again.get("state") != "running" else {**again, "state": "lost"}
     return record
 
 
@@ -344,7 +332,7 @@ def _cancel_windows(layout: JobLayout, run_id: str, pid: int) -> None:
     while _alive(pid):
         if time.monotonic() >= deadline:
             subprocess.run(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],  # noqa: S607
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 check=False,
@@ -354,13 +342,9 @@ def _cancel_windows(layout: JobLayout, run_id: str, pid: int) -> None:
         time.sleep(POLL_S)
 
 
-def wait(
-    layout: JobLayout, run_id: str, timeout: float | None
-) -> dict[str, Any] | None:
+def wait(layout: JobLayout, run_id: str, timeout: float | None) -> dict[str, Any] | None:
     """The run's record once it is no longer running (or at *timeout* seconds)."""
-    deadline = (
-        None if timeout is None else time.monotonic() + max(0.0, timeout)
-    )
+    deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
     while True:
         record = read(layout, run_id)
         if record is None or record.get("state") != "running":

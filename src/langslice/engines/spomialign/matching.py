@@ -147,9 +147,7 @@ def resolve_device(device_name: str) -> torch.device:
     elif device.type == "mps":
         available = torch.backends.mps.is_available()
     if not available:
-        raise RuntimeError(
-            f"Requested device {device_name!r} is not available"
-        )
+        raise RuntimeError(f"Requested device {device_name!r} is not available")
     return device
 
 
@@ -166,9 +164,7 @@ def _fourier(name: str) -> Callable[[torch.Tensor], torch.Tensor]:
     Callable
         The transform, from a tensor to a tensor.
     """
-    return cast(
-        "Callable[[torch.Tensor], torch.Tensor]", untyped("torch.fft", name)
-    )
+    return cast("Callable[[torch.Tensor], torch.Tensor]", untyped("torch.fft", name))
 
 
 def load_matcher(device: torch.device) -> Matcher:
@@ -186,9 +182,7 @@ def load_matcher(device: torch.device) -> Matcher:
         grid, with RoMa's plain torch local correlation. The weights come
         from torch's hub cache, downloaded there on first use.
     """
-    roma_outdoor = cast(
-        "Callable[..., Matcher]", untyped("romatch", "roma_outdoor")
-    )
+    roma_outdoor = cast("Callable[..., Matcher]", untyped("romatch", "roma_outdoor"))
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=LOCAL_CORR_WARNING)
         return roma_outdoor(
@@ -204,9 +198,7 @@ def ranked_matches(
     device: torch.device,
     target: npt.NDArray[np.uint8],
     source: npt.NDArray[np.uint8],
-) -> tuple[
-    npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]
-]:
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """Rank every match of the pair by its edge-weighted certainty.
 
     Parameters
@@ -230,17 +222,13 @@ def ranked_matches(
     import torch
 
     section = Image.fromarray(source).convert("RGB")
-    warp, certainty = model.match(
-        Image.fromarray(target).convert("RGB"), section, device=device
-    )
+    warp, certainty = model.match(Image.fromarray(target).convert("RGB"), section, device=device)
     edge = edge_weight(section, device)
     if certainty.dim() == 3:
         certainty = certainty.squeeze(0)
 
     edge_both = torch.cat((torch.zeros_like(edge), edge), dim=1)
-    weighted = certainty * (
-        edge_both * (1.0 - OFF_EDGE_WEIGHT) + OFF_EDGE_WEIGHT
-    )
+    weighted = certainty * (edge_both * (1.0 - OFF_EDGE_WEIGHT) + OFF_EDGE_WEIGHT)
     weighted[:, :W] = 0
     suppressed = grid_suppression(weighted)
 
@@ -297,20 +285,14 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
     short = min(H, W)
     sigma = EDGE_SIGMA * short / 100.0
     high_pass = 1.0 - torch.exp(-distance_sq / (2 * (sigma**2) + 1e-6))
-    low_pass = torch.exp(
-        -torch.sqrt(distance_sq) / (EDGE_DECAY * short + 1e-6)
-    )
+    low_pass = torch.exp(-torch.sqrt(distance_sq) / (EDGE_DECAY * short + 1e-6))
     band = high_pass * low_pass
     filtered = _fourier("ifft2")(_fourier("ifftshift")(spectrum * band)).real
 
     edges = torch.abs(filtered.squeeze())
     edges = (edges - edges.min()) / (edges.max() - edges.min() + 1e-8)
-    levels = (torch.pow(edges, EDGE_POWER).cpu().numpy() * 255).astype(
-        np.uint8
-    )
-    _, binary = cv2.threshold(
-        levels, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
+    levels = (torch.pow(edges, EDGE_POWER).cpu().numpy() * 255).astype(np.uint8)
+    _, binary = cv2.threshold(levels, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     from_numpy = cast(
         "Callable[[np.ndarray], torch.Tensor]",
         untyped("torch", "from_numpy"),

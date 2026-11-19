@@ -97,9 +97,18 @@ def json_object(text: str) -> JsonObject | None:
 
 
 STACK_KEYS = (
-    "image_folder", "atlas", "plane", "interval_mm", "thickness_mm", "spec",
-    "interval_breaks", "notes", "slices", "submitted", "debrief",
-)  # fmt: skip
+    "image_folder",
+    "atlas",
+    "plane",
+    "interval_mm",
+    "thickness_mm",
+    "spec",
+    "interval_breaks",
+    "notes",
+    "slices",
+    "submitted",
+    "debrief",
+)
 OPTIONAL_ROW_KEYS = ("layers", "masks", "images")
 
 
@@ -236,9 +245,7 @@ def stack_from_json(data: JsonObject) -> Stack:
     shared = data.get(ANGLES_KEY)
     sections: list[Section] = []
     for row in _rows(data):
-        if not isinstance(row.get(ANGLES_KEY), Mapping) and isinstance(
-            shared, Mapping
-        ):
+        if not isinstance(row.get(ANGLES_KEY), Mapping) and isinstance(shared, Mapping):
             row = {**row, ANGLES_KEY: shared}
         sections.append(section_from_json(row))
     defaults = Stack()
@@ -283,7 +290,8 @@ def write_checkpoint(state: Stack, path: str) -> None:
 
 
 def state_paths(
-    data: dict[str, Any], convert: Callable[[str], str],
+    data: dict[str, Any],
+    convert: Callable[[str], str],
 ) -> dict[str, Any]:
     """*data* (a state's fields) with every stored path passed through *convert*.
 
@@ -309,7 +317,8 @@ def state_paths(
             if isinstance(paths, dict):
                 correction["artifact_paths"] = {
                     key: convert(value) if isinstance(value, str) else value
-                    for key, value in paths.items()}
+                    for key, value in paths.items()
+                }
             row["border_trace"] = correction
         slices.append(row)
     return {**data, "slices": slices} if "slices" in data else dict(data)
@@ -368,7 +377,8 @@ def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[
     if version > STATE_FORMAT_VERSION:
         raise ValueError(
             f"This checkpoint was written by a newer LangSlice (format {version}; this "
-            f"version reads format {STATE_FORMAT_VERSION}). Update LangSlice to open it.")
+            f"version reads format {STATE_FORMAT_VERSION}). Update LangSlice to open it."
+        )
     fields = {key: data[key] for key in data if key != FORMAT_KEY}
     if upgrade is not None:
         return dict(upgrade(version, fields))

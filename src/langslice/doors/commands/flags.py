@@ -73,8 +73,7 @@ FLAGS: dict[str, Flag] = {
     ),
     "--nonlinear-image-model": Flag(
         metavar="MODEL",
-        help="Image model for the nonlinear tool; default is the provider's "
-        "image model",
+        help="Image model for the nonlinear tool; default is the provider's image model",
     ),
     "--nonlinear-image-prompt": Flag(
         metavar="FILE",
@@ -103,8 +102,7 @@ FLAGS: dict[str, Flag] = {
     ),
     "--image-resolution": Flag(
         checked=True,
-        help="Size of the pictures the agent is shown; auto lets it choose "
-        "per call",
+        help="Size of the pictures the agent is shown; auto lets it choose per call",
     ),
     "--disabled": Flag(
         action="append",
@@ -112,8 +110,7 @@ FLAGS: dict[str, Flag] = {
         help="Tools and tool options the agent does not get, on top of what "
         "the tasks give (repeatable): a tool (zoom), or tool:option "
         "(look:positioning, interactive_transform:flip, which keeps the "
-        "agent from mirroring sections). Valid names: "
-        + ", ".join(valid_names()),
+        "agent from mirroring sections). Valid names: " + ", ".join(valid_names()),
     ),
     "--enabled": Flag(
         action="append",
@@ -125,8 +122,7 @@ FLAGS: dict[str, Flag] = {
     ),
     "--transform-hemisphere-cue": Flag(
         metavar="TEXT",
-        help="What marks a hemisphere in these sections (a notch, an "
-        "injection...)",
+        help="What marks a hemisphere in these sections (a notch, an injection...)",
     ),
     "--position-thickness-um": Flag(
         type=int,
@@ -149,9 +145,7 @@ FLAGS: dict[str, Flag] = {
         action="store_true",
         help="Sections must sit exactly one interval apart",
     ),
-    "--transform-angles": Flag(
-        action="store_true", help="Let the agent set the cutting angles"
-    ),
+    "--transform-angles": Flag(action="store_true", help="Let the agent set the cutting angles"),
     "--pitch": Flag(type=float, help="Host-given cutting pitch, degrees"),
     "--yaw": Flag(type=float, help="Host-given cutting yaw, degrees"),
     "--section-angles": Flag(
@@ -163,13 +157,11 @@ FLAGS: dict[str, Flag] = {
     "--facts": Flag(
         action="append",
         metavar="TEXT",
-        help="A fact about this stack, passed to the agent verbatim "
-        "(repeatable)",
+        help="A fact about this stack, passed to the agent verbatim (repeatable)",
     ),
     "--positions": Flag(
         metavar="JSON",
-        help="Host-supplied positions: a JSON file path or inline JSON "
-        "mapping filename -> mm",
+        help="Host-supplied positions: a JSON file path or inline JSON mapping filename -> mm",
     ),
     "--registration": Flag(
         metavar="FILE",
@@ -182,8 +174,7 @@ FLAGS: dict[str, Flag] = {
     ),
     "--order": Flag(
         metavar="JSON",
-        help="Host-supplied order: a JSON file path or inline JSON list of "
-        "filenames",
+        help="Host-supplied order: a JSON file path or inline JSON list of filenames",
     ),
     "--transforms": Flag(
         metavar="JSON",
@@ -216,8 +207,7 @@ FLAGS: dict[str, Flag] = {
         "it is shown), which every fit leaves out, as mark_damage takes them",
     ),
     "--out": Flag(
-        help="Results JSON path. Default: <job folder>/exports/"
-        "linear_results.json",
+        help="Results JSON path. Default: <job folder>/exports/linear_results.json",
     ),
     "--job-dir": Flag(
         metavar="PATH",
@@ -266,15 +256,13 @@ FLAGS: dict[str, Flag] = {
     "--reasoning": Flag(
         group="session",
         checked=True,
-        help="Reasoning effort for models that expose one. Default: the "
-        "provider's own",
+        help="Reasoning effort for models that expose one. Default: the provider's own",
     ),
     "--no-debrief": Flag(
         group="session",
         dest="debrief",
         action="store_false",
-        help="Skip the post-submit debrief question (what tools the agent "
-        "missed)",
+        help="Skip the post-submit debrief question (what tools the agent missed)",
     ),
     "--force-view": Flag(
         group="session",
@@ -361,9 +349,7 @@ def add_flags(
                 _add(parser, alias, flag, dest, argparse.SUPPRESS, values)
 
 
-def _values(
-    listed: Sequence[str] | None, flag: Flag, row: Setting
-) -> list[str] | None:
+def _values(listed: Sequence[str] | None, flag: Flag, row: Setting) -> list[str] | None:
     """Return the values argparse accepts for a flag; None: any.
 
     *listed* is what the command knows; else a checked flag takes its

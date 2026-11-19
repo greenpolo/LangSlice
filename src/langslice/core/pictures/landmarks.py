@@ -25,7 +25,11 @@ if TYPE_CHECKING:
 
 
 def pair_picture(
-    ws: Workspace, state: Stack, record: Section, pair: Pair, *,
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    pair: Pair,
+    *,
     store: RecordStore | None = None,
 ) -> look.LookPicture:
     """One crop per endpoint, retaining at least half the full anatomical extent."""

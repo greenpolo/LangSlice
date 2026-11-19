@@ -68,8 +68,16 @@ class Settings:
                 word = "Key set in the environment"
             else:
                 word = "Key saved" if configured else "No key"
-            rows.append({"id": name, "label": label, "kind": kind, "present": configured,
-                         "state": word, "source": source})
+            rows.append(
+                {
+                    "id": name,
+                    "label": label,
+                    "kind": kind,
+                    "present": configured,
+                    "state": word,
+                    "source": source,
+                }
+            )
         chosen = saved["connection"]
         present = any(row["present"] for row in rows if row["id"] == chosen)
         models = store.agent_models()
@@ -117,9 +125,10 @@ class Settings:
             try:
                 setup.save_api_key(provider, key)
             except ValueError:
-                raise SettingsError("Enter a key without spaces, or check that "
-                                    "~/.langslice/provider_credentials.json is readable."
-                                    ) from None
+                raise SettingsError(
+                    "Enter a key without spaces, or check that "
+                    "~/.langslice/provider_credentials.json is readable."
+                ) from None
         elif resource == "settings/signin":
             self._start_signin()
         else:
@@ -145,8 +154,11 @@ class Settings:
             entry = dict(saved["agent"].get(connection) or {})
             if "model" in body:
                 model = body["model"]
-                if not isinstance(model, str) or not model.strip() or any(
-                        c.isspace() or ord(c) < 32 for c in model.strip()):
+                if (
+                    not isinstance(model, str)
+                    or not model.strip()
+                    or any(c.isspace() or ord(c) < 32 for c in model.strip())
+                ):
                     raise SettingsError("Enter a model name without spaces.")
                 entry["model"] = store.model_string(connection, model)
             if "reasoning" in body:
@@ -161,7 +173,8 @@ class Settings:
             if default:
                 saved["agent"][connection] = {
                     **(saved["agent"].get(connection) or {"reasoning": None}),
-                    "model": store.model_string(connection, default)}
+                    "model": store.model_string(connection, default),
+                }
         store.write(saved)
 
     def _start_signin(self) -> None:
@@ -179,8 +192,11 @@ class Settings:
             try:
                 self._login(on_url=on_url, timeout_s=SIGNIN_TIMEOUT_S)
             except Exception as exc:
-                error = ("The sign-in timed out. Try again." if "Timed out" in str(exc)
-                         else "The sign-in did not finish. Try again.")
+                error = (
+                    "The sign-in timed out. Try again."
+                    if "Timed out" in str(exc)
+                    else "The sign-in did not finish. Try again."
+                )
             with self._lock:
                 self._signin = {"running": False, "url": None, "error": error}
 

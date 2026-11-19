@@ -45,8 +45,10 @@ _UNQUOTED = r"[^\s\"';|&]+" if sys.platform == "win32" else r"[^\s\"'\\;|&]+"
 FOLDER_PATTERNS = (
     re.compile(r"""langslice-job\s+(?:"([^"]+)"|'([^']+)'|(""" + _UNQUOTED + "))"),
     re.compile(r"""open_job\(\s*(?:r?"([^"]+)"|r?'([^']+)')"""),
-    re.compile(r"Register the brain in job folder (.+?)(?:\. Call start_job"
-               r"| with the langslice-job command line\.)"),
+    re.compile(
+        r"Register the brain in job folder (.+?)(?:\. Call start_job"
+        r"| with the langslice-job command line\.)"
+    ),
 )
 START_JOB = re.compile(r"(?:^|__)start_job$")
 START_JOB_KEYS = ("image_folder",)
@@ -63,9 +65,14 @@ def add_parser(subparsers: Any) -> None:
     p = subparsers.add_parser(
         "session-end",
         help="Copy a coding agent's transcript into the job folders it worked on "
-        "(the hook the harness plugins run; reads the hook's JSON on stdin)")
-    p.add_argument("--harness", required=True, choices=("claude-code", "antigravity"),
-                   help="The harness whose hook calls this")
+        "(the hook the harness plugins run; reads the hook's JSON on stdin)",
+    )
+    p.add_argument(
+        "--harness",
+        required=True,
+        choices=("claude-code", "antigravity"),
+        help="The harness whose hook calls this",
+    )
 
 
 def run(args: Any) -> None:
@@ -87,13 +94,16 @@ def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
     if transcript is None or not transcript.is_file():
         return []
     text = transcript.read_text(encoding="utf-8", errors="replace")
-    session = str(hook.get("agent_id") or hook.get("conversationId")
-                  or hook.get("session_id") or transcript.stem)
+    session = str(
+        hook.get("agent_id")
+        or hook.get("conversationId")
+        or hook.get("session_id")
+        or transcript.stem
+    )
     copies = []
     said = _said(text)
     submitted = SUBMIT_PATTERN.search(said) is not None or called(text, MCP_SUBMIT)
-    for folder in job_folders(said, Path(str(hook.get("cwd") or ".")),
-                              also=started_jobs(text)):
+    for folder in job_folders(said, Path(str(hook.get("cwd") or ".")), also=started_jobs(text)):
         layout = JobLayout(folder)
         target = layout.trace_dir / f"{harness}_{_safe(session)}.jsonl"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -151,8 +161,11 @@ def job_folders(text: str, cwd: Path, also: list[str] | tuple[str, ...] = ()) ->
     each a job folder or the image folder beside one, in the order first named."""
     from langslice.doors.jobs import NoJob, find
 
-    names = [next(group for group in match.groups() if group is not None)
-             for pattern in FOLDER_PATTERNS for match in pattern.finditer(text)]
+    names = [
+        next(group for group in match.groups() if group is not None)
+        for pattern in FOLDER_PATTERNS
+        for match in pattern.finditer(text)
+    ]
     found: list[Path] = []
     seen: set[str] = set()
     for name in [*names, *also]:
@@ -220,8 +233,9 @@ def called(text: str, name: re.Pattern[str]) -> bool:
 
     def walk(value: Any) -> bool:
         if isinstance(value, dict):
-            return any(isinstance(item, str) and name.search(item) for item in value.values()) \
-                or any(walk(item) for item in value.values())
+            return any(
+                isinstance(item, str) and name.search(item) for item in value.values()
+            ) or any(walk(item) for item in value.values())
         if isinstance(value, list):
             return any(walk(item) for item in value)
         return False
@@ -253,8 +267,11 @@ def slim(value: Any) -> Any:
         return {key: slim(item) for key, item in value.items()}
     if isinstance(value, list):
         return [slim(item) for item in value]
-    if (isinstance(value, str) and len(value) > INLINE_DATA_CHARS
-            and _BASE64.fullmatch(value[:INLINE_DATA_CHARS])):
+    if (
+        isinstance(value, str)
+        and len(value) > INLINE_DATA_CHARS
+        and _BASE64.fullmatch(value[:INLINE_DATA_CHARS])
+    ):
         return f"<{len(value) * 3 // 4} bytes of inline data>"
     return value
 
@@ -307,8 +324,11 @@ def first_user_message(text: str) -> str | None:
             if isinstance(content, str):
                 return content
             if isinstance(content, list):
-                parts = [block.get("text", "") for block in content
-                         if isinstance(block, dict) and block.get("type") == "text"]
+                parts = [
+                    block.get("text", "")
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "text"
+                ]
                 if parts:
                     return "\n".join(parts)
             continue
@@ -328,8 +348,11 @@ def launch_check(layout: Any, text: str) -> dict[str, Any]:
     launch file or no first user message."""
     files = sorted(layout.launches_dir.glob("*.md")) if layout.launches_dir.is_dir() else []
     if not files:
-        return {"checked": False, "reason": "the job has no saved launch prompt "
-                f"({layout.launches_dir.name}/ is empty or missing)"}
+        return {
+            "checked": False,
+            "reason": "the job has no saved launch prompt "
+            f"({layout.launches_dir.name}/ is empty or missing)",
+        }
     got = first_user_message(text)
     if got is None:
         return {"checked": False, "reason": "no first user message found in the transcript"}
@@ -341,8 +364,7 @@ def launch_check(layout: Any, text: str) -> dict[str, Any]:
         if expected == got:
             ratio = 1.0
         else:
-            ratio = difflib.SequenceMatcher(None, expected.split(), words,
-                                            autojunk=False).ratio()
+            ratio = difflib.SequenceMatcher(None, expected.split(), words, autojunk=False).ratio()
         if best is None or ratio > best[0]:
             best = (ratio, path.name, expected)
     assert best is not None
@@ -350,18 +372,26 @@ def launch_check(layout: Any, text: str) -> dict[str, Any]:
     verbatim = expected == got
     first = None
     if not verbatim:
-        first = next((i for i, (a, b) in enumerate(zip(expected, got, strict=False)) if a != b),
-                     min(len(expected), len(got)))
-    return {"checked": True, "verbatim": verbatim, "launch": name,
-            "similarity": round(ratio, 4), "first_difference": first,
-            "expected_chars": len(expected), "got_chars": len(got)}
+        first = next(
+            (i for i, (a, b) in enumerate(zip(expected, got, strict=False)) if a != b),
+            min(len(expected), len(got)),
+        )
+    return {
+        "checked": True,
+        "verbatim": verbatim,
+        "launch": name,
+        "similarity": round(ratio, 4),
+        "first_difference": first,
+        "expected_chars": len(expected),
+        "got_chars": len(got),
+    }
 
 
 def write_launch_check(layout: Any, text: str, target: Path) -> None:
     """Write :func:`launch_check` to *target*; never raises."""
     try:
-        target.write_text(json.dumps(launch_check(layout, text), indent=1) + "\n",
-                          encoding="utf-8", newline="\n")
+        target.write_text(
+            json.dumps(launch_check(layout, text), indent=1) + "\n", encoding="utf-8", newline="\n"
+        )
     except HOOK_FAILURES as exc:
-        print(f"langslice session-end: launch check: {type(exc).__name__}: {exc}",
-              file=sys.stderr)
+        print(f"langslice session-end: launch check: {type(exc).__name__}: {exc}", file=sys.stderr)

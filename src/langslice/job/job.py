@@ -97,9 +97,7 @@ def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
         raise ValueError(f"No slice images found in {workspace.image_folder}")
 
     pos_lo, pos_hi = workspace.position_range
-    places = initial_positions(
-        len(paths), (pos_lo, pos_hi), spec.start_mm, spec.interval_mm
-    )
+    places = initial_positions(len(paths), (pos_lo, pos_hi), spec.start_mm, spec.interval_mm)
     state = Stack(
         image_folder=workspace.image_folder,
         atlas=spec.atlas,
@@ -122,9 +120,7 @@ def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
         f"spans {pos_lo:.2f}-{pos_hi:.2f} mm; initial positions "
         f"{places[0]:.2f} to {places[-1]:.2f} mm"
     )
-    workspace.progress(
-        f"[ingest] {len(paths)} sections from {workspace.image_folder}"
-    )
+    workspace.progress(f"[ingest] {len(paths)} sections from {workspace.image_folder}")
     return state
 
 
@@ -248,14 +244,8 @@ class Job(JobBorderTraces):
                 data = read_checkpoint(str(layout.state_file), migration)
                 if data is not None:
                     migration.seed(data)
-                state = (
-                    None
-                    if data is None
-                    else state_from_file(data, layout.state_file)
-                )
-                changed = (
-                    [] if state is None else changed_inputs(state.spec, spec)
-                )
+                state = None if data is None else state_from_file(data, layout.state_file)
+                changed = [] if state is None else changed_inputs(state.spec, spec)
                 if changed:
                     raise inputs_changed(layout.folder, changed)
             removed = _removed_settings(layout)
@@ -264,9 +254,7 @@ class Job(JobBorderTraces):
             lists = undo_file.load()
             if state is not None:
                 resumed = True
-                workspace.progress(
-                    f"[ingest] resuming from {layout.state_file}"
-                )
+                workspace.progress(f"[ingest] resuming from {layout.state_file}")
                 state.spec = spec.to_dict()
                 state.image_folder = str(images)
                 state.submitted = False
@@ -353,10 +341,7 @@ class Job(JobBorderTraces):
             job.views = DiscardedViews(layout)
             job.wire_views()
         upgraded = migration.used or bool(removed)
-        if (
-            section_images.ensure_opening(workspace, layout, job.state)
-            or upgraded
-        ):
+        if section_images.ensure_opening(workspace, layout, job.state) or upgraded:
             if persist and os.access(layout.folder, os.W_OK):
                 job._write_upgrade_if_writable(migration)
         return job
@@ -390,13 +375,9 @@ class Job(JobBorderTraces):
             data = read_checkpoint(self.checkpoint_path, migration)
             if data is not None:
                 migration.seed(data)
-                self.state.replace_with(
-                    state_from_file(data, self.checkpoint_path)
-                )
+                self.state.replace_with(state_from_file(data, self.checkpoint_path))
             self.load_undo()
-            made = section_images.ensure_opening(
-                self.workspace, self.layout, self.state
-            )
+            made = section_images.ensure_opening(self.workspace, self.layout, self.state)
             if data is None or migration.used or made:
                 self.checkpoint()
             else:
@@ -429,20 +410,12 @@ class Job(JobBorderTraces):
         frozen ones), else None."""
         hit: dict[str, list[str]] = {}
         for section_id in section_ids:
-            held = [
-                name
-                for name in properties
-                if name in self.frozen_for(section_id)
-            ]
+            held = [name for name in properties if name in self.frozen_for(section_id)]
             if held:
                 hit[section_id] = held
         if not hit:
             return None
-        named = [
-            name
-            for name in freeze.PROPERTIES
-            if any(name in held for held in hit.values())
-        ]
+        named = [name for name in freeze.PROPERTIES if any(name in held for held in hit.values())]
         message = freeze.message(named, list(hit), len(self.state.slices))
         return Refused(
             RefusalCode.FROZEN,
@@ -456,11 +429,7 @@ class Job(JobBorderTraces):
         work is running on any of *section_ids* (it will write them when it
         lands, from what they hold now), else None. The landing of that work
         itself is not refused."""
-        busy = (
-            self._background.busy(section_ids)
-            if self._background is not None
-            else {}
-        )
+        busy = self._background.busy(section_ids) if self._background is not None else {}
         if not busy:
             return None
         works = list({work.id: work for work in busy.values()}.values())
@@ -491,9 +460,7 @@ class Job(JobBorderTraces):
                 self.amend(before)
         return cleared
 
-    def emit_results(
-        self, progress: Callable[[str], None] | None = None
-    ) -> Stack:
+    def emit_results(self, progress: Callable[[str], None] | None = None) -> Stack:
         """Write the results JSON (:func:`emit_results`); every picture saved."""
         self.views.flush()
         return emit_results(self.state, self.results_path, progress)

@@ -97,16 +97,22 @@ class ContextFrames(ContextReads):
         if key not in self._grids:
             try:
                 self._grids[key] = deformation.fit_grid(
-                    self._run.state, self._run.workspace, record,
-                    params=list(IDENTITY_PARAMS))
+                    self._run.state, self._run.workspace, record, params=list(IDENTITY_PARAMS)
+                )
             except ValueError as exc:
-                raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                                f"{record.id}: {exc}") from exc
+                raise ToolError(
+                    RefusalCode.INVALID_LINEAR_PLACEMENT, f"{record.id}: {exc}"
+                ) from exc
         return self._grids[key]
 
-    def fit_frame(self, section: object, *, atlas: Sequence[str] = (
-            "template", "annotation"), image: str | None = None,
-            stain: bool = False) -> FitFrame:
+    def fit_frame(
+        self,
+        section: object,
+        *,
+        atlas: Sequence[str] = ("template", "annotation"),
+        image: str | None = None,
+        stain: bool = False,
+    ) -> FitFrame:
         """The section and its atlas plane on the fit grid (:class:`FitFrame`).
         Needs a position. *atlas* picks the atlas planes to sample:
         ``annotation`` and any of the atlas's images
@@ -153,16 +159,20 @@ class ContextFrames(ContextReads):
             if kind not in offered and asked not in offered:
                 continue
             if kind not in planes:
-                planes[kind] = np.asarray(native_intensity(workspace.atlas, placement, kind),
-                                          dtype=np.float32)
+                planes[kind] = np.asarray(
+                    native_intensity(workspace.atlas, placement, kind), dtype=np.float32
+                )
             planes[asked] = planes[kind]
             resolved_names[asked] = kind
         placed = None
         if record.transform:
             try:
-                placed = np.asarray(deformation.fit_grid(
-                    self._run.state, workspace, record).placement.atlas_to_section,
-                    dtype=np.float64)
+                placed = np.asarray(
+                    deformation.fit_grid(
+                        self._run.state, workspace, record
+                    ).placement.atlas_to_section,
+                    dtype=np.float64,
+                )
             except ValueError:
                 placed = None
         applied = None
@@ -180,11 +190,11 @@ class ContextFrames(ContextReads):
             labels = planes.get("annotation")
             if labels is None:
                 labels = np.asarray(native_labels(workspace.atlas, placement))
-            excluded = regions_mask(workspace.atlas, labels, marked,
-                                    placement_left(workspace.atlas, placement, marked))
+            excluded = regions_mask(
+                workspace.atlas, labels, marked, placement_left(workspace.atlas, placement, marked)
+            )
             spacing_mm = float(np.mean(_plane_frame(workspace.atlas, placement)["px_um"])) / 1000.0
-            zone = dilate(excluded, EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)
-                          / spacing_mm)
+            zone = dilate(excluded, EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas) / spacing_mm)
         wanted = "preprocessed" if stain and image is None else image
         picture: np.ndarray | None = None
         reference: dict[str, Any] | None = None
@@ -193,33 +203,57 @@ class ContextFrames(ContextReads):
 
             known = self.image_names(record.id)
             if wanted not in known:
-                raise ToolError(RefusalCode.UNKNOWN_IMAGE,
-                                f"{record.id} has no section image "
-                                f"{wanted!r}; its images: {', '.join(known)}",
-                                images=list(known))
-            picture = np.asarray(deformation.section_image(
-                workspace, self._run.state, grid, wanted)[0].convert("RGB"))
+                raise ToolError(
+                    RefusalCode.UNKNOWN_IMAGE,
+                    f"{record.id} has no section image {wanted!r}; its images: {', '.join(known)}",
+                    images=list(known),
+                )
+            picture = np.asarray(
+                deformation.section_image(workspace, self._run.state, grid, wanted)[0].convert(
+                    "RGB"
+                )
+            )
             reference = read_image(workspace, record, wanted).payload()
-        preprocessed = picture if wanted == "preprocessed" else (
-            np.asarray(deformation.section_image(
-                workspace, self._run.state, grid, "preprocessed")[0].convert("RGB"))
-            if stain else None)
+        preprocessed = (
+            picture
+            if wanted == "preprocessed"
+            else (
+                np.asarray(
+                    deformation.section_image(workspace, self._run.state, grid, "preprocessed")[
+                        0
+                    ].convert("RGB")
+                )
+                if stain
+                else None
+            )
+        )
         return FitFrame(
-            id=record.id, image=np.asarray(oriented), atlas=planes,
+            id=record.id,
+            image=np.asarray(oriented),
+            atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
-            placed_atlas_to_section=placed, applied_map=applied, excluded=excluded,
-            damage_zone=zone, damage_margin_mm=round(
-                float(EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)), 4),
-            stain=preprocessed, section_image=picture, section_image_ref=reference,
+            placed_atlas_to_section=placed,
+            applied_map=applied,
+            excluded=excluded,
+            damage_zone=zone,
+            damage_margin_mm=round(float(EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)), 4),
+            stain=preprocessed,
+            section_image=picture,
+            section_image_ref=reference,
             atlas_resolved=resolved_names,
-            atlas_image_note=nissl_note(workspace.atlas, "nissl") if "nissl" in resolved_names
-            else None)
+            atlas_image_note=nissl_note(workspace.atlas, "nissl")
+            if "nissl" in resolved_names
+            else None,
+        )
 
-    def angles_from_plane(self, normal_um: Sequence[float], point_um: Sequence[float],
-                          ) -> dict[str, float]:
+    def angles_from_plane(
+        self,
+        normal_um: Sequence[float],
+        point_um: Sequence[float],
+    ) -> dict[str, float]:
         """The placement of the plane through *point_um* with normal
         *normal_um* (atlas micrometres, the atlas's axis order, as
         :attr:`FitFrame.plane` gives a plane): ``position_mm`` (where it crosses
@@ -236,17 +270,25 @@ class ContextFrames(ContextReads):
         plane = self._run.state.plane
         normal = np.asarray(normal_um, dtype=np.float64)
         point = np.asarray(point_um, dtype=np.float64)
-        if normal.shape != (3,) or point.shape != (3,) or not (
-                np.isfinite(normal).all() and np.isfinite(point).all()) or not normal.any():
-            raise ToolError(RefusalCode.BAD_PLANE,
-                            "normal_um and point_um are three finite numbers, "
-                            "the normal not zero")
+        if (
+            normal.shape != (3,)
+            or point.shape != (3,)
+            or not (np.isfinite(normal).all() and np.isfinite(point).all())
+            or not normal.any()
+        ):
+            raise ToolError(
+                RefusalCode.BAD_PLANE,
+                "normal_um and point_um are three finite numbers, the normal not zero",
+            )
         try:
             pitch, yaw = plane_angles(normal, atlas, plane)
         except ValueError as exc:
             raise ToolError(RefusalCode.BAD_PLANE, str(exc)) from exc
-        return {"position_mm": float(plane_position_mm(point, normal, atlas, plane)),
-                "pitch_deg": float(pitch), "yaw_deg": float(yaw)}
+        return {
+            "position_mm": float(plane_position_mm(point, normal, atlas, plane)),
+            "pitch_deg": float(pitch),
+            "yaw_deg": float(yaw),
+        }
 
     def atlas_slice(self, section: object, *, kind: str = "template") -> np.ndarray:
         """The atlas plane at the section's position and cutting angles, on
@@ -256,13 +298,20 @@ class ContextFrames(ContextReads):
 
         offered = ("annotation", *atlas_images(self._run.workspace.atlas))
         if kind not in offered:
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            f"kind is one of {', '.join(offered)}; got {kind!r}")
+            raise ToolError(
+                RefusalCode.BAD_ARGS, f"kind is one of {', '.join(offered)}; got {kind!r}"
+            )
         frame = self.fit_frame(section, atlas=(kind,))
         return frame.atlas[kind]
 
-    def atlas_plane(self, position_mm: float, *, pitch_deg: float = 0.0, yaw_deg: float = 0.0,
-                    kinds: Sequence[str] = ("template", "annotation")) -> AtlasPlane:
+    def atlas_plane(
+        self,
+        position_mm: float,
+        *,
+        pitch_deg: float = 0.0,
+        yaw_deg: float = 0.0,
+        kinds: Sequence[str] = ("template", "annotation"),
+    ) -> AtlasPlane:
         """The atlas plane at *position_mm* (atlas millimetres along the
         slicing axis, the stack's convention) and cutting angles *pitch_deg*
         / *yaw_deg*, whichever section holds it, on the native atlas grid
@@ -279,21 +328,32 @@ class ContextFrames(ContextReads):
         workspace = self._run.workspace
         values = [float(position_mm), float(pitch_deg), float(yaw_deg)]
         if not np.isfinite(values).all():
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            "position_mm, pitch_deg and yaw_deg are finite numbers")
-        placement = Placement(atlas_name=str(self._run.state.atlas), position_mm=values[0],
-                              plane=self._run.state.plane,
-                              pitch_deg=values[1], yaw_deg=values[2],
-                              atlas_to_section=np.eye(3), section_mm_per_px=1.0)
+            raise ToolError(
+                RefusalCode.BAD_ARGS, "position_mm, pitch_deg and yaw_deg are finite numbers"
+            )
+        placement = Placement(
+            atlas_name=str(self._run.state.atlas),
+            position_mm=values[0],
+            plane=self._run.state.plane,
+            pitch_deg=values[1],
+            yaw_deg=values[2],
+            atlas_to_section=np.eye(3),
+            section_mm_per_px=1.0,
+        )
         planes: dict[str, np.ndarray] = {}
         if "annotation" in kinds:
             planes["annotation"] = np.asarray(native_labels(workspace.atlas, placement))
         for kind in atlas_images(workspace.atlas):
             if kind in kinds:
-                planes[kind] = np.asarray(native_intensity(workspace.atlas, placement, kind),
-                                          dtype=np.float32)
-        return AtlasPlane(position_mm=values[0], angles=(values[1], values[2]), atlas=planes,
-                          plane=_plane_frame(workspace.atlas, placement))
+                planes[kind] = np.asarray(
+                    native_intensity(workspace.atlas, placement, kind), dtype=np.float32
+                )
+        return AtlasPlane(
+            position_mm=values[0],
+            angles=(values[1], values[2]),
+            atlas=planes,
+            plane=_plane_frame(workspace.atlas, placement),
+        )
 
     def atlas_volume(self, kind: str = "template") -> np.ndarray:
         """The atlas's whole volume *kind* (``annotation`` or one of its
@@ -306,9 +366,10 @@ class ContextFrames(ContextReads):
         if kind == "annotation":
             return np.asarray(atlas.annotation)
         if kind not in atlas_images(atlas):
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            f"kind is annotation or one of "
-                            f"{', '.join(atlas_images(atlas))}; got {kind!r}")
+            raise ToolError(
+                RefusalCode.BAD_ARGS,
+                f"kind is annotation or one of {', '.join(atlas_images(atlas))}; got {kind!r}",
+            )
         return volume(atlas, kind)
 
     def to_atlas_um(self, section: object, xy: Any, *, frame: str = "file") -> np.ndarray:
@@ -322,8 +383,13 @@ class ContextFrames(ContextReads):
         record = self._record(section)
         return self._points(atlas_points, record.id, xy, frame).um
 
-    def from_atlas_um(self, section: object, xyz_um: Any, *, frame: str = "file",
-                      ) -> np.ndarray:
+    def from_atlas_um(
+        self,
+        section: object,
+        xyz_um: Any,
+        *,
+        frame: str = "file",
+    ) -> np.ndarray:
         """Atlas points *xyz_um* (``(N, 3)`` micrometres, the atlas's axis
         order) as ``[x, y]`` pixels of the section (*frame* as
         :meth:`to_atlas_um`), each projected onto the section's atlas plane
@@ -343,8 +409,13 @@ class ContextFrames(ContextReads):
         record = self._record(section)
         return self._points(section_points, record.id, xyz_um, "file").off_plane_um
 
-    def region_at(self, section: object, xy: Any, *, frame: str = "file",
-                  ) -> list[dict[str, Any] | None]:
+    def region_at(
+        self,
+        section: object,
+        xy: Any,
+        *,
+        frame: str = "file",
+    ) -> list[dict[str, Any] | None]:
         """The atlas region under each section point *xy* (*frame* as
         :meth:`to_atlas_um`) through the section's current registration:
         ``{"id", "acronym", "name"}`` per point, None outside the atlas."""
@@ -360,8 +431,9 @@ class ContextFrames(ContextReads):
                 continue
             try:
                 entry = structures[int(value)]
-                out.append({"id": int(value), "acronym": str(entry["acronym"]),
-                            "name": str(entry["name"])})
+                out.append(
+                    {"id": int(value), "acronym": str(entry["acronym"]), "name": str(entry["name"])}
+                )
             except KeyError:
                 out.append({"id": int(value), "acronym": None, "name": None})
         return out
@@ -386,8 +458,9 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
     )
 
     normal_axis, row_axis, col_axis = plane_axes(atlas, placement.plane)
-    rotation = build_rotation_matrix(placement.pitch_deg, placement.yaw_deg,
-                                     row_axis=row_axis, col_axis=col_axis)
+    rotation = build_rotation_matrix(
+        placement.pitch_deg, placement.yaw_deg, row_axis=row_axis, col_axis=col_axis
+    )
     res = np.asarray(atlas.resolution, dtype=np.float64)
     shape = tuple(int(v) for v in np.shape(atlas.annotation))
     centre = np.zeros(3)
@@ -406,10 +479,21 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
         size = [shape[col_axis], shape[row_axis]]
     from langslice.core.geometry.oblique import plane_index_affine
 
-    to_index = plane_index_affine(atlas, float(placement.position_mm), placement.plane,
-                                  float(placement.pitch_deg), float(placement.yaw_deg))
+    to_index = plane_index_affine(
+        atlas,
+        float(placement.position_mm),
+        placement.plane,
+        float(placement.pitch_deg),
+        float(placement.yaw_deg),
+    )
     swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     native_to_um = np.diag(res) @ to_index @ swap
-    return {"center_um": centre.tolist(), "dx": dx.tolist(), "dy": dy.tolist(),
-            "px_um": px, "shape": size, "resolution_um": res.tolist(),
-            "native_to_um": native_to_um.tolist()}
+    return {
+        "center_um": centre.tolist(),
+        "dx": dx.tolist(),
+        "dy": dy.tolist(),
+        "px_um": px,
+        "shape": size,
+        "resolution_um": res.tolist(),
+        "native_to_um": native_to_um.tolist(),
+    }

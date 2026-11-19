@@ -48,8 +48,12 @@ def entry_path(root: Path, job_id: str) -> Path:
 
 
 def register(
-    root: Path, job_id: str, folder: Path, *,
-    created_at: str | None = None, fallback: dict[str, Any] | None = None,
+    root: Path,
+    job_id: str,
+    folder: Path,
+    *,
+    created_at: str | None = None,
+    fallback: dict[str, Any] | None = None,
 ) -> Path:
     """Write the id's entry, pointing at *folder*; owner-only. Returns its path.
 
@@ -59,7 +63,8 @@ def register(
     path = entry_path(root, job_id)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     record: dict[str, object] = {
-        "format_version": INDEX_FORMAT_VERSION, "job_id": job_id,
+        "format_version": INDEX_FORMAT_VERSION,
+        "job_id": job_id,
         "job_folder": str(Path(os.path.abspath(folder))),
         "created_at": created_at or datetime.now(UTC).isoformat(timespec="seconds"),
     }
@@ -80,12 +85,16 @@ def lookup(root: Path, job_id: str) -> dict[str, Any] | None:
         record = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
-    if (not isinstance(record, dict) or record.get("job_id") != job_id
-            or not isinstance(record.get("job_folder"), str)):
+    if (
+        not isinstance(record, dict)
+        or record.get("job_id") != job_id
+        or not isinstance(record.get("job_folder"), str)
+    ):
         raise ValueError("Unsupported or mismatched LangSlice job file")
     version = record.get("format_version")
     if not isinstance(version, int) or version > INDEX_FORMAT_VERSION:
         raise ValueError(
             f"This saved job was written by a newer LangSlice (format {version!r}). "
-            "Update LangSlice to open it.")
+            "Update LangSlice to open it."
+        )
     return record

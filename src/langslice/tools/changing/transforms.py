@@ -69,9 +69,7 @@ def transform_record(
     a fit's knobs, shear included, keeps the fit's map.
     """
     knobs = {**knobs, "shear": knobs.get("shear", 0.0)}
-    six = normalized_physical_affine(
-        size=size, um_per_px=um_per_px, pivot=pivot, **knobs
-    )
+    six = normalized_physical_affine(size=size, um_per_px=um_per_px, pivot=pivot, **knobs)
     pivot_at = (pivot_frac[0], pivot_frac[1])
     physical = PhysicalAffine(**knobs, pivot=pivot_at, extra={})
     scale = codec.calibration_from_json(cast("JsonObject", calibration))
@@ -154,9 +152,7 @@ def mirror_message(name: str) -> str:
     )
 
 
-def set_transforms(
-    job: Job, transforms: Mapping[str, StoredAffine]
-) -> list[str]:
+def set_transforms(job: Job, transforms: Mapping[str, StoredAffine]) -> list[str]:
     """Write each ``{section id: transform record}`` as ONE undo step.
 
     The record replaces the section's transform whole. A section whose affine
@@ -298,11 +294,7 @@ def interactive_transform(
             continue
         record = state.resolve(entry.get("id", ""))
         if record is None:
-            done.append(
-                Adjustment(
-                    refusal=unknown_sections(state, [str(entry.get("id", ""))])
-                )
-            )
+            done.append(Adjustment(refusal=unknown_sections(state, [str(entry.get("id", ""))])))
             continue
         name = record.id
         frozen_now = job.frozen_for(name)
@@ -310,15 +302,9 @@ def interactive_transform(
         flip = record.flip
         if entry.get("flip") is not None:
             if not isinstance(entry["flip"], bool):
-                done.append(
-                    _refused(
-                        name, RefusalCode.BAD_ARGS, "flip is true or false."
-                    )
-                )
+                done.append(_refused(name, RefusalCode.BAD_ARGS, "flip is true or false."))
                 continue
-            if entry["flip"] != flip and job.spec.off(
-                "interactive_transform:flip"
-            ):
+            if entry["flip"] != flip and job.spec.off("interactive_transform:flip"):
                 done.append(
                     _refused(
                         name,
@@ -344,9 +330,7 @@ def interactive_transform(
                 )
                 done.append(Adjustment(refusal=bad_rotation, id=name))
                 continue
-            if rotation != record.rotation_deg and job.spec.off(
-                "interactive_transform:rotate"
-            ):
+            if rotation != record.rotation_deg and job.spec.off("interactive_transform:rotate"):
                 done.append(
                     _refused(
                         name,
@@ -356,11 +340,7 @@ def interactive_transform(
                 )
                 continue
         knobs = held_knobs(record)
-        given = {
-            key: entry[key]
-            for key in KNOB_DEFAULTS
-            if entry.get(key) is not None
-        }
+        given = {key: entry[key] for key in KNOB_DEFAULTS if entry.get(key) is not None}
         try:
             knobs.update({key: float(value) for key, value in given.items()})
         except (TypeError, ValueError):
@@ -387,10 +367,7 @@ def interactive_transform(
         if frozen_now:
             if changed:
                 hit.append("orientation")
-            if any(
-                knobs[key] != value
-                for key, value in held_knobs(record).items()
-            ):
+            if any(knobs[key] != value for key, value in held_knobs(record).items()):
                 hit.append("affine")
         frozen = section_refusal(job, name, *hit) if hit else None
         if frozen is not None:
@@ -404,17 +381,13 @@ def interactive_transform(
         if held is None and not given:
             if changed:
                 pending[name] = (flip, rotation, None)
-            done.append(
-                Adjustment(id=name, orientation=orientation, written=changed)
-            )
+            done.append(Adjustment(id=name, orientation=orientation, written=changed))
             continue
         stored_pivot = physical_knobs(held).pivot
         pivot = None if stored_pivot is None else list(stored_pivot)
         twin = replace(record, flip=flip, rotation_deg=rotation)
         try:
-            staged = stage(
-                workspace, state, twin, knobs, pivot if pivot else "canvas"
-            )
+            staged = stage(workspace, state, twin, knobs, pivot if pivot else "canvas")
         except Refused as failure:
             done.append(_refused(name, failure.code, failure.message))
             continue
@@ -431,9 +404,7 @@ def interactive_transform(
                 changed,
                 held,
             )
-        elif "orientation" in frozen_now and reverses_orientation(
-            record, transform
-        ):
+        elif "orientation" in frozen_now and reverses_orientation(record, transform):
             mirrored = _mirror_refusal(job, name)
             done.append(Adjustment(refusal=mirrored, id=name))
             continue
@@ -450,11 +421,7 @@ def interactive_transform(
                 written=wrote,
                 id=name,
                 orientation=orientation,
-                kept=(
-                    held_knobs(record)
-                    if changed and held is not None
-                    else None
-                ),
+                kept=(held_knobs(record) if changed and held is not None else None),
             )
         )
     written: list[str] = []
@@ -480,9 +447,7 @@ def _refused(section_id: str, code: str, message: str) -> Adjustment:
     """Return an entry refused for its own reason; its row names the section
     after the message.
     """
-    return Adjustment(
-        refusal=Refused(code, message, id=section_id), id=section_id
-    )
+    return Adjustment(refusal=Refused(code, message, id=section_id), id=section_id)
 
 
 def _mirror_refusal(job: Job, section_id: str) -> Refused:
@@ -492,9 +457,7 @@ def _mirror_refusal(job: Job, section_id: str) -> Refused:
     message = mirror_message(section_id)
     frozen = section_refusal(job, section_id, "orientation")
     if frozen is None:
-        return Refused(
-            RefusalCode.FROZEN, properties=["orientation"], message=message
-        )
+        return Refused(RefusalCode.FROZEN, properties=["orientation"], message=message)
     return Refused(frozen.code, **{**frozen.facts, "message": message})
 
 
@@ -522,9 +485,7 @@ def interactive_transform_tool(
     job = run.job
     entries = as_list(sections)
     if not entries:
-        raise Refused(
-            RefusalCode.BAD_ARGS, "sections must name one or more sections"
-        )
+        raise Refused(RefusalCode.BAD_ARGS, "sections must name one or more sections")
     check_section_count(job, "interactive_transform", len(entries))
     _check_named_once(job, entries)
     done = interactive_transform(job, run.workspace, entries)
@@ -544,9 +505,7 @@ def interactive_transform_tool(
     cleared = job.clear_stale_deformations()
     if cleared:
         result["deformation_cleared"] = cleared
-    looked = show_result(
-        job, run.workspace, "interactive_transform", "overlay", in_picture
-    )
+    looked = show_result(job, run.workspace, "interactive_transform", "overlay", in_picture)
     return pictured(result, looked)
 
 
@@ -554,11 +513,7 @@ def _check_named_once(job: Job, entries: Sequence[object]) -> None:
     """Refuse a call that names a section twice (``DUPLICATE_SLICE_IDS``); an
     entry that is not an object is the operation's to refuse.
     """
-    objects = [
-        cast("Mapping[str, object]", entry)
-        for entry in entries
-        if isinstance(entry, dict)
-    ]
+    objects = [cast("Mapping[str, object]", entry) for entry in entries if isinstance(entry, dict)]
     named = [job.state.resolve(entry.get("id", "")) for entry in objects]
     ids = [section.id for section in named if section is not None]
     duplicates = sorted({name for name in ids if ids.count(name) > 1})
@@ -577,9 +532,7 @@ def _entry_row(entry: Adjustment) -> dict[str, Any]:
     line on a changed orientation.
     """
     if entry.refusal is not None:
-        first = (
-            entry.id if entry.id and "id" not in entry.refusal.facts else None
-        )
+        first = entry.id if entry.id and "id" not in entry.refusal.facts else None
         return entry.refusal.payload(section_id=first)
     row: dict[str, Any] = {
         "id": entry.id,

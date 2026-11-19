@@ -60,9 +60,7 @@ def picture_edge(ctx: Workspace, requested: int | None = None) -> int:
     return PICTURE_EDGES[level][1]
 
 
-def clamp_resolution(
-    value: float | str, max_edge: int
-) -> tuple[int | None, str]:
+def clamp_resolution(value: float | str, max_edge: int) -> tuple[int | None, str]:
     """Hold a requested ``resolution`` between the smallest and largest edge.
 
     Parameters

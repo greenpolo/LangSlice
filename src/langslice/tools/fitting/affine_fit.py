@@ -126,9 +126,7 @@ SCALE_CHANGE_LIMITS = (0.8, 1.25)
 SHEAR_CHANGE_LIMIT = 0.15
 
 
-def plausibility_flags(
-    previous: StoredAffine | None, fit: FittedAffine
-) -> list[dict[str, Any]]:
+def plausibility_flags(previous: StoredAffine | None, fit: FittedAffine) -> list[dict[str, Any]]:
     """An affine fit's implausible changes from the section's *previous*
     transform (none: the identity), as the deformable fits' flags are given:
     ``SCALE_CHANGED`` (``scale``, ``previous``, ``limits`` per axis ratio) and
@@ -139,11 +137,7 @@ def plausibility_flags(
     held = [float(value or 1.0) for value in (before.scale_x, before.scale_y)]
     low, high = SCALE_CHANGE_LIMITS
     flags: list[dict[str, Any]] = []
-    if any(
-        not low <= new / old <= high
-        for new, old in zip(scale, held, strict=True)
-        if old
-    ):
+    if any(not low <= new / old <= high for new, old in zip(scale, held, strict=True) if old):
         flags.append(
             {
                 "code": FitFlag.SCALE_CHANGED,
@@ -265,27 +259,16 @@ def _fit_elastix(
     threads = FIT_THREADS if elastix_in_workers() else cpu_cores()
     done = map_sections(partial(_fit_section, call), list(records), threads)
     rows = [one.row for one in done]
-    fits = [
-        (index, *one.fitted)
-        for index, one in enumerate(done)
-        if one.fitted is not None
-    ]
+    fits = [(index, *one.fitted) for index, one in enumerate(done) if one.fitted is not None]
     with job.writing():
         records_out: dict[str, StoredAffine] = {}
         for index, record, outcome, kept, dropped in fits:
             now = state.by_id(record.id)
-            if (
-                now is None
-                or section_inputs(state, now) != expected[record.id]
-            ):
+            if now is None or section_inputs(state, now) != expected[record.id]:
                 rows[index] = AffineRow(record.id, refusal=stale_refusal())
                 continue
-            made = fit_transform(
-                outcome, include=kept, exclude=dropped, fit_atlas=fit_atlas
-            )
-            if "orientation" in job.frozen_for(
-                record.id
-            ) and reverses_orientation(now, made):
+            made = fit_transform(outcome, include=kept, exclude=dropped, fit_atlas=fit_atlas)
+            if "orientation" in job.frozen_for(record.id) and reverses_orientation(now, made):
                 frozen = section_refusal(job, record.id, "orientation")
                 assert frozen is not None
                 told = reworded(frozen, mirror_message(record.id))
@@ -369,9 +352,7 @@ def _fit_section(call: _ElastixCall, section: Section) -> _SectionFit:
         resolved=call.fit_atlas,
     )
     flags = tuple(plausibility_flags(section.transform, outcome))
-    row = AffineRow(
-        section.id, fitted=outcome, inputs=inputs, turn_deg=turn, flags=flags
-    )
+    row = AffineRow(section.id, fitted=outcome, inputs=inputs, turn_deg=turn, flags=flags)
     return _SectionFit(row, (section, outcome, kept, dropped))
 
 
@@ -391,9 +372,7 @@ def _told(job: Job, section_id: str, refusal: Refused) -> Refused:
             ),
         )
     if marked(refusal.message):
-        return reworded(
-            refusal, render(refusal.message, job.spec.switched_off)
-        )
+        return reworded(refusal, render(refusal.message, job.spec.switched_off))
     return refusal
 
 
@@ -459,11 +438,7 @@ def elastix_fit(
         include, marks = exclusions(record, include)
         dropped = tuple(dict.fromkeys((*dropped, *marks)))
     stored = None if record.transform is None else record.transform.params
-    start = (
-        list(stored)
-        if stored is not None and len(stored) == 6
-        else list(IDENTITY_PARAMS)
-    )
+    start = list(stored) if stored is not None and len(stored) == 6 else list(IDENTITY_PARAMS)
     try:
         with engine_output(job.engine_log, f"Elastix affine of {record.id}"):
             fit = core_affine.elastix_affine(
@@ -550,9 +525,7 @@ def elastix_affine(
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     if any(not isinstance(name, str) for name in restrict_to):
-        raise Refused(
-            RefusalCode.BAD_ARGS, message="restrict_to lists atlas regions"
-        )
+        raise Refused(RefusalCode.BAD_ARGS, message="restrict_to lists atlas regions")
     records = []
     for ref in sections:
         record = job.state.resolve(ref)
@@ -652,9 +625,7 @@ def elastix_affine_tool(
     check_atlas_image(workspace, atlas_image)
     named = as_list(sections)
     if not named:
-        raise Refused(
-            RefusalCode.BAD_ARGS, "sections must name one or more sections"
-        )
+        raise Refused(RefusalCode.BAD_ARGS, "sections must name one or more sections")
     check_section_count(job, "elastix_affine", len(named))
     done = elastix_affine(
         job,
@@ -751,8 +722,7 @@ def affine_row_to_json(row: AffineRow) -> Written:
     if row.turn_deg is not None:
         words.insert(
             0,
-            f"This fit turns the section {row.turn_deg:.0f} degrees "
-            "from its previous transform.",
+            f"This fit turns the section {row.turn_deg:.0f} degrees from its previous transform.",
         )
     if words:
         out["warning"] = " ".join(words)

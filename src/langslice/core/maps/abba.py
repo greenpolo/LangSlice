@@ -152,28 +152,20 @@ def normalized_to_abba_affine(
     """
     normalized = np.asarray(params, dtype=np.float64)
     if normalized.size != 6 or not np.all(np.isfinite(normalized)):
-        raise ValueError(
-            "The snapshot affine must contain six finite parameters"
-        )
+        raise ValueError("The snapshot affine must contain six finite parameters")
     normalized = normalized.reshape(2, 3)
     dimensions = np.asarray(size, dtype=np.float64)
-    if dimensions.shape != (2,) or not np.all(
-        np.isfinite(dimensions) & (dimensions > 0)
-    ):
+    if dimensions.shape != (2,) or not np.all(np.isfinite(dimensions) & (dimensions > 0)):
         raise ValueError("Snapshot dimensions must be positive and finite")
     if not np.isfinite(pixel_size_um) or pixel_size_um <= 0:
         raise ValueError("Snapshot pixel size must be positive and finite")
     if rotation_deg % 90:
-        raise ValueError(
-            "Snapshot orientation must be a multiple of 90 degrees"
-        )
+        raise ValueError("Snapshot orientation must be a multiple of 90 degrees")
     if rotation_deg % 180:
         dimensions = dimensions[::-1]
     extent = dimensions * float(pixel_size_um) / 1000.0
     linear = normalized[:, :2] * extent[:, None] / extent[None, :]
-    translation = (
-        extent * normalized[:, 2] + linear @ (extent / 2.0) - extent / 2.0
-    )
+    translation = extent * normalized[:, 2] + linear @ (extent / 2.0) - extent / 2.0
     result = np.eye(3, 4, dtype=np.float64)
     result[:2, :2] = linear
     result[:2, 3] = translation
@@ -193,14 +185,10 @@ def world_frame(
     text). *size* and *pixel_size_um* are the snapshot's, as the affine row
     is built from them."""
     dimensions = np.asarray(size, dtype=np.float64)
-    if dimensions.shape != (2,) or not np.all(
-        np.isfinite(dimensions) & (dimensions > 0)
-    ):
+    if dimensions.shape != (2,) or not np.all(np.isfinite(dimensions) & (dimensions > 0)):
         raise ValueError("Snapshot dimensions must be positive and finite")
     if tuple(int(v) for v in size) != tuple(int(v) for v in frame.file_size):
-        raise ValueError(
-            "The section frame was not built from this snapshot's pixels"
-        )
+        raise ValueError("The section frame was not built from this snapshot's pixels")
     if not np.isfinite(pixel_size_um) or pixel_size_um <= 0:
         raise ValueError("Snapshot pixel size must be positive and finite")
     if int(frame.rotation_deg) % 180:
@@ -214,9 +202,7 @@ def world_frame(
             [0.0, 0.0, 1.0],
         ]
     )
-    placed = scale @ np.vstack(
-        [denormalized_affine(params, frame.render_size), [0.0, 0.0, 1.0]]
-    )
+    placed = scale @ np.vstack([denormalized_affine(params, frame.render_size), [0.0, 0.0, 1.0]])
     return placed, placed @ np.asarray(frame.atlas_to_render, dtype=np.float64)
 
 
@@ -374,9 +360,7 @@ def warp_world_landmarks(
     render_to_world, native_to_world = world_frame(
         frame, params, size=size, pixel_size_um=pixel_size_um
     )
-    file_to_world = render_to_world @ np.asarray(
-        frame.file_to_render, dtype=np.float64
-    )
+    file_to_world = render_to_world @ np.asarray(frame.file_to_render, dtype=np.float64)
     return world_landmarks(
         frame,
         record,
@@ -421,9 +405,7 @@ def budget(*, max_points: int = MAX_POINTS) -> Budget:
         For fewer than :data:`MIN_POINTS` or more than :data:`MAX_POINTS`.
     """
     if not MIN_POINTS <= max_points <= MAX_POINTS:
-        raise ValueError(
-            f"A warp takes {MIN_POINTS} to {MAX_POINTS} landmark pairs"
-        )
+        raise ValueError(f"A warp takes {MIN_POINTS} to {MAX_POINTS} landmark pairs")
     share = max_points / MAX_POINTS
     sides = tuple(side for side in GRID_SIDES if side * side <= max_points)
     return Budget(
@@ -538,9 +520,7 @@ def _apply(matrix: FloatArray, points: FloatArray) -> FloatArray:
     return points @ matrix[:2, :2].T + matrix[:2, 2]
 
 
-def _lattice(
-    size: tuple[int, int], step_px: float, first_px: float
-) -> FloatArray:
+def _lattice(size: tuple[int, int], step_px: float, first_px: float) -> FloatArray:
     """Lay a square lattice of file points over the snapshot.
 
     The points are *step_px* apart, the first *first_px* inside the edge.
@@ -602,9 +582,7 @@ def _adaptive(
     return None
 
 
-def _start(
-    size: tuple[int, int], search: Samples, count: int, frame_side: int
-) -> FloatArray:
+def _start(size: tuple[int, int], search: Samples, count: int, frame_side: int) -> FloatArray:
     """Lay the start's file points.
 
     About *count* points evenly spaced over the region's bounding box, and

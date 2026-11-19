@@ -46,20 +46,23 @@ EXIT_ARGUMENTS = 2
 EXIT_REFUSED = 3
 EXIT_INTERNAL = 4
 
-ARGUMENT_CODES = frozenset({
-    RefusalCode.MISSING_ARGUMENTS,
-    RefusalCode.DUPLICATE_SLICE_IDS,
-    RefusalCode.NO_SIDES,
-    RefusalCode.WRONG_SIDE_PAIR,
-    RefusalCode.EMPTY_BOX,
-    RefusalCode.NO_JOB,
-    RefusalCode.NO_IMAGES,
-    RefusalCode.ATLAS_ENDPOINT_OUTSIDE,
-    RefusalCode.NO_SUCH_PATH,
-})
+ARGUMENT_CODES = frozenset(
+    {
+        RefusalCode.MISSING_ARGUMENTS,
+        RefusalCode.DUPLICATE_SLICE_IDS,
+        RefusalCode.NO_SIDES,
+        RefusalCode.WRONG_SIDE_PAIR,
+        RefusalCode.EMPTY_BOX,
+        RefusalCode.NO_JOB,
+        RefusalCode.NO_IMAGES,
+        RefusalCode.ATLAS_ENDPOINT_OUTSIDE,
+        RefusalCode.NO_SUCH_PATH,
+    }
+)
 
 DISABLED: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
-    "langslice_disabled", default=())
+    "langslice_disabled", default=()
+)
 
 
 def exit_code(code: str) -> int:
@@ -84,37 +87,71 @@ class Envelope:
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"ok": self.ok}
-        pictures = [str(item.get("path")) for item in self.artifacts
-                    if item.get("kind") in PICTURE_KINDS]
+        pictures = [
+            str(item.get("path")) for item in self.artifacts if item.get("kind") in PICTURE_KINDS
+        ]
         if pictures:
             out["picture_files"] = pictures
-        out.update({"result": self.result, "artifacts": self.artifacts,
-                    "warnings": self.warnings, "next": self.next})
+        out.update(
+            {
+                "result": self.result,
+                "artifacts": self.artifacts,
+                "warnings": self.warnings,
+                "next": self.next,
+            }
+        )
         if self.error is not None:
             out["error"] = self.error
         return out
 
     @classmethod
-    def failure(cls, code: str, message: str = "", *, exit: int | None = None,
-                fix: str | None = None, result: Any = None, job: str = "<folder>",
-                verb: str = "VERB") -> Envelope:
+    def failure(
+        cls,
+        code: str,
+        message: str = "",
+        *,
+        exit: int | None = None,
+        fix: str | None = None,
+        result: Any = None,
+        job: str = "<folder>",
+        verb: str = "VERB",
+    ) -> Envelope:
         """A refused or failed call; *fix* defaults to :data:`FIXES`."""
         status = exit if exit is not None else exit_code(code)
-        hint = fix if fix is not None else FIXES.get(code, (
-            f"See `langslice-job schema {verb}` for the arguments." if status == EXIT_ARGUMENTS
-            else f"See the stack with `langslice-job {job} status`, then retry."
-            if status == EXIT_REFUSED else "Report it; the log is on stderr."))
+        hint = (
+            fix
+            if fix is not None
+            else FIXES.get(
+                code,
+                (
+                    f"See `langslice-job schema {verb}` for the arguments."
+                    if status == EXIT_ARGUMENTS
+                    else f"See the stack with `langslice-job {job} status`, then retry."
+                    if status == EXIT_REFUSED
+                    else "Report it; the log is on stderr."
+                ),
+            )
+        )
         hint = render(hint, DISABLED.get()).replace("{job}", job).replace("{verb}", verb)
-        return cls(ok=False, result=result, exit=status,
-                   error={"code": code, "message": message, "fix": hint},
-                   next=[])
+        return cls(
+            ok=False,
+            result=result,
+            exit=status,
+            error={"code": code, "message": message, "fix": hint},
+            next=[],
+        )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], exit: int) -> Envelope:
-        return cls(ok=bool(data.get("ok")), result=data.get("result"),
-                   artifacts=list(data.get("artifacts") or []),
-                   warnings=list(data.get("warnings") or []), next=list(data.get("next") or []),
-                   error=data.get("error"), exit=exit)
+        return cls(
+            ok=bool(data.get("ok")),
+            result=data.get("result"),
+            artifacts=list(data.get("artifacts") or []),
+            warnings=list(data.get("warnings") or []),
+            next=list(data.get("next") or []),
+            error=data.get("error"),
+            exit=exit,
+        )
 
 
 def dumps(envelope: Envelope) -> str:

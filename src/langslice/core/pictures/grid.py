@@ -25,8 +25,9 @@ CHIP_COLOUR = "#101010"
 DASH = 4
 
 
-def _dashed(draw: ImageDraw.ImageDraw, start: tuple[float, float], stop: tuple[float, float],
-            vertical: bool) -> None:
+def _dashed(
+    draw: ImageDraw.ImageDraw, start: tuple[float, float], stop: tuple[float, float], vertical: bool
+) -> None:
     length = int(stop[1] - start[1]) if vertical else int(stop[0] - start[0])
     for offset in range(0, max(length, 0), 2 * DASH):
         a = offset + 1
@@ -37,8 +38,9 @@ def _dashed(draw: ImageDraw.ImageDraw, start: tuple[float, float], stop: tuple[f
             draw.line([(start[0] + a, start[1]), (start[0] + b, start[1])], fill=GRID_COLOUR)
 
 
-def _label(draw: ImageDraw.ImageDraw, font, text: str, x: float, y: float,
-           width: int, height: int) -> None:
+def _label(
+    draw: ImageDraw.ImageDraw, font, text: str, x: float, y: float, width: int, height: int
+) -> None:
     left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
     w, h = right - left + 4, bottom - top + 4
     x = min(max(x, 0), width - w)

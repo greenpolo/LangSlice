@@ -42,9 +42,7 @@ LiveCallback = Callable[[dict[str, Any]], None]
 
 _STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
 EVENT_ARGS_BYTES = 2048
-_HIDDEN_KEYS = frozenset(
-    {TOOL_MEDIA_PARTS_KEY, "thought_signature", "encrypted_content"}
-)
+_HIDDEN_KEYS = frozenset({TOOL_MEDIA_PARTS_KEY, "thought_signature", "encrypted_content"})
 
 
 def plain(value: object) -> object:
@@ -109,9 +107,7 @@ def reply_status(reply: object) -> object:
     return cast("dict[object, object]", reply).get("status")
 
 
-def target_ids(
-    state: Stack, name: str, args: Mapping[str, object]
-) -> list[str]:
+def target_ids(state: Stack, name: str, args: Mapping[str, object]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack.
 
     Parameters

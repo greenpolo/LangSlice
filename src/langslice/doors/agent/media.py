@@ -39,12 +39,13 @@ def image_to_part(img: Image.Image, *, quality: int = JPEG_QUALITY) -> types.Par
 def items_to_parts(items: Sequence[Any]) -> list[types.Part]:
     """Texts and pictures, in order, as message parts (a part passes through)."""
     return [
-        item if isinstance(item, types.Part)
-        else types.Part.from_text(text=item) if isinstance(item, str)
+        item
+        if isinstance(item, types.Part)
+        else types.Part.from_text(text=item)
+        if isinstance(item, str)
         else image_to_part(item)
         for item in items
     ]
-
 
 
 def package_result(result: Any) -> Any:
@@ -79,9 +80,11 @@ def packaged_tools(tools: Sequence[Callable[..., Any]]) -> list[Callable[..., An
     return [packaged(tool) for tool in tools]
 
 
-
 def opening_parts(
-    state: Stack, ctx: EngineContext, *, limit: tuple[int, int] | None = None,
+    state: Stack,
+    ctx: EngineContext,
+    *,
+    limit: tuple[int, int] | None = None,
 ) -> list[types.Part]:
     """The opening strips
     (:func:`langslice.core.pictures.opening.opening_items`) as

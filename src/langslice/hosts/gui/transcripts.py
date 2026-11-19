@@ -158,11 +158,7 @@ def model_name(model_id: str) -> str:
     if parts[0] != CLAUDE:
         return model_id
     words = [part.capitalize() for part in parts if not part.isdigit()]
-    digits = [
-        part
-        for part in parts
-        if part.isdigit() and len(part) <= VERSION_DIGITS
-    ]
+    digits = [part for part in parts if part.isdigit() and len(part) <= VERSION_DIGITS]
     return " ".join([*words, ".".join(digits)]).strip()
 
 
@@ -318,9 +314,7 @@ class TranscriptWords:
         The seconds that pace the search.
     """
 
-    def __init__(
-        self, root: Path | None, *, clock: Callable[[], float] = time.monotonic
-    ) -> None:
+    def __init__(self, root: Path | None, *, clock: Callable[[], float] = time.monotonic) -> None:
         self.root = root
         self.clock = clock
         self._job: _Reader | None = None
@@ -329,9 +323,7 @@ class TranscriptWords:
         self._searched_at = float("-inf")
         self._readers: dict[Path, _Reader] = {}
 
-    def read(
-        self, job_folder: Path, job_file: object, until: float
-    ) -> list[JsonObject]:
+    def read(self, job_folder: Path, job_file: object, until: float) -> list[JsonObject]:
         """Read the records written since the last call.
 
         Parameters
@@ -365,9 +357,7 @@ class TranscriptWords:
         for path in _candidates(self.root, self._since, until):
             reader = self._readers.setdefault(path, _Reader(path))
             turns = reader.read()
-            opening = [
-                n for n, turn in enumerate(turns) if turn.opened & folders
-            ]
+            opening = [n for n, turn in enumerate(turns) if turn.opened & folders]
             if opening:
                 self._job, self._readers = reader, {}
                 return self._records(turns[opening[0] :])
@@ -382,11 +372,7 @@ class TranscriptWords:
                 session = {"kind": "session", "agent": AGENT, "model": name}
                 records.append({**session, "at": turn.at})
             records += [
-                {"kind": "model", "thought": text, "at": turn.at}
-                for text in turn.summaries
+                {"kind": "model", "thought": text, "at": turn.at} for text in turn.summaries
             ]
-            records += [
-                {"kind": "model", "text": text, "at": turn.at}
-                for text in turn.messages
-            ]
+            records += [{"kind": "model", "text": text, "at": turn.at} for text in turn.messages]
         return records

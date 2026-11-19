@@ -49,9 +49,7 @@ def _write_positions(
     return written, clamped, unknown
 
 
-def _write_angles(
-    job: Job, workspace: Workspace, pitch_deg: float, yaw_deg: float
-) -> None:
+def _write_angles(job: Job, workspace: Workspace, pitch_deg: float, yaw_deg: float) -> None:
     """Give the stack one plane and drop every render cached at the old angles.
     No undo step."""
     job.state.set_angles((float(pitch_deg), float(yaw_deg)))
@@ -137,19 +135,13 @@ def position_sections(
             )
         given = cast("Mapping[str, object]", entry).get("position_mm")
         if not isinstance(given, (int, float, str)):
-            raise Refused(
-                RefusalCode.BAD_ARGS, message="position_mm must be a number"
-            )
+            raise Refused(RefusalCode.BAD_ARGS, message="position_mm must be a number")
         try:
             value = float(given)
         except ValueError:
-            raise Refused(
-                RefusalCode.BAD_ARGS, message="position_mm must be a number"
-            ) from None
+            raise Refused(RefusalCode.BAD_ARGS, message="position_mm must be a number") from None
         if not math.isfinite(value):
-            raise Refused(
-                RefusalCode.BAD_ARGS, message="position_mm must be finite"
-            )
+            raise Refused(RefusalCode.BAD_ARGS, message="position_mm must be finite")
         pairs.append((entry["id"], value))
     angles: tuple[float, float] | None = None
     if cutting_angles is not None:
@@ -164,18 +156,12 @@ def position_sections(
                 message="cutting_angles is {pitch_deg, yaw_deg}",
             ) from None
         if not all(math.isfinite(value) for value in angles):
-            raise Refused(
-                RefusalCode.BAD_ARGS, message="cutting angles must be finite"
-            )
+            raise Refused(RefusalCode.BAD_ARGS, message="cutting angles must be finite")
     if not pairs and angles is None:
-        raise Refused(
-            RefusalCode.BAD_ARGS, message="give sections or cutting_angles"
-        )
+        raise Refused(RefusalCode.BAD_ARGS, message="give sections or cutting_angles")
     if pairs:
         named = [
-            record.id
-            for ref, _value in pairs
-            if (record := job.state.resolve(ref)) is not None
+            record.id for ref, _value in pairs if (record := job.state.resolve(ref)) is not None
         ]
         check_frozen(job, named, "position")
     if angles is not None:
@@ -253,14 +239,8 @@ def position_sections_tool(
     job = run.job
     angles = cutting_angles if cutting_angles else None
     done = position_sections(job, run.workspace, as_list(sections), angles)
-    unknown = (
-        unknown_sections(job.state, done.unknown) if done.unknown else None
-    )
-    if (
-        unknown is not None
-        and not done.written
-        and done.cutting_angles is None
-    ):
+    unknown = unknown_sections(job.state, done.unknown) if done.unknown else None
+    if unknown is not None and not done.written and done.cutting_angles is None:
         raise unknown
 
     result = _positioned_reply(done, unknown)
@@ -268,9 +248,7 @@ def position_sections_tool(
     if not run.shows(view):
         return result
 
-    in_picture = done.touched or [
-        section.id for section in job.state.in_order()
-    ]
+    in_picture = done.touched or [section.id for section in job.state.in_order()]
     in_stack = [job.state.by_id(name) for name in in_picture]
     positions = distinct_positions(
         [section.position_mm for section in in_stack if section is not None]
@@ -287,17 +265,12 @@ def position_sections_tool(
     return pictured(result, looked)
 
 
-def _positioned_reply(
-    done: SectionsPositioned, unknown: Refused | None
-) -> dict[str, Any]:
+def _positioned_reply(done: SectionsPositioned, unknown: Refused | None) -> dict[str, Any]:
     """Return the positions written, those clamped into the atlas range (with
     the range), the unknown names, the order and the sections reordered.
     """
     result: dict[str, Any] = {
-        "written": [
-            {"id": name, "position_mm": round(value, 3)}
-            for name, value in done.written
-        ],
+        "written": [{"id": name, "position_mm": round(value, 3)} for name, value in done.written],
     }
     if done.clamped:
         result["clamped"] = [

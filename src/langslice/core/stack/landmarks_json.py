@@ -24,12 +24,21 @@ Written = dict[str, JsonValue]
 
 
 ENDPOINT_KEYS = (
-    "canonical_xy", "picture", "pixel_xy", "registration_context", "geometry",
-)  # fmt: skip
+    "canonical_xy",
+    "picture",
+    "pixel_xy",
+    "registration_context",
+    "geometry",
+)
 PAIR_KEYS = (
-    "id", "atlas", "atlas_native_xy", "section", "section_fraction_xy",
-    "plane", "stale",
-)  # fmt: skip
+    "id",
+    "atlas",
+    "atlas_native_xy",
+    "section",
+    "section_fraction_xy",
+    "plane",
+    "stale",
+)
 
 
 def endpoint_to_json(endpoint: Endpoint) -> Written:

@@ -110,9 +110,7 @@ def status_and_notes(state: Stack) -> str:
         door's statement.
     """
     recent = [f"- {note}" for note in state.notes[-RECENT_NOTES:]]
-    return STATUS_TABLE.format(
-        table=status_text(state), notes="\n".join(recent) or NO_RUN_NOTES
-    )
+    return STATUS_TABLE.format(table=status_text(state), notes="\n".join(recent) or NO_RUN_NOTES)
 
 
 def user_notes_lines(notes: str) -> list[str]:
@@ -169,9 +167,7 @@ def image_model_off_text(disabled: Collection[str]) -> str:
     return render(_IMAGE_MODEL_OFF, disabled)
 
 
-def image_model_state(
-    spec: JobSpec, *, connected: bool
-) -> dict[str, str | bool] | None:
+def image_model_state(spec: JobSpec, *, connected: bool) -> dict[str, str | bool] | None:
     """Return the job's image model as the status and ``init`` report it.
 
     Parameters
@@ -213,9 +209,7 @@ def opening_for_mcp(pages: int) -> list[str]:
     return [OPENING_PAGES.format(pages=pages) + OPENING_SHOWS]
 
 
-def review_lines(
-    layout: JobLayout, state: Stack, switched_off: Collection[str]
-) -> list[str]:
+def review_lines(layout: JobLayout, state: Stack, switched_off: Collection[str]) -> list[str]:
     """Return the statement's line on the review comments still open.
 
     Parameters

@@ -47,7 +47,6 @@ class Zoomed:
     box: list[float] = field(default_factory=list)
 
 
-
 def zoom_tool(
     run: Run, box: Sequence[float], picture: int, *, region: str = ""
 ) -> dict[str, object]:
@@ -70,15 +69,11 @@ def zoom_tool(
     """
     try:
         number = int(picture or 0) or None
-        done = zoom_picture(
-            run.job, run.workspace, as_list(box), picture=number, region=region
-        )
+        done = zoom_picture(run.job, run.workspace, as_list(box), picture=number, region=region)
     except Refused:
         raise
     except (TypeError, ValueError):
-        raise Refused(
-            RefusalCode.BAD_ARGS, "picture is a picture number."
-        ) from None
+        raise Refused(RefusalCode.BAD_ARGS, "picture is a picture number.") from None
     reply: dict[str, object] = {
         "status": "ok",
         "picture": done.picture,
@@ -116,23 +111,28 @@ def _target(job: Job, picture: int | None) -> PictureRecord:
     if picture is None:
         found = job.views.latest(exclude_tool=ZOOM_TOOL)
         if found is None:
-            raise Refused(RefusalCode.NO_PICTURE,
-                          message="No picture has been shown yet; look first.")
+            raise Refused(
+                RefusalCode.NO_PICTURE, message="No picture has been shown yet; look first."
+            )
         return found
     try:
         number = int(picture)
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="picture is a picture number.") from None
+        raise Refused(RefusalCode.BAD_ARGS, message="picture is a picture number.") from None
     found = job.views.lookup(number)
     if found is None:
         if not job.persist:
-            raise Refused(RefusalCode.PICTURE_NOT_SAVED, picture=number,
-                          message=f"Picture {number} is not saved: this job keeps no pictures "
-                          "beyond this process.")
-        raise Refused(RefusalCode.UNKNOWN_PICTURE, picture=number,
-                      message=f"There is no picture {number}; use a number "
-                      "a reply gave.")
+            raise Refused(
+                RefusalCode.PICTURE_NOT_SAVED,
+                picture=number,
+                message=f"Picture {number} is not saved: this job keeps no pictures "
+                "beyond this process.",
+            )
+        raise Refused(
+            RefusalCode.UNKNOWN_PICTURE,
+            picture=number,
+            message=f"There is no picture {number}; use a number a reply gave.",
+        )
     return found
 
 
@@ -143,14 +143,22 @@ def _content_box(recipe: dict[str, Any] | None, image: Image.Image) -> list[int]
     panels = (recipe or {}).get("endpoint_panels") or []
     if panels:
         bounds = [p["bounds"] for p in panels]
-        box = [min(b[0] for b in bounds), min(b[1] for b in bounds),
-               max(b[2] for b in bounds), max(b[3] for b in bounds)]
+        box = [
+            min(b[0] for b in bounds),
+            min(b[1] for b in bounds),
+            max(b[2] for b in bounds),
+            max(b[3] for b in bounds),
+        ]
     elif (recipe or {}).get("shown"):
         box = [0, 0, *(recipe or {})["shown"]]
     else:
         return None
-    return [int(round(box[0])), int(round(box[1])),
-            min(int(round(box[2])), image.width), min(int(round(box[3])), image.height)]
+    return [
+        int(round(box[0])),
+        int(round(box[1])),
+        min(int(round(box[2])), image.width),
+        min(int(round(box[3])), image.height),
+    ]
 
 
 def _covers_words(covers: Sequence[float]) -> str:
@@ -158,8 +166,12 @@ def _covers_words(covers: Sequence[float]) -> str:
 
 
 def zoom_picture(
-    job: Job, workspace: Workspace, box: Sequence[float] = (), picture: int | None = None,
-    region: str = "") -> Zoomed:
+    job: Job,
+    workspace: Workspace,
+    box: Sequence[float] = (),
+    picture: int | None = None,
+    region: str = "",
+) -> Zoomed:
     """*box* (``[x0, y0, x1, y1]``, pixels of picture *picture* above its
     caption band) drawn again at more detail, saved as a picture of its own
     (tool ``zoom``).
@@ -194,15 +206,22 @@ def zoom_picture(
         original = job.views.lookup(source_number) if source_number else None
         saved = _saved_image(job, original) if original is not None else None
         if saved is None:
-            raise Refused(RefusalCode.PICTURE_NOT_SAVED,
-                          picture=target.seq, message=(
-                f"Picture {target.seq} was cropped from picture {source_number or '?'}, "
-                "which is not saved."))
+            raise Refused(
+                RefusalCode.PICTURE_NOT_SAVED,
+                picture=target.seq,
+                message=(
+                    f"Picture {target.seq} was cropped from picture {source_number or '?'}, "
+                    "which is not saved."
+                ),
+            )
     else:
         saved = _saved_image(job, target)
         if saved is None and renderer not in zooms.RENDERERS:
-            raise Refused(RefusalCode.PICTURE_NOT_SAVED, picture=target.seq,
-                          message=f"Picture {target.seq} is not saved and cannot be redrawn.")
+            raise Refused(
+                RefusalCode.PICTURE_NOT_SAVED,
+                picture=target.seq,
+                message=f"Picture {target.seq} is not saved and cannot be redrawn.",
+            )
     frame = source_frame(recipe)
     asked = list(box)
     if frame is not None and len(asked) == 4 and not region:
@@ -212,20 +231,38 @@ def zoom_picture(
             asked = list(box)
     try:
         with collecting() as notes:
-            made = zooms.redraw(recipe, asked, workspace, state=job.state, store=job.deformations,
-                                picture=saved, region=region)
+            made = zooms.redraw(
+                recipe,
+                asked,
+                workspace,
+                state=job.state,
+                store=job.deformations,
+                picture=saved,
+                region=region,
+            )
     except Refused as refusal:
         if frame is None or refusal.code not in BOX_CODES:
             raise
-        text = (f"{refusal.code}: the box {[float(v) for v in box]} is outside this zoom or "
-                f"too thin; picture {target.seq} covers {_covers_words(frame.covers())} "
-                "(the grid's numbers).")
+        text = (
+            f"{refusal.code}: the box {[float(v) for v in box]} is outside this zoom or "
+            f"too thin; picture {target.seq} covers {_covers_words(frame.covers())} "
+            "(the grid's numbers)."
+        )
         raise Refused(refusal.code, message=text) from refusal
     if not made.redrawn:
         made.recipe["source"] = source_number
-    entries = save_pictures(job, workspace, ZOOM_TOOL, [made], notes,
-                            {"box": [float(v) for v in box], "picture": target.seq,
-                             **({"region": region} if region else {})})
+    entries = save_pictures(
+        job,
+        workspace,
+        ZOOM_TOOL,
+        [made],
+        notes,
+        {
+            "box": [float(v) for v in box],
+            "picture": target.seq,
+            **({"region": region} if region else {}),
+        },
+    )
     content = _content_box(made.recipe, made.image)
     if content is not None:
         for entry in entries:
@@ -234,38 +271,51 @@ def zoom_picture(
     if grid is not None:
         for entry in entries:
             entry["covers"] = [round(v) for v in grid.covers()]
-    return Zoomed(pictures=[made.image], entries=entries, picture=target.seq,
-                  redrawn=made.redrawn, stale=made.stale)
+    return Zoomed(
+        pictures=[made.image],
+        entries=entries,
+        picture=target.seq,
+        redrawn=made.redrawn,
+        stale=made.stale,
+    )
 
 
-def _zoom_sheet(job: Job, workspace: Workspace, target: PictureRecord, box: Sequence[float],
-                region: str) -> Zoomed:
+def _zoom_sheet(
+    job: Job, workspace: Workspace, target: PictureRecord, box: Sequence[float], region: str
+) -> Zoomed:
     """A zoom on a sheet: the box on the tile that holds most of it, drawn
     as a zoom of that tile's picture; the reply names the sheet."""
     recipe = target.recipe or {}
     numbers = [int(tile["picture"]) for tile in recipe.get("tiles") or []]
     listed = ", ".join(str(n) for n in numbers)
     if region:
-        raise Refused(RefusalCode.BAD_REGION_PICTURE,
-                      picture=target.seq, message=(
-            f"Picture {target.seq} is a sheet; a region is found on one of its tiles' "
-            f"pictures ({listed}): give that picture's number."))
+        raise Refused(
+            RefusalCode.BAD_REGION_PICTURE,
+            picture=target.seq,
+            message=(
+                f"Picture {target.seq} is a sheet; a region is found on one of its tiles' "
+                f"pictures ({listed}): give that picture's number."
+            ),
+        )
     try:
         asked = [float(v) for v in box]
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_BOX,
-                      message="box is [x0, y0, x1, y1] in pixels.") from None
+        raise Refused(RefusalCode.BAD_BOX, message="box is [x0, y0, x1, y1] in pixels.") from None
     if len(asked) != 4 or asked[2] <= asked[0] or asked[3] <= asked[1]:
-        raise Refused(RefusalCode.BAD_BOX,
-                      message=f"Picture {target.seq} is a sheet: give a box "
-                      "[x0, y0, x1, y1] in its pixels over one tile.")
+        raise Refused(
+            RefusalCode.BAD_BOX,
+            message=f"Picture {target.seq} is a sheet: give a box "
+            "[x0, y0, x1, y1] in its pixels over one tile.",
+        )
     held = sheets.tile_under(recipe, asked)
     if held is None:
-        raise Refused(RefusalCode.EMPTY_BOX,
-                      message=f"The box {asked} covers no tile of sheet "
-                      f"{target.seq}; its tiles are pictures {listed}, each at its box: "
-                      + "; ".join(f"{t['picture']} at {t['box']}"
-                                  for t in recipe.get("tiles") or []) + ".")
+        raise Refused(
+            RefusalCode.EMPTY_BOX,
+            message=f"The box {asked} covers no tile of sheet "
+            f"{target.seq}; its tiles are pictures {listed}, each at its box: "
+            + "; ".join(f"{t['picture']} at {t['box']}" for t in recipe.get("tiles") or [])
+            + ".",
+        )
     inner = sheets.to_tile(held, asked)
     tile_picture = cast("int", held["picture"])
     number = int(tile_picture)

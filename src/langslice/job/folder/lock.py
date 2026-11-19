@@ -162,11 +162,11 @@ class FolderLock:
         try:
             retried(lock.acquire)
         except Timeout as exc:
-            raise JobBusy(f"{self.path.parent} is locked by another writer (waited "
-                          f"{self.timeout:g} s)") from exc
+            raise JobBusy(
+                f"{self.path.parent} is locked by another writer (waited {self.timeout:g} s)"
+            ) from exc
         except PermissionError:
-            logger.warning("Cannot lock %s; working without the lock",
-                           self.path)
+            logger.warning("Cannot lock %s; working without the lock", self.path)
             self._unusable = self._is_unwritable()
             yield
             return

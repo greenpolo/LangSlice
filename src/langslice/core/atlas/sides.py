@@ -70,6 +70,8 @@ class SideMask(np.ndarray):
 
     def __array_finalize__(self, obj: Any) -> None:
         self.names = getattr(obj, "names", LEFT_RIGHT)
+
+
 SEPARATOR = ":"
 
 
@@ -91,7 +93,11 @@ def has_sides(entries: Any) -> bool:
 
 
 def ml_halves(
-    atlas: Any, position_mm: float, plane: Plane, pitch_deg: float = 0.0, yaw_deg: float = 0.0,
+    atlas: Any,
+    position_mm: float,
+    plane: Plane,
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """``(high, gradient)`` on the native plane grid.
 
@@ -103,18 +109,17 @@ def ml_halves(
     from langslice.core.space import atlas_space_context
 
     if plane == "sagittal":
-        raise Refused(RefusalCode.NO_SIDES,
-                      "A sagittal section lies within one hemisphere, so a "
-                      "region cannot be limited to one side.")
+        raise Refused(
+            RefusalCode.NO_SIDES,
+            "A sagittal section lies within one hemisphere, so a "
+            "region cannot be limited to one side.",
+        )
     context = atlas_space_context(atlas)
     axis = context.ml_axis_index
-    coords = plane_index_coordinates(
-        atlas, position_mm, plane, pitch_deg, yaw_deg
-    )
+    coords = plane_index_coordinates(atlas, position_mm, plane, pitch_deg, yaw_deg)
     ml = np.asarray(coords[axis], dtype=np.float64)
     if ml.shape[0] < 2 or ml.shape[1] < 2:
-        raise Refused(RefusalCode.NO_SIDES,
-                      "The atlas plane is too small to have sides.")
+        raise Refused(RefusalCode.NO_SIDES, "The atlas plane is too small to have sides.")
     gradient = np.array([ml[0, 1] - ml[0, 0], ml[1, 0] - ml[0, 0]], dtype=np.float64)
     count = context.shape[axis]
     metadata = getattr(atlas, "metadata", None) or {}
@@ -156,16 +161,18 @@ def native_left(
     high, gradient = ml_halves(atlas, position_mm, plane, pitch_deg, yaw_deg)
     linear = np.asarray(native_to_display, dtype=np.float64)[:2, :2]
     if not np.isfinite(linear).all() or abs(np.linalg.det(linear)) < 1e-12:
-        raise Refused(RefusalCode.SIDES_AMBIGUOUS,
-                      "The placement is degenerate, so it has no sides.")
+        raise Refused(
+            RefusalCode.SIDES_AMBIGUOUS, "The placement is degenerate, so it has no sides."
+        )
     shown = np.linalg.inv(linear).T @ gradient
     if not np.isfinite(shown).all() or np.hypot(*shown) < 1e-9:
-        raise Refused(RefusalCode.NO_SIDES,
-                      "The atlas plane does not cross the midline.")
+        raise Refused(RefusalCode.NO_SIDES, "The atlas plane does not cross the midline.")
     if abs(abs(shown[0]) - abs(shown[1])) <= DIAGONAL_TOLERANCE * max(abs(shown[0]), abs(shown[1])):
-        raise Refused(RefusalCode.SIDES_AMBIGUOUS,
-                      "This placement turns the midline to 45 degrees, "
-                      "so neither left/right nor top/bottom is defined.")
+        raise Refused(
+            RefusalCode.SIDES_AMBIGUOUS,
+            "This placement turns the midline to 45 degrees, "
+            "so neither left/right nor top/bottom is defined.",
+        )
     if abs(shown[0]) > abs(shown[1]):
         return SideMask(~high if shown[0] > 0 else high, LEFT_RIGHT)
     return SideMask(~high if shown[1] > 0 else high, TOP_BOTTOM)
@@ -184,9 +191,11 @@ def restrict(mask: np.ndarray, side: str | None, left: np.ndarray | None) -> np.
     names = getattr(left, "names", LEFT_RIGHT)
     if side not in names:
         runs = "vertically" if names == LEFT_RIGHT else "horizontally"
-        raise Refused(RefusalCode.WRONG_SIDE_PAIR,
-                      f"On this picture the midline runs {runs}, so its "
-                      f"halves are {names[0]!r} and {names[1]!r}, not {side!r}: name "
-                      f"one of those (e.g. \"CTX:{names[0]}\").")
+        raise Refused(
+            RefusalCode.WRONG_SIDE_PAIR,
+            f"On this picture the midline runs {runs}, so its "
+            f"halves are {names[0]!r} and {names[1]!r}, not {side!r}: name "
+            f'one of those (e.g. "CTX:{names[0]}").',
+        )
     first = np.asarray(left, dtype=bool)
     return np.asarray(mask & (first if side == names[0] else ~first), dtype=bool)

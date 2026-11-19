@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from google.genai import types
+
+if TYPE_CHECKING:
+    from google.adk.models.base_llm import BaseLlm
 
 _OAUTH_PREFIX = "openai-oauth/"
 _ANTHROPIC_PREFIX = "anthropic-api/"
@@ -50,12 +53,10 @@ def _env_bool(name: str) -> bool | None:
         return True
     if lowered in {"0", "false", "no", "off", "nothink"}:
         return False
-    raise ValueError(
-        f"{name} must be a boolean value like true/false, yes/no, or think/nothink"
-    )
+    raise ValueError(f"{name} must be a boolean value like true/false, yes/no, or think/nothink")
 
 
-def _load_litellm_class() -> Callable[..., object]:
+def _load_litellm_class() -> Callable[..., BaseLlm]:
     try:
         from google.adk.models.lite_llm import LiteLlm
     except ImportError as exc:
@@ -63,7 +64,7 @@ def _load_litellm_class() -> Callable[..., object]:
     return LiteLlm
 
 
-def _load_adk_gemma_class() -> Callable[..., object]:
+def _load_adk_gemma_class() -> Callable[..., BaseLlm]:
     from google.adk.models import Gemma
 
     return Gemma
@@ -92,7 +93,7 @@ def default_http_options() -> types.HttpOptions:
     )
 
 
-def resolve_adk_model(model: str | object) -> str | object:
+def resolve_adk_model(model: str | BaseLlm) -> str | BaseLlm:
     """Return a model value suitable for ADK ``LlmAgent(model=...)``.
 
     Native Gemini model strings are returned unchanged. Open-model shorthands
@@ -118,13 +119,13 @@ def resolve_adk_model(model: str | object) -> str | object:
     lowered = stripped.lower()
 
     if lowered.startswith("gemini-api/"):
-        stripped = stripped[len("gemini-api/"):].strip()
+        stripped = stripped[len("gemini-api/") :].strip()
         lowered = stripped.lower()
         if not stripped:
             raise ValueError("gemini-api model strings require a model id after '/'")
 
     if lowered.startswith(_OAUTH_PREFIX):
-        model_id = stripped[len(_OAUTH_PREFIX):].strip()
+        model_id = stripped[len(_OAUTH_PREFIX) :].strip()
         if not model_id:
             raise ValueError("openai-oauth model strings require a model id after '/'")
         from langslice.providers.oauth.transport import OpenAIOAuthLlm
@@ -132,7 +133,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         return OpenAIOAuthLlm(model=model_id)
 
     if lowered.startswith(_ANTHROPIC_PREFIX):
-        model_id = stripped[len(_ANTHROPIC_PREFIX):].strip()
+        model_id = stripped[len(_ANTHROPIC_PREFIX) :].strip()
         if not model_id:
             raise ValueError("anthropic-api model strings require a model id after '/'")
         from langslice.providers.anthropic_api import AnthropicApiLlm
@@ -142,12 +143,12 @@ def resolve_adk_model(model: str | object) -> str | object:
     if lowered.startswith("gemma-") or lowered.startswith(f"{_MODELS_PREFIX}gemma-"):
         model_id = stripped
         if model_id.lower().startswith(_MODELS_PREFIX):
-            model_id = model_id[len(_MODELS_PREFIX):]
+            model_id = model_id[len(_MODELS_PREFIX) :]
         gemma_cls = _load_adk_gemma_class()
         return gemma_cls(model=model_id)
 
     if lowered.startswith(_PROXY_PREFIX):
-        alias = stripped[len(_PROXY_PREFIX):].strip()
+        alias = stripped[len(_PROXY_PREFIX) :].strip()
         if not alias:
             raise ValueError("litellm-proxy model strings require an alias after ':'")
         litellm_cls = _load_litellm_class()
@@ -158,7 +159,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         )
 
     if lowered.startswith(_OPENROUTER_PREFIX):
-        model_id = stripped[len(_OPENROUTER_PREFIX):].strip()
+        model_id = stripped[len(_OPENROUTER_PREFIX) :].strip()
         if not model_id:
             raise ValueError("openrouter model strings require a model id after ':'")
         litellm_cls = _load_litellm_class()
@@ -169,7 +170,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         return litellm_cls(model=f"openrouter/{model_id}", **kwargs)
 
     if lowered.startswith(_OLLAMA_PREFIX):
-        model_id = stripped[len(_OLLAMA_PREFIX):].strip()
+        model_id = stripped[len(_OLLAMA_PREFIX) :].strip()
         if not model_id:
             raise ValueError("ollama model strings require a model tag after ':'")
         litellm_cls = _load_litellm_class()

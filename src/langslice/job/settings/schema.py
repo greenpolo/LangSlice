@@ -433,8 +433,7 @@ SETTINGS: tuple[Setting, ...] = (
         keyword="model",
         flags=("--model",),
         door_defaults={
-            "run": "the model the LangSlice window's Settings saved, else the "
-            "provider's",
+            "run": "the model the LangSlice window's Settings saved, else the provider's",
         },
     ),
     Setting(

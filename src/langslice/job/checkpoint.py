@@ -95,7 +95,6 @@ def state_from_file(data: JsonObject, path: str | os.PathLike[str]) -> Stack:
         raise ValueError(f"{path}: {exc}") from exc
 
 
-
 class JobCheckpoint:
     """Hold one job's state and files, and write its checkpoint.
 
@@ -147,7 +146,9 @@ class JobCheckpoint:
         self._workspace: Workspace | None = None
         self.upgrade: Upgrade | None = None
         self._state_stamp, self._undo_stamp = seen or (
-            file_stamp(self.checkpoint_path), file_stamp(self.undo_path))
+            file_stamp(self.checkpoint_path),
+            file_stamp(self.undo_path),
+        )
         self._peeked: dict[str, Any] | None = None
         self._peek_stamp: Stamp = None
         self._acting = threading.local()
@@ -212,8 +213,9 @@ class JobCheckpoint:
 
     def portable(self, correction: dict[str, Any]) -> dict[str, Any]:
         """A border trace's record with its paths relative to the job folder."""
-        converted = state_paths({"slices": [{"border_trace": correction}]},
-                                relative_to(self.folder))
+        converted = state_paths(
+            {"slices": [{"border_trace": correction}]}, relative_to(self.folder)
+        )
         return converted["slices"][0]["border_trace"]
 
     def checkpoint(self) -> None:
@@ -233,7 +235,8 @@ class JobCheckpoint:
             if section.landmarks is not None:
                 pairs = tuple(
                     replace(pair, stale=stale(self.state, section, pair))
-                    for pair in section.landmarks.pairs)
+                    for pair in section.landmarks.pairs
+                )
                 section.landmarks = replace(section.landmarks, pairs=pairs)
         if not self.persist:
             return
@@ -274,8 +277,11 @@ class JobCheckpoint:
         out: dict[str, int] = {}
         for section_id in ids:
             record = self.state.by_id(section_id)
-            number = (self.histories.registration_number(self.state, record)
-                      if record is not None else None)
+            number = (
+                self.histories.registration_number(self.state, record)
+                if record is not None
+                else None
+            )
             if number is not None:
                 out[section_id] = number
         return out
@@ -284,8 +290,9 @@ class JobCheckpoint:
         """The registration each section holds after this thread's writes
         since ``len(job.registered)`` was *mark*, by section."""
         me = threading.get_ident()
-        return {section: number for thread, section, number in self.registered[mark:]
-                if thread == me}
+        return {
+            section: number for thread, section, number in self.registered[mark:] if thread == me
+        }
 
     def _notify(self) -> None:
         for observer in list(self.observers):
@@ -309,6 +316,6 @@ class JobCheckpoint:
         (``sections/<name>/deformable/<key>``; made on first use)."""
         if self._deformations is None:
             self._deformations = deformation.RecordStore(
-                root=self.layout.sections_dir, folder_of=self.layout.deformable_dir)
+                root=self.layout.sections_dir, folder_of=self.layout.deformable_dir
+            )
         return self._deformations
-

@@ -70,8 +70,11 @@ def _read_prompt(prompt: str | None, prompt_file: str | os.PathLike[str] | None)
     return prompt
 
 
-def _wrapped_call(function: Callable[..., Any], provider: str, model: str | None,
-                  ) -> Callable[[BorderTraceRequest], GeneratedSegmentation]:
+def _wrapped_call(
+    function: Callable[..., Any],
+    provider: str,
+    model: str | None,
+) -> Callable[[BorderTraceRequest], GeneratedSegmentation]:
     """A caller's own edit function as an ``ImageCall``: it may answer with a
     ``GeneratedSegmentation`` or with the edited picture itself (a PIL image
     or an array)."""
@@ -90,11 +93,14 @@ def _wrapped_call(function: Callable[..., Any], provider: str, model: str | None
 
                 reply = Image.fromarray(np.asarray(reply))
             except Exception as exc:
-                raise TypeError("An image model's call must return the edited image "
-                                "(a PIL image or an array) or a GeneratedSegmentation; "
-                                f"got {type(reply).__name__}") from exc
-        return GeneratedSegmentation(image=reply, provider=provider, model=str(model or ""),
-                                     route="custom")
+                raise TypeError(
+                    "An image model's call must return the edited image "
+                    "(a PIL image or an array) or a GeneratedSegmentation; "
+                    f"got {type(reply).__name__}"
+                ) from exc
+        return GeneratedSegmentation(
+            image=reply, provider=provider, model=str(model or ""), route="custom"
+        )
 
     return call
 
@@ -145,35 +151,53 @@ def image_model(
         canonical = canonical_provider(source)
         if canonical not in CANONICAL_PROVIDERS or canonical == "none":
             names = [item for item in CANONICAL_PROVIDERS if item != "none"]
-            raise ValueError(f"Unknown image-model provider {source!r}; expected one of "
-                             f"{names}, or a model object or function of your own")
+            raise ValueError(
+                f"Unknown image-model provider {source!r}; expected one of "
+                f"{names}, or a model object or function of your own"
+            )
         resolved = resolve_image_model(canonical, model)
         if not own_inputs:
             return dataclasses.replace(resolved, profile=name or canonical)
-        return dataclasses.replace(resolved, prompt=text, photograph_first=photograph_first,
-                                   profile=name or CUSTOM_PROFILE, tested=False)
+        return dataclasses.replace(
+            resolved,
+            prompt=text,
+            photograph_first=photograph_first,
+            profile=name or CUSTOM_PROFILE,
+            tested=False,
+        )
     if isinstance(source, ImageModel):
         if not own_inputs and name is None and model is None:
             return source
         return dataclasses.replace(
-            source, model=model or source.model,
+            source,
+            model=model or source.model,
             prompt=text if text is not None else source.prompt,
-            photograph_first=(photograph_first if photograph_first is not None
-                              else source.photograph_first),
+            photograph_first=(
+                photograph_first if photograph_first is not None else source.photograph_first
+            ),
             profile=name or (CUSTOM_PROFILE if own_inputs else source.profile),
-            tested=source.tested and not own_inputs)
+            tested=source.tested and not own_inputs,
+        )
     function = getattr(source, "call", None) or source
     if not callable(function):
-        raise TypeError("image_model takes a provider name, an ImageModel, an object with a "
-                        f"call, or a function; got {type(source).__name__}")
+        raise TypeError(
+            "image_model takes a provider name, an ImageModel, an object with a "
+            f"call, or a function; got {type(source).__name__}"
+        )
     declared = canonical_provider(str(getattr(source, "provider", "") or ""))
-    provider = declared if declared in CANONICAL_PROVIDERS and declared != "none" \
-        else CUSTOM_PROVIDER
+    provider = (
+        declared if declared in CANONICAL_PROVIDERS and declared != "none" else CUSTOM_PROVIDER
+    )
     named = model or getattr(source, "model", None)
-    return ImageModel(provider=provider, model=None if named is None else str(named),
-                      call=_wrapped_call(function, provider, named), prompt=text,
-                      photograph_first=photograph_first, profile=name or CUSTOM_PROFILE,
-                      tested=False)
+    return ImageModel(
+        provider=provider,
+        model=None if named is None else str(named),
+        call=_wrapped_call(function, provider, named),
+        prompt=text,
+        photograph_first=photograph_first,
+        profile=name or CUSTOM_PROFILE,
+        tested=False,
+    )
 
 
 __all__ = ["CUSTOM_PROFILE", "default_prompt", "image_model"]

@@ -216,9 +216,7 @@ def dataset_xml(slices: list[AbbaSlice]) -> str:
     str
         The dataset XML.
     """
-    openers = json.dumps(
-        [_opener(item) for item in slices], separators=(",", ":")
-    )
+    openers = json.dumps([_opener(item) for item in slices], separators=(",", ":"))
     setups: list[str] = []
     registrations: list[str] = []
     display: list[str] = []
@@ -239,19 +237,14 @@ def dataset_xml(slices: list[AbbaSlice]) -> str:
         ),
         _attributes(
             "seriesindex",
-            [
-                "        <seriesindex>\n          <id>0</id>\n"
-                "        </seriesindex>"
-            ],
+            ["        <seriesindex>\n          <id>0</id>\n        </seriesindex>"],
         ),
         _attributes("illumination", [_named("Illumination", 0, "0")]),
         _attributes(
             "imagename",
             [_named("imagename", i, n) for i, n in enumerate(names)],
         ),
-        _attributes(
-            "channel", [_named("Channel", c, f"ch_{c}") for c in range(widest)]
-        ),
+        _attributes("channel", [_named("Channel", c, f"ch_{c}") for c in range(widest)]),
         _attributes("tile", tiles),
         _attributes("angle", [_named("Angle", 0, "0")]),
         _attributes("displaysettings", display),
@@ -409,9 +402,7 @@ def _slice_entry(item: AbbaSlice, first: int) -> JsonObject:
     return entry
 
 
-def state_json(
-    slices: list[AbbaSlice], rotation_x: float, rotation_y: float
-) -> JsonObject:
+def state_json(slices: list[AbbaSlice], rotation_x: float, rotation_y: float) -> JsonObject:
     """Write ABBA's ``state.json`` for the slices at these rotations.
 
     Parameters
@@ -440,9 +431,7 @@ def state_json(
     return state
 
 
-def project_bytes(
-    slices: list[AbbaSlice], rotation_x: float, rotation_y: float
-) -> bytes:
+def project_bytes(slices: list[AbbaSlice], rotation_x: float, rotation_y: float) -> bytes:
     """Write the whole ``.abba`` file.
 
     Parameters
@@ -467,9 +456,7 @@ def project_bytes(
     state = state_json(slices, rotation_x, rotation_y)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(
-            "sources.json", json.dumps(sources_json(slices), indent=2)
-        )
+        archive.writestr("sources.json", json.dumps(sources_json(slices), indent=2))
         archive.writestr("state.json", json.dumps(state, indent=2))
         archive.writestr(DATASET_FILE, dataset_xml(slices))
     return buffer.getvalue()

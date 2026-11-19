@@ -15,9 +15,7 @@ from langslice.tools.descriptions.description import (
 )
 
 NOTE = ToolDescription(
-    summary=(
-        "Append one line to the run notes, which are saved with the results."
-    ),
+    summary=("Append one line to the run notes, which are saved with the results."),
     arguments={
         "text": Argument(
             str,
@@ -29,8 +27,7 @@ NOTE = ToolDescription(
 
 UNDO = ToolDescription(
     summary=(
-        "Undo the last write. A tool call, or a finished piece of background "
-        "work, is one step."
+        "Undo the last write. A tool call, or a finished piece of background work, is one step."
     ),
     arguments={
         "steps": Argument(
@@ -62,8 +59,7 @@ those sections.""",
 
 RESTORE_REGISTRATION = ToolDescription(
     summary=(
-        "Put back registrations sections held before: their orientation, "
-        "transform and deformation."
+        "Put back registrations sections held before: their orientation, transform and deformation."
     ),
     body=(
         """\
@@ -143,8 +139,7 @@ none.""",
 
 EXPORT_MAPS = ToolDescription(
     summary=(
-        "Write each placed section's maps and the stack's exports, from the "
-        "job as it stands."
+        "Write each placed section's maps and the stack's exports, from the job as it stands."
     ),
     body=(
         """\

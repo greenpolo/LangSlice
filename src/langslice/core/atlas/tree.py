@@ -58,5 +58,4 @@ def with_descendants(atlas: Any, ids: Iterable[int]) -> frozenset[int]:
     return frozenset(result)
 
 
-__all__ = ["ancestor_at", "ancestry", "descendants", "path", "structure_table",
-           "with_descendants"]
+__all__ = ["ancestor_at", "ancestry", "descendants", "path", "structure_table", "with_descendants"]

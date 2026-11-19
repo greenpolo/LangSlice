@@ -129,7 +129,8 @@ class ToolDef:
         """
         atlas, plane = str(spec.atlas), str(spec.plane)
         on_atlas = not self.atlases or any(
-            fnmatch.fnmatchcase(atlas, pattern) for pattern in self.atlases)
+            fnmatch.fnmatchcase(atlas, pattern) for pattern in self.atlases
+        )
         return on_atlas and (not self.planes or plane in self.planes)
 
     def is_on(self, spec: Any) -> bool:
@@ -141,8 +142,14 @@ class ToolDef:
 TASK_WRITERS: dict[str, tuple[str, ...]] = {
     "position": ("position_sections",),
     "transform": ("interactive_transform", "elastix_affine"),
-    "nonlinear": ("fireants_syn", "landmark_triangulation", "trace_borders",
-                  "stalign_lddmm", "spomialign", "emlddmm_stack"),
+    "nonlinear": (
+        "fireants_syn",
+        "landmark_triangulation",
+        "trace_borders",
+        "stalign_lddmm",
+        "spomialign",
+        "emlddmm_stack",
+    ),
 }
 
 _ENGINES = "langslice.engines."
@@ -155,79 +162,166 @@ EMLDDMM = _ENGINES + "emlddmm.plugin:tools"
 _LOOK_OPTIONS = {mode: "mode" for mode in LOOK_MODES}
 _OVERLAY = (("look:overlay",),)
 
-TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
-    ToolDef("look", "read", "Common", options=_LOOK_OPTIONS, essential=True),
-    ToolDef("zoom", "read", "Common"),
-    ToolDef("make_image", "write", "Common"),
-    ToolDef("grep_atlas", "read", "Common", options={"points": ""}),
-    ToolDef("grep_atlas_view", "read", "Common"),
-    ToolDef("status", "read", "Common", essential=True),
-    ToolDef("list_files", "read", "Common"),
-    ToolDef("search_files", "read", "Common"),
-    ToolDef("read_file", "read", "Common"),
-    ToolDef("review_comments", "read", "Common"),
-    ToolDef("position_sections", "write", "Positioning", when=positions_on,
-            needs=(("look:positioning", "look:overlay"),), writes=("position", "angles")),
-    ToolDef("interactive_transform", "write", "Linear", options={"flip": "", "rotate": ""},
-            when=_task_on("transform"), needs=_OVERLAY,
-            writes=("orientation", "affine")),
-    ToolDef("mark_damage", "write", "Common", writes=("damage",)),
-    ToolDef("make_mask", "write", "Common",
+TOOLS: dict[str, ToolDef] = {
+    tool.name: tool
+    for tool in (
+        ToolDef("look", "read", "Common", options=_LOOK_OPTIONS, essential=True),
+        ToolDef("zoom", "read", "Common"),
+        ToolDef("make_image", "write", "Common"),
+        ToolDef("grep_atlas", "read", "Common", options={"points": ""}),
+        ToolDef("grep_atlas_view", "read", "Common"),
+        ToolDef("status", "read", "Common", essential=True),
+        ToolDef("list_files", "read", "Common"),
+        ToolDef("search_files", "read", "Common"),
+        ToolDef("read_file", "read", "Common"),
+        ToolDef("review_comments", "read", "Common"),
+        ToolDef(
+            "position_sections",
+            "write",
+            "Positioning",
+            when=positions_on,
+            needs=(("look:positioning", "look:overlay"),),
+            writes=("position", "angles"),
+        ),
+        ToolDef(
+            "interactive_transform",
+            "write",
+            "Linear",
+            options={"flip": "", "rotate": ""},
+            when=_task_on("transform"),
+            needs=_OVERLAY,
+            writes=("orientation", "affine"),
+        ),
+        ToolDef("mark_damage", "write", "Common", writes=("damage",)),
+        ToolDef(
+            "make_mask",
+            "write",
+            "Common",
             when=_task_on("transform", "nonlinear"),
-            needs=(("look:section",),)),
-    ToolDef("elastix_affine", "write", "Linear", long=True,
-            when=_task_on("transform"), needs=_OVERLAY, writes=("affine",)),
-    ToolDef("fireants_syn", "write", "Nonlinear", long=True,
+            needs=(("look:section",),),
+        ),
+        ToolDef(
+            "elastix_affine",
+            "write",
+            "Linear",
+            long=True,
+            when=_task_on("transform"),
+            needs=_OVERLAY,
+            writes=("affine",),
+        ),
+        ToolDef(
+            "fireants_syn",
+            "write",
+            "Nonlinear",
+            long=True,
             options={"metric": "", "edges": "", "detail": ""},
-            when=_task_on("nonlinear"), needs=_OVERLAY,
-            writes=("deformation",)),
-    ToolDef("set_landmarks", "write", "Nonlinear",
             when=_task_on("nonlinear"),
-            needs=(("look:atlas", "look:overlay"), ("look:section", "look:overlay"),
-                   ("landmark_triangulation",)),
-            writes=("deformation",)),
-    ToolDef("landmark_triangulation", "write", "Nonlinear",
+            needs=_OVERLAY,
+            writes=("deformation",),
+        ),
+        ToolDef(
+            "set_landmarks",
+            "write",
+            "Nonlinear",
             when=_task_on("nonlinear"),
-            needs=(("look:overlay",), ("set_landmarks",)), writes=("deformation",)),
-    ToolDef("trace_borders", "write", "Nonlinear", long=True, image_model=True,
+            needs=(
+                ("look:atlas", "look:overlay"),
+                ("look:section", "look:overlay"),
+                ("landmark_triangulation",),
+            ),
+            writes=("deformation",),
+        ),
+        ToolDef(
+            "landmark_triangulation",
+            "write",
+            "Nonlinear",
+            when=_task_on("nonlinear"),
+            needs=(("look:overlay",), ("set_landmarks",)),
+            writes=("deformation",),
+        ),
+        ToolDef(
+            "trace_borders",
+            "write",
+            "Nonlinear",
+            long=True,
+            image_model=True,
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model,
-            needs=_OVERLAY, writes=("deformation",), default_off=True),
-    ToolDef("note", "write", "Common"),
-    ToolDef("undo", "write", "Common", essential=True),
-    ToolDef("redo", "write", "Common"),
-    ToolDef("restore_registration", "write", "Common",
+            needs=_OVERLAY,
+            writes=("deformation",),
+            default_off=True,
+        ),
+        ToolDef("note", "write", "Common"),
+        ToolDef("undo", "write", "Common", essential=True),
+        ToolDef("redo", "write", "Common"),
+        ToolDef(
+            "restore_registration",
+            "write",
+            "Common",
             when=_task_on("transform", "nonlinear"),
-            needs=_OVERLAY, writes=("orientation", "affine", "deformation")),
-    ToolDef("submit", "write", "Common", essential=True),
-    ToolDef("export_maps", "read", "Common", scripting=True, long=True),
-    ToolDef("deepslice_place", "write", "Positioning", when=positions_on,
+            needs=_OVERLAY,
+            writes=("orientation", "affine", "deformation"),
+        ),
+        ToolDef("submit", "write", "Common", essential=True),
+        ToolDef("export_maps", "read", "Common", scripting=True, long=True),
+        ToolDef(
+            "deepslice_place",
+            "write",
+            "Positioning",
+            when=positions_on,
             needs=(("look:positioning",),),
             writes=("position", "angles", "affine"),
-            engine=DEEPSLICE, default_off=True,
+            engine=DEEPSLICE,
+            default_off=True,
             atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
-            planes=("coronal",)),
-    ToolDef("brainways_ap", "write", "Positioning",
+            planes=("coronal",),
+        ),
+        ToolDef(
+            "brainways_ap",
+            "write",
+            "Positioning",
             when=_task_on("position"),
-            needs=(("look:positioning",),), writes=("position",),
-            engine=BRAINWAYS, default_off=True,
-            atlases=("whs_sd_rat_39um",), planes=("coronal",)),
-    ToolDef("stalign_lddmm", "write", "Nonlinear", long=True,
+            needs=(("look:positioning",),),
+            writes=("position",),
+            engine=BRAINWAYS,
+            default_off=True,
+            atlases=("whs_sd_rat_39um",),
+            planes=("coronal",),
+        ),
+        ToolDef(
+            "stalign_lddmm",
+            "write",
+            "Nonlinear",
+            long=True,
             when=_task_on("nonlinear"),
-            writes=("affine", "deformation"), engine=STALIGN),
-    ToolDef("stalign_plane_search", "read", "Positioning", when=positions_on,
-            engine=STALIGN),
-    ToolDef("spomialign", "write", "Nonlinear", long=True,
+            writes=("affine", "deformation"),
+            engine=STALIGN,
+        ),
+        ToolDef("stalign_plane_search", "read", "Positioning", when=positions_on, engine=STALIGN),
+        ToolDef(
+            "spomialign",
+            "write",
+            "Nonlinear",
+            long=True,
             when=_task_on("transform", "nonlinear"),
-            writes=("affine", "deformation"), engine=SPOMIALIGN),
-    ToolDef("emlddmm_stack", "write", "Nonlinear", long=True,
+            writes=("affine", "deformation"),
+            engine=SPOMIALIGN,
+        ),
+        ToolDef(
+            "emlddmm_stack",
+            "write",
+            "Nonlinear",
+            long=True,
             when=_task_on("nonlinear"),
-            writes=("affine", "deformation"), engine=EMLDDMM),
-    ToolDef("emlddmm_plane", "read", "Positioning", when=positions_on,
-            engine=EMLDDMM),
-)}
+            writes=("affine", "deformation"),
+            engine=EMLDDMM,
+        ),
+        ToolDef("emlddmm_plane", "read", "Positioning", when=positions_on, engine=EMLDDMM),
+    )
+}
 
-ENGINES: tuple[str, ...] = tuple(dict.fromkeys(
-    tool.engine for tool in TOOLS.values() if tool.engine))
+ENGINES: tuple[str, ...] = tuple(
+    dict.fromkeys(tool.engine for tool in TOOLS.values() if tool.engine)
+)
 
 
 def default_off_names() -> list[str]:
@@ -254,8 +348,7 @@ def engines_on(spec: object) -> list[str]:
     list of str
         The engines' references, in table order.
     """
-    on = [tool.engine for tool in TOOLS.values()
-          if tool.engine and tool.is_on(spec)]
+    on = [tool.engine for tool in TOOLS.values() if tool.engine and tool.is_on(spec)]
     return list(dict.fromkeys(on))
 
 
@@ -276,9 +369,11 @@ def check_enabled(names: Sequence[object]) -> str | None:
     known = default_off_names()
     for name in names:
         if name not in known:
-            return (f"enabled: {name!r} is not a tool that starts off; the "
-                    f"tools that do: {', '.join(known)}. Every other tool "
-                    "is on unless disabled names it")
+            return (
+                f"enabled: {name!r} is not a tool that starts off; the "
+                f"tools that do: {', '.join(known)}. Every other tool "
+                "is on unless disabled names it"
+            )
     return None
 
 
@@ -317,10 +412,17 @@ def catalog(spec: Any = None) -> list[dict[str, Any]]:
     group, kind, whether the tool can be disabled (``essential`` tools cannot,
     their options can), the names of its options and what it needs (groups
     of names, one of each on). Plain data."""
-    return [{"name": tool.name, "group": tool.group, "kind": tool.kind,
-             "disableable": not tool.essential, "options": list(tool.options),
-             "needs": [list(group) for group in tool.needs]}
-            for tool in tools_for(spec).values()]
+    return [
+        {
+            "name": tool.name,
+            "group": tool.group,
+            "kind": tool.kind,
+            "disableable": not tool.essential,
+            "options": list(tool.options),
+            "needs": [list(group) for group in tool.needs],
+        }
+        for tool in tools_for(spec).values()
+    ]
 
 
 def off_names(spec: Any) -> list[str]:
@@ -338,10 +440,14 @@ def off_names(spec: Any) -> list[str]:
     names = list(spec.disabled)
     enabled = _str_names(getattr(cast("object", spec), "enabled", ()))
     names.extend(
-        tool.name for tool in TOOLS.values()
-        if tool.when(spec) and not (
+        tool.name
+        for tool in TOOLS.values()
+        if tool.when(spec)
+        and not (
             tool.fits(cast("_AtlasAndPlane", spec))
-            and (tool.name in enabled or not tool.default_off)))
+            and (tool.name in enabled or not tool.default_off)
+        )
+    )
     if getattr(spec, "plugins", None):
         from langslice.job import plugins
 
@@ -353,8 +459,9 @@ def off_names(spec: Any) -> list[str]:
         if tool.writes and set(tool.writes) <= everywhere and tool.when(spec):
             names.append(tool.name)
     if "orientation" in everywhere:
-        names.extend(f"interactive_transform{OPTION_SEPARATOR}{option}"
-                     for option in ("flip", "rotate"))
+        names.extend(
+            f"interactive_transform{OPTION_SEPARATOR}{option}" for option in ("flip", "rotate")
+        )
     return list(dict.fromkeys(names))
 
 
@@ -366,8 +473,11 @@ def is_off(disabled: Collection[str], name: str) -> bool:
 
 def options_on(disabled: Collection[str], tool: str) -> tuple[str, ...]:
     """The options of *tool* still on, in table order."""
-    return tuple(option for option in TOOLS[tool].options
-                 if not is_off(disabled, f"{tool}{OPTION_SEPARATOR}{option}"))
+    return tuple(
+        option
+        for option in TOOLS[tool].options
+        if not is_off(disabled, f"{tool}{OPTION_SEPARATOR}{option}")
+    )
 
 
 def _either(names: list[str]) -> str:
@@ -384,10 +494,13 @@ def check_names(names: list[Any], spec: Any = None) -> str | None:
             continue
         held = tools_for(spec).get(str(name))
         if held is not None and held.essential:
-            return (f"disabled: {name} cannot be disabled (the run needs it); the tools and "
-                    f"options that can be: {', '.join(valid_names(spec))}")
-        return (f"disabled: unknown name {name!r}; the valid names are "
-                f"{', '.join(valid_names(spec))}")
+            return (
+                f"disabled: {name} cannot be disabled (the run needs it); the tools and "
+                f"options that can be: {', '.join(valid_names(spec))}"
+            )
+        return (
+            f"disabled: unknown name {name!r}; the valid names are {', '.join(valid_names(spec))}"
+        )
     return None
 
 
@@ -404,22 +517,28 @@ def refusal(spec: Any, *, image_model: bool = True) -> str | None:
     if reason is not None:
         return reason
     if not options_on(disabled, "look"):
-        return "disabled: every look mode is off; look keeps at least one of " \
-               + ", ".join(option_names("look"))
+        return "disabled: every look mode is off; look keeps at least one of " + ", ".join(
+            option_names("look")
+        )
     for task in spec.active_tasks:
         writers = TASK_WRITERS.get(task, ())
-        if writers and not any(TOOLS[name].is_on(spec)
-                               and (image_model or not TOOLS[name].image_model)
-                               for name in writers):
-            return (f"disabled: the {task} task is on and every tool that writes its answer "
-                    f"({', '.join(writers)}) is off here; keep one of them on or leave the "
-                    "task out")
+        if writers and not any(
+            TOOLS[name].is_on(spec) and (image_model or not TOOLS[name].image_model)
+            for name in writers
+        ):
+            return (
+                f"disabled: the {task} task is on and every tool that writes its answer "
+                f"({', '.join(writers)}) is off here; keep one of them on or leave the "
+                "task out"
+            )
     for tool in tools_for(spec).values():
         if not tool.is_on(spec):
             continue
         for group in tool.needs:
             if all(is_off(disabled, name) for name in group):
-                return (f"disabled: {tool.name} is on and needs {_either(list(group))}, "
-                        f"which {'is' if len(group) == 1 else 'are'} off; turn "
-                        f"{tool.name} off too or keep {_either(list(group))} on")
+                return (
+                    f"disabled: {tool.name} is on and needs {_either(list(group))}, "
+                    f"which {'is' if len(group) == 1 else 'are'} off; turn "
+                    f"{tool.name} off too or keep {_either(list(group))} on"
+                )
     return None

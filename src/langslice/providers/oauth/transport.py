@@ -188,15 +188,21 @@ def stream_events(
                     for event in events:
                         prefix.append(event)
                         if event.get("type") not in (
-                            "response.created", "response.queued", "response.in_progress",
+                            "response.created",
+                            "response.queued",
+                            "response.in_progress",
                         ):
                             break
                 except Exception:
                     response.close()
                     raise
                 delay = _response_retry_delay(retries, response.headers.get("Retry-After"))
-                if (not prefix or not _retryable_failure(prefix[-1])
-                        or retries >= 3 or delay is None):
+                if (
+                    not prefix
+                    or not _retryable_failure(prefix[-1])
+                    or retries >= 3
+                    or delay is None
+                ):
                     break
                 response.close()
                 reason = "early response.failed"
@@ -208,8 +214,7 @@ def stream_events(
                 finally:
                     response.close()
                 retryable = (
-                    response.status_code in (408, 409, 429)
-                    or 500 <= response.status_code < 600
+                    response.status_code in (408, 409, 429) or 500 <= response.status_code < 600
                 )
                 if retries >= 3 or not retryable or delay is None or _hard_quota_error(message):
                     raise RuntimeError(
@@ -222,7 +227,9 @@ def stream_events(
         time.sleep(delay)
     quota = quota_from_headers(response.headers)
     return itertools.chain(
-        [{"type": "langslice.quota", "quota": quota}], prefix, _closing(response, events),
+        [{"type": "langslice.quota", "quota": quota}],
+        prefix,
+        _closing(response, events),
     )
 
 
@@ -233,12 +240,17 @@ def _retryable_failure(event: dict[str, Any]) -> bool:
     error = event.get("response", {}).get("error") or {}
     if _hard_quota_error(json.dumps({"error": error})):
         return False
-    return any(error.get(key) in (
-        "server_error", "service_unavailable", "overloaded", "temporarily_unavailable",
-        "rate_limit_exceeded",
-    ) for key in ("code", "type")) or (
-        "servers are currently overloaded" in str(error.get("message", "")).lower()
-    )
+    return any(
+        error.get(key)
+        in (
+            "server_error",
+            "service_unavailable",
+            "overloaded",
+            "temporarily_unavailable",
+            "rate_limit_exceeded",
+        )
+        for key in ("code", "type")
+    ) or ("servers are currently overloaded" in str(error.get("message", "")).lower())
 
 
 def _response_retry_delay(retries: int, retry_after: str | None) -> float | None:
@@ -273,7 +285,8 @@ def _hard_quota_error(message: str) -> bool:
 
 
 def _closing(
-    response: requests.Response, events: Iterator[dict[str, Any]],
+    response: requests.Response,
+    events: Iterator[dict[str, Any]],
 ) -> Iterator[dict[str, Any]]:
     try:
         yield from events
@@ -423,13 +436,15 @@ def _function_call_output(response: types.FunctionResponse) -> dict[str, Any]:
         total, slots = layout if layout is not None else (len(uris), list(range(len(uris))))
         surviving = dict(zip(slots, uris, strict=True))
         for index in range(total):
-            content.append(
-                {"type": "input_text", "text": f"{name} image {index + 1} of {total}"}
-            )
+            content.append({"type": "input_text", "text": f"{name} image {index + 1} of {total}"})
             if index in surviving:
-                content.append({
-                    "type": "input_image", "image_url": surviving[index], "detail": "high",
-                })
+                content.append(
+                    {
+                        "type": "input_image",
+                        "image_url": surviving[index],
+                        "detail": "high",
+                    }
+                )
         item["output"] = content
     return item
 
@@ -493,8 +508,11 @@ def _refs(node: Any) -> list[Any]:
 def _json_schema_dict(declaration: types.FunctionDeclaration) -> dict[str, Any]:
     if declaration.parameters_json_schema is not None:
         schema = declaration.parameters_json_schema
-        return (_inline_refs(dict(schema)) if isinstance(schema, dict)
-                else {"type": "object", "properties": {}})
+        return (
+            _inline_refs(dict(schema))
+            if isinstance(schema, dict)
+            else {"type": "object", "properties": {}}
+        )
     if declaration.parameters is not None:
         dumped = declaration.parameters.json_schema.model_dump(
             mode="json", exclude_none=True, by_alias=True
@@ -581,7 +599,7 @@ class OpenAIOAuthLlm(BaseLlm):
     @field_validator("model")
     @classmethod
     def _strip_prefix(cls, value: str) -> str:
-        return value[len(MODEL_PREFIX):] if value.startswith(MODEL_PREFIX) else value
+        return value[len(MODEL_PREFIX) :] if value.startswith(MODEL_PREFIX) else value
 
     @classmethod
     def supported_models(cls) -> list[str]:
@@ -626,9 +644,7 @@ class OpenAIOAuthLlm(BaseLlm):
         request_usage = request_descriptor(body) if self.capture_usage_details else None
         output_usage: list[dict[str, Any]] = []
         diagnostics: dict[str, Any] | None = None
-        events = await asyncio.to_thread(
-            stream_events, body, session_id=self.prompt_cache_key
-        )
+        events = await asyncio.to_thread(stream_events, body, session_id=self.prompt_cache_key)
 
         text_chunks: list[str] = []
         reasoning_parts: list[types.Part] = []
@@ -695,7 +711,9 @@ class OpenAIOAuthLlm(BaseLlm):
             elif kind == "response.completed":
                 usage = _usage_metadata(event)
                 diagnostics = usage_diagnostics(
-                    event.get("response", {}).get("usage"), request_usage, output_usage,
+                    event.get("response", {}).get("usage"),
+                    request_usage,
+                    output_usage,
                 )
                 break
 
@@ -711,7 +729,8 @@ class OpenAIOAuthLlm(BaseLlm):
             custom_metadata={
                 **({"quota": quota} if quota else {}),
                 **({"usage_diagnostics": diagnostics} if diagnostics is not None else {}),
-            } or None,
+            }
+            or None,
             model_version=self.model,
         )
 

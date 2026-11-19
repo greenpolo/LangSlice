@@ -16,8 +16,7 @@ FIXES: dict[str, str] = {
     ),
     RefusalCode.BAD_JSON: "Pass --args a JSON object, or @path/to/file.json.",
     RefusalCode.UNKNOWN_SLICE_IDS: (
-        "Name sections by filename, as `langslice-job {job} status` "
-        "lists them."
+        "Name sections by filename, as `langslice-job {job} status` lists them."
     ),
     RefusalCode.SECTION_GONE: (
         "The picture shows a section the stack no longer holds; "
@@ -44,8 +43,7 @@ FIXES: dict[str, str] = {
         "message names, then call it again."
     ),
     RefusalCode.MISSING_POSITIONS: (
-        "Write every section's own position first[[?position_sections  "
-        "(position_sections)]]."
+        "Write every section's own position first[[?position_sections  (position_sections)]]."
     ),
     RefusalCode.MISSING_TRANSFORMS: (
         "Give every section a transform[[?elastix_affine|"
@@ -113,8 +111,7 @@ FIXES: dict[str, str] = {
         "(restore_registration)]], or undo the step that applied it."
     ),
     RefusalCode.IMAGE_CALL_IN_PROGRESS: (
-        "Another process is making this image call; call again once its "
-        "reply has landed."
+        "Another process is making this image call; call again once its reply has landed."
     ),
     RefusalCode.ENGINE_MISSING: (
         "The engine is not installed on this host (the message names what is "
@@ -127,28 +124,23 @@ FIXES: dict[str, str] = {
     ),
     RefusalCode.RENDER_FAILED: "See the message; check the section file opens, then retry.",
     RefusalCode.UNKNOWN_MASK: (
-        "Make the mask first[[?make_mask  with make_mask]]; `status` lists each "
-        "section's masks."
+        "Make the mask first[[?make_mask  with make_mask]]; `status` lists each section's masks."
     ),
     RefusalCode.STALE_MASK: (
         "The section was turned or flipped since this mask was made; make the mask again"
         "[[?make_mask  with make_mask]]."
     ),
     RefusalCode.UNKNOWN_IMAGE: (
-        "`status` lists the section images[[?make_image ; make one with "
-        "make_image]]."
+        "`status` lists the section images[[?make_image ; make one with make_image]]."
     ),
     RefusalCode.MASK_UNSUPPORTED: (
-        "This engine sorts tissue itself and takes no mask; the message names "
-        "the engines that do."
+        "This engine sorts tissue itself and takes no mask; the message names the engines that do."
     ),
     RefusalCode.NO_DEFORMATION: (
-        "The section holds no deformation; fit one first, or make the mask "
-        "with source \"em\"."
+        'The section holds no deformation; fit one first, or make the mask with source "em".'
     ),
     RefusalCode.NO_SORTING: (
-        "The section's deformation saved no sorting; make the mask with source "
-        "\"em\"."
+        'The section\'s deformation saved no sorting; make the mask with source "em".'
     ),
     RefusalCode.HAS_DEFORMATION: "Undo the deformation first, or fit a warp on it.",
     RefusalCode.NO_PICTURE: "Look first[[?zoom : zoom takes a box on a picture already drawn]].",
@@ -197,7 +189,6 @@ FIXES: dict[str, str] = {
         "again."
     ),
     RefusalCode.NOTHING_EXPORTED: (
-        "Each skipped section's reason is under result.skipped; place it "
-        "first."
+        "Each skipped section's reason is under result.skipped; place it first."
     ),
 }

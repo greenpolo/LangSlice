@@ -51,7 +51,6 @@ logger = logging.getLogger(__name__)
 PALETTE: tuple[str, ...] = ("#ffa000", "#00e5a0", "#ff4081", "#40c4ff", "#ffee00", "#b388ff")
 
 
-
 def save_layer(layer: Layer, stem: Path) -> Path:
     """Write *layer* to ``<stem><extension>`` and return the path."""
     layer.check()
@@ -65,9 +64,13 @@ def save_layer(layer: Layer, stem: Path) -> Path:
             writer = csv.writer(handle)
             writer.writerow([*header, "label", "value"])
             for index, row in enumerate(layer.xy):
-                writer.writerow([*(f"{float(v):.6g}" for v in row),
-                                 layer.tags[index] if layer.tags else "",
-                                 f"{layer.values[index]:.6g}" if layer.values else ""])
+                writer.writerow(
+                    [
+                        *(f"{float(v):.6g}" for v in row),
+                        layer.tags[index] if layer.tags else "",
+                        f"{layer.values[index]:.6g}" if layer.values else "",
+                    ]
+                )
         return path
     if kind == "lines":
         path = stem.with_suffix(".json")
@@ -80,9 +83,11 @@ def save_layer(layer: Layer, stem: Path) -> Path:
                 features.append({"type": "LineString", "coordinates": points})
             if layer.tags:
                 features[-1]["properties"] = {"label": layer.tags[index]}
-        path.write_text(json.dumps({"kind": "lines", "frame": layer.frame,
-                                    "features": features}), encoding="utf-8",
-                                        newline="\n")
+        path.write_text(
+            json.dumps({"kind": "lines", "frame": layer.frame, "features": features}),
+            encoding="utf-8",
+            newline="\n",
+        )
         return path
     if kind == "labels":
         assert layer.raster is not None
@@ -96,8 +101,9 @@ def save_layer(layer: Layer, stem: Path) -> Path:
     if kind == "scalar":
         assert layer.raster is not None
         path = stem.with_suffix(".npz")
-        np.savez_compressed(path, values=layer.raster.astype(np.float32),
-                            level=np.float32(layer.level))
+        np.savez_compressed(
+            path, values=layer.raster.astype(np.float32), level=np.float32(layer.level)
+        )
         return path
     path = stem.with_suffix(".png")
     image = layer.image
@@ -115,11 +121,15 @@ def load_layer(path: Path, ref: LayerRef) -> Layer:
         rows = list(csv.reader(path.open(encoding="utf-8")))
         body = rows[1:]
         width = 2 if frame == "section_px" else 3
-        points = np.array([[float(v) for v in row[:width]] for row in body],
-                          dtype=np.float64).reshape(-1, width)
+        points = np.array(
+            [[float(v) for v in row[:width]] for row in body], dtype=np.float64
+        ).reshape(-1, width)
         labels = tuple(row[width] for row in body) if any(row[width] for row in body) else ()
-        values = (tuple(float(row[width + 1]) for row in body)
-                  if body and all(row[width + 1] for row in body) else ())
+        values = (
+            tuple(float(row[width + 1]) for row in body)
+            if body and all(row[width + 1] for row in body)
+            else ()
+        )
         return Layer("points", frame, name=name, xy=points, tags=labels, values=values)
     if kind == "lines":
         held = json.loads(path.read_text(encoding="utf-8"))
@@ -130,8 +140,9 @@ def load_layer(path: Path, ref: LayerRef) -> Layer:
             coordinates = feature["coordinates"][0][:-1] if closed else feature["coordinates"]
             paths.append((np.asarray(coordinates, dtype=np.float64), closed))
             tags.append(str((feature.get("properties") or {}).get("label", "")))
-        return Layer("lines", frame, name=name, paths=tuple(paths),
-                     tags=tuple(tags) if any(tags) else ())
+        return Layer(
+            "lines", frame, name=name, paths=tuple(paths), tags=tuple(tags) if any(tags) else ()
+        )
     if kind == "labels":
         if path.suffix == ".npz":
             with np.load(path) as held:
@@ -141,8 +152,13 @@ def load_layer(path: Path, ref: LayerRef) -> Layer:
         return Layer("labels", frame, name=name, raster=raster)
     if kind == "scalar":
         with np.load(path) as held:
-            return Layer("scalar", frame, name=name, raster=np.asarray(held["values"]),
-                         level=float(held["level"]))
+            return Layer(
+                "scalar",
+                frame,
+                name=name,
+                raster=np.asarray(held["values"]),
+                level=float(held["level"]),
+            )
     return Layer("picture", frame, name=name, image=Image.open(path).copy())
 
 
@@ -173,14 +189,14 @@ def known_names(state: Stack, sections: Sequence[str] = ()) -> list[str]:
     return names
 
 
-
 def _colour(index: int) -> tuple[int, int, int]:
     value = PALETTE[index % len(PALETTE)].lstrip("#")
     return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
 
-def fractions_to_picture(panel: Mapping[str, Any], fractions: np.ndarray,
-                         warp: Any = None) -> np.ndarray:
+def fractions_to_picture(
+    panel: Mapping[str, Any], fractions: np.ndarray, warp: Any = None
+) -> np.ndarray:
     """Section-file edge fractions ``(N, 2)`` to picture pixels ``(N, 2)``
     through a section *panel* (the inverse of
     :func:`langslice.core.fits.landmarks.section_point`, for many points)."""
@@ -194,14 +210,20 @@ def fractions_to_picture(panel: Mapping[str, Any], fractions: np.ndarray,
         from scipy.ndimage import map_coordinates
 
         scaled = (point + 0.5) * np.asarray(warp.section_size) / size - 0.5
-        shift = np.stack([map_coordinates(warp.field_mm[..., k], [scaled[:, 1], scaled[:, 0]],
-                                          order=1, mode="nearest") for k in range(2)], axis=1)
+        shift = np.stack(
+            [
+                map_coordinates(
+                    warp.field_mm[..., k], [scaled[:, 1], scaled[:, 0]], order=1, mode="nearest"
+                )
+                for k in range(2)
+            ],
+            axis=1,
+        )
         point = point + shift / warp.mm_per_px * size / np.asarray(warp.section_size)
     return transform(np.linalg.inv(np.asarray(panel["pixel_to_render"])), point)
 
 
-def picture_to_fractions(panel: Mapping[str, Any], xy: np.ndarray,
-                         warp: Any = None) -> np.ndarray:
+def picture_to_fractions(panel: Mapping[str, Any], xy: np.ndarray, warp: Any = None) -> np.ndarray:
     """Picture pixels ``(N, 2)`` to section-file edge fractions ``(N, 2)``
     (:func:`langslice.core.fits.landmarks.section_point`, for many points)."""
     xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
@@ -215,19 +237,23 @@ def picture_to_fractions(panel: Mapping[str, Any], xy: np.ndarray,
         count = len(point)
         padded = np.zeros((-(-count // 1024) * 1024, 2))
         padded[:count] = point
-        x, y = warp_source_points(warp, (width, height), padded[:, 0].reshape(-1, 1024),
-                                  padded[:, 1].reshape(-1, 1024))
+        x, y = warp_source_points(
+            warp, (width, height), padded[:, 0].reshape(-1, 1024), padded[:, 1].reshape(-1, 1024)
+        )
         point = np.stack([x.ravel()[:count], y.ravel()[:count]], axis=1)
-    return transform(np.asarray(panel["orientation"]),
-                     (point + 0.5) / np.array([width, height], dtype=np.float64))
+    return transform(
+        np.asarray(panel["orientation"]),
+        (point + 0.5) / np.array([width, height], dtype=np.float64),
+    )
 
 
 class _Mapper:
     """Places one section's layers on one picture: file fractions and atlas
     micrometres to picture pixels."""
 
-    def __init__(self, state: Stack, record: Section, panels: Sequence[Mapping[str, Any]],
-                 ws: Any, warp: Any) -> None:
+    def __init__(
+        self, state: Stack, record: Section, panels: Sequence[Mapping[str, Any]], ws: Any, warp: Any
+    ) -> None:
         self.state, self.record, self.ws, self.warp = state, record, ws, warp
         self.section = next((p for p in panels if p["role"] == "section"), None)
         self.atlas = next((p for p in panels if p["role"] == "atlas"), None)
@@ -260,9 +286,10 @@ class _Mapper:
 
     def from_section_px(self, xy: np.ndarray) -> np.ndarray:
         if self.section is None:
-            raise ToolError(RefusalCode.LAYER_NOT_DRAWABLE,
-                            "this picture has no section to place a "
-                            "section layer on")
+            raise ToolError(
+                RefusalCode.LAYER_NOT_DRAWABLE,
+                "this picture has no section to place a section layer on",
+            )
         width, height = self.file_size()
         fractions = (np.asarray(xy, dtype=np.float64) + 0.5) / np.array([width, height])
         return fractions_to_picture(self.section, fractions, self.section_warp())
@@ -277,9 +304,10 @@ class _Mapper:
             native_xy = rowcol[:, ::-1]
             return transform(np.linalg.inv(np.asarray(self.atlas["pixel_to_native"])), native_xy)
         if self.section is None:
-            raise ToolError(RefusalCode.LAYER_NOT_DRAWABLE,
-                            "this picture shows no plane to place an "
-                            "atlas layer on")
+            raise ToolError(
+                RefusalCode.LAYER_NOT_DRAWABLE,
+                "this picture shows no plane to place an atlas layer on",
+            )
         width, height = frame.file_size
         matrix = np.asarray(frame.pixel_to_atlas_um(), dtype=np.float64)
         linear, offset = matrix[:, :2], matrix[:, 2]
@@ -288,8 +316,7 @@ class _Mapper:
         return fractions_to_picture(self.section, fractions, None)
 
     def to_picture(self, frame: str, coords: np.ndarray) -> np.ndarray:
-        return self.from_section_px(coords) if frame == "section_px" \
-            else self.from_atlas_um(coords)
+        return self.from_section_px(coords) if frame == "section_px" else self.from_atlas_um(coords)
 
     def sample_raster(self, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
         """For every picture pixel in the section panel's bounds: its row and
@@ -297,13 +324,15 @@ class _Mapper:
         it lies on the section (``inside``). ``(rows, cols, inside)`` stacked as
         two arrays of the bounds' shape plus the mask."""
         if self.section is None:
-            raise ToolError(RefusalCode.LAYER_NOT_DRAWABLE,
-                            "this picture has no section to place a "
-                            "raster layer on")
+            raise ToolError(
+                RefusalCode.LAYER_NOT_DRAWABLE,
+                "this picture has no section to place a raster layer on",
+            )
         x0, y0, x1, y1 = self.bounds
         xs, ys = np.meshgrid(np.arange(int(x0), int(x1)), np.arange(int(y0), int(y1)))
-        fractions = picture_to_fractions(self.section, np.stack([xs.ravel(), ys.ravel()], 1),
-                                         self.section_warp())
+        fractions = picture_to_fractions(
+            self.section, np.stack([xs.ravel(), ys.ravel()], 1), self.section_warp()
+        )
         rows = np.rint(fractions[:, 1] * shape[0] - 0.5).astype(int)
         cols = np.rint(fractions[:, 0] * shape[1] - 0.5).astype(int)
         inside = (rows >= 0) & (rows < shape[0]) & (cols >= 0) & (cols < shape[1])
@@ -311,15 +340,16 @@ class _Mapper:
         return index.reshape(2, *xs.shape), inside.reshape(xs.shape)
 
 
-
-def _halo_line(draw: ImageDraw.ImageDraw, path: list[tuple[float, float]],
-               colour: tuple[int, int, int]) -> None:
+def _halo_line(
+    draw: ImageDraw.ImageDraw, path: list[tuple[float, float]], colour: tuple[int, int, int]
+) -> None:
     draw.line(path, fill=(0, 0, 0), width=5)
     draw.line(path, fill=colour, width=3)
 
 
-def _draw_points(image: Image.Image, mapper: _Mapper, layer: Layer, colour: tuple[int, int, int]
-                 ) -> int:
+def _draw_points(
+    image: Image.Image, mapper: _Mapper, layer: Layer, colour: tuple[int, int, int]
+) -> int:
     assert layer.xy is not None
     xy = mapper.to_picture(layer.frame, layer.xy)
     x0, y0, x1, y1 = mapper.bounds
@@ -339,8 +369,9 @@ def _draw_points(image: Image.Image, mapper: _Mapper, layer: Layer, colour: tupl
     return shown
 
 
-def _draw_lines(image: Image.Image, mapper: _Mapper, layer: Layer, colour: tuple[int, int, int]
-                ) -> int:
+def _draw_lines(
+    image: Image.Image, mapper: _Mapper, layer: Layer, colour: tuple[int, int, int]
+) -> int:
     draw = ImageDraw.Draw(image)
     for index, (coordinates, closed) in enumerate(layer.paths):
         xy = mapper.to_picture(layer.frame, coordinates)
@@ -356,12 +387,11 @@ def _draw_lines(image: Image.Image, mapper: _Mapper, layer: Layer, colour: tuple
 def _outline(mask: np.ndarray) -> np.ndarray:
     """The pixels of *mask* that touch a pixel outside it (4-neighbourhood)."""
     padded = np.pad(mask, 1, constant_values=False)
-    inner = (padded[:-2, 1:-1] & padded[2:, 1:-1] & padded[1:-1, :-2] & padded[1:-1, 2:])
+    inner = padded[:-2, 1:-1] & padded[2:, 1:-1] & padded[1:-1, :-2] & padded[1:-1, 2:]
     return mask & ~inner
 
 
-def _paint(image: Image.Image, mapper: _Mapper, boundary: np.ndarray,
-           colour: np.ndarray) -> None:
+def _paint(image: Image.Image, mapper: _Mapper, boundary: np.ndarray, colour: np.ndarray) -> None:
     """Paint *boundary* (a mask over the panel bounds) in *colour* (a colour,
     or one per pixel) with a one-pixel dark halo."""
     x0, y0 = int(mapper.bounds[0]), int(mapper.bounds[1])
@@ -370,9 +400,9 @@ def _paint(image: Image.Image, mapper: _Mapper, boundary: np.ndarray,
     thick = np.zeros_like(boundary)
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
-            thick |= halo[1 + dy:1 + dy + height, 1 + dx:1 + dx + width]
+            thick |= halo[1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width]
     array = np.asarray(image.convert("RGB")).copy()
-    window = array[y0:y0 + height, x0:x0 + width]
+    window = array[y0 : y0 + height, x0 : x0 + width]
     window[thick] = (0, 0, 0)
     window[boundary] = colour if colour.ndim == 1 else colour[boundary]
     image.paste(Image.fromarray(array))
@@ -383,8 +413,12 @@ def _draw_labels(image: Image.Image, mapper: _Mapper, layer: Layer, index: int) 
     (rows, cols), inside = mapper.sample_raster(layer.raster.shape)
     ids = np.where(inside, layer.raster[rows, cols], 0)
     padded = np.pad(ids, 1, constant_values=0)
-    edge = ((padded[:-2, 1:-1] != ids) | (padded[2:, 1:-1] != ids)
-            | (padded[1:-1, :-2] != ids) | (padded[1:-1, 2:] != ids))
+    edge = (
+        (padded[:-2, 1:-1] != ids)
+        | (padded[2:, 1:-1] != ids)
+        | (padded[1:-1, :-2] != ids)
+        | (padded[1:-1, 2:] != ids)
+    )
     boundary = edge & (ids > 0)
     colours = np.array([_colour(index + int(item)) for item in range(len(PALETTE))])
     paint = colours[(ids % len(PALETTE)).astype(int)]
@@ -392,8 +426,9 @@ def _draw_labels(image: Image.Image, mapper: _Mapper, layer: Layer, index: int) 
     return int(len(np.unique(ids[ids > 0])))
 
 
-def _draw_scalar(image: Image.Image, mapper: _Mapper, layer: Layer,
-                 colour: tuple[int, int, int]) -> int:
+def _draw_scalar(
+    image: Image.Image, mapper: _Mapper, layer: Layer, colour: tuple[int, int, int]
+) -> int:
     assert layer.raster is not None
     (rows, cols), inside = mapper.sample_raster(layer.raster.shape)
     mask = inside & (layer.raster[rows, cols] >= layer.level)
@@ -402,8 +437,13 @@ def _draw_scalar(image: Image.Image, mapper: _Mapper, layer: Layer,
 
 
 def draw_layers(
-    image: Image.Image, panels: Sequence[Mapping[str, Any]], state: Stack,
-    record: Section, wanted: Sequence[str], *, workspace: Workspace,
+    image: Image.Image,
+    panels: Sequence[Mapping[str, Any]],
+    state: Stack,
+    record: Section,
+    wanted: Sequence[str],
+    *,
+    workspace: Workspace,
     warp_record: DeformableRecord | None = None,
 ) -> list[dict[str, Any]]:
     """Draw the layers of *record* that *wanted* names (``"all"``: every one)
@@ -421,8 +461,10 @@ def draw_layers(
         note: dict[str, Any] = {"name": ref.name, "tool": ref.tool, "kind": ref.kind}
         notes.append(note)
         if ref.kind == "picture":
-            note.update(drawn=False, reason="a picture layer is a finished picture; it is "
-                        "not drawn on other pictures")
+            note.update(
+                drawn=False,
+                reason="a picture layer is a finished picture; it is not drawn on other pictures",
+            )
             continue
         if folder is None:
             note.update(drawn=False, reason="the job folder is unknown here")
@@ -442,7 +484,6 @@ def draw_layers(
         except ToolError as exc:
             note.update(drawn=False, reason=exc.message)
         except (OSError, ValueError, KeyError) as exc:
-            logger.warning("layer %s of %s could not be drawn", ref.name, record.id,
-                           exc_info=True)
+            logger.warning("layer %s of %s could not be drawn", ref.name, record.id, exc_info=True)
             note.update(drawn=False, reason=f"the layer could not be read or placed ({exc})")
     return notes
