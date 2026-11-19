@@ -138,7 +138,7 @@ def proposed(
     for row in rows:
         if row.final is None or row.refused is not None:
             continue
-        angles = stack if stack else context.section(row.id).angles
+        angles = stack if stack else context.reads.section(row.id).angles
         planes[row.id] = (row.final.position_mm, angles)
     return Written(params=in_plane_params(context, run, planes))
 
@@ -181,7 +181,7 @@ def write(
     if AnswerPart.ANGLES in choice.parts and stack is not None:
         angles = {"pitch_deg": stack[0], "yaw_deg": stack[1]}
 
-    with context.writing():
+    with context.writes.writing():
         written = _write_positions(context, position_rows, angles)
         if AnswerPart.TRANSFORM in choice.parts:
             written = _write_transforms(context, run, rows, written)
@@ -196,7 +196,7 @@ def _write_positions(
     """Write the positions and the stack's angles, or the positions alone."""
     if not position_rows and angles is None:
         return Written()
-    result = context.set_positions(position_rows, cutting_angles=angles)
+    result = context.writes.set_positions(position_rows, cutting_angles=angles)
     if result.ok:
         landed = result.details.get("cutting_angles") is not None
         return _positions_written(result, angles_written=angles is not None and landed)
@@ -204,7 +204,7 @@ def _write_positions(
     refused = f"{result.error}: {result.message}"
     if angles is None or not position_rows:
         return Written(refused=refused)
-    result = context.set_positions(position_rows)
+    result = context.writes.set_positions(position_rows)
     if not result.ok:
         return Written(refused=refused)
     return replace(_positions_written(result, angles_written=False), refused=refused)
@@ -229,7 +229,7 @@ def _write_transforms(
     """Write each in-plane transform, read at the plane it now holds."""
     planes: dict[str, Plane] = {}
     for row in rows:
-        here = context.section(row.id)
+        here = context.reads.section(row.id)
         if row.refused is None:
             planes[row.id] = (here.position_mm, here.angles)
     params = in_plane_params(context, run, planes)
@@ -242,7 +242,7 @@ def _write_transforms(
     if not transform_rows:
         return replace(written, params=params, transform_errors=errors)
 
-    done = context.set_transforms(transform_rows)
+    done = context.writes.set_transforms(transform_rows)
     if not done.ok:
         refused = written.refused or f"{done.error}: {done.message}"
         return replace(written, params=params, transform_errors=errors, refused=refused)

@@ -5,7 +5,11 @@ Nat Commun; twardlab/emlddmm @ 9c4dc80 plus our fork's e426ece and 6ff62b0, Apac
 registration agent as two tools. Design: Fable's proposal of 2026-10-19, with one change Nash
 made: the slot spacing is an argument of the agent's, not a plugin setting.
 
-- `plugin.py`: the adapter (binds the tools its rows of the tool table declare).
+- `plugin.py`: the adapter (binds the tools its rows of the tool table declare, and the two handlers).
+- `settings.py` (constants, options), `declarations.py` (the descriptions and stubs the model sees),
+  `stack.py` (the sections read onto the stack's grid), `run.py` (the engine's request and its answer
+  read onto each section), `files.py` (the call's readable files and pictures), `landing.py` (the
+  stack's fit written, as background work).
 - `engine.py`: the emlddmm calls, in LangSlice's process, imported when a tool runs.
 - emlddmm itself is vendored: `src/langslice/_vendor/emlddmm/emlddmm.py` is the fork's file
   (SliceBench's `comparators/src/emlddmm_fix`), with its `LICENSE` and `NOTICE`. Its header

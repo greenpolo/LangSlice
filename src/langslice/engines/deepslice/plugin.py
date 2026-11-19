@@ -344,7 +344,7 @@ def place(context: ToolContext, options: Options, arguments: Arguments) -> ToolR
         for arguments that cannot run; ``FIT_FAILED`` when DeepSlice fails.
     """
     engine.require_engine()
-    views = {section.id: section for section in context.sections()}
+    views = {section.id: section for section in context.reads.sections()}
     run_ids, ordered = _run_and_order(context, arguments)
     choice = _asked(context, views, run_ids, arguments.write)
     bad = _bad_sections(context, run_ids, arguments.bad_sections)
@@ -403,13 +403,13 @@ def _proposed_order(row: ProposalRow) -> tuple[bool, float, str]:
 
 def _run_and_order(context: ToolContext, arguments: Arguments) -> tuple[list[str], list[str]]:
     """Return the section ids run and the cutting order as ids."""
-    run = [section.id for section in context.sections()]
+    run = [section.id for section in context.reads.sections()]
     if arguments.sections:
-        run = [context.section(name).id for name in arguments.sections]
+        run = [context.reads.section(name).id for name in arguments.sections]
     if len(set(run)) != len(run):
         raise ToolError(RefusalCode.BAD_ARGUMENT, "a section is named twice in sections")
 
-    ordered = [context.section(name).id for name in arguments.order]
+    ordered = [context.reads.section(name).id for name in arguments.order]
     repeated = len(set(ordered)) != len(ordered)
     if ordered and (repeated or set(ordered) != set(run)):
         raise ToolError(
@@ -425,7 +425,7 @@ def _run_and_order(context: ToolContext, arguments: Arguments) -> tuple[list[str
 def _bad_sections(context: ToolContext, run: list[str], names: list[str] | None) -> dict[str, str]:
     """Return the bad sections and why: those named, else the marked."""
     if names is None:
-        bad = {section: MARKED for section in run if context.section(section).damaged_regions}
+        bad = {section: MARKED for section in run if context.reads.section(section).damaged_regions}
     else:
         bad = _named_bad(context, run, names)
     if len(bad) >= len(run):
@@ -438,7 +438,7 @@ def _bad_sections(context: ToolContext, run: list[str], names: list[str] | None)
 
 def _named_bad(context: ToolContext, run: list[str], names: list[str]) -> dict[str, str]:
     """Return the bad sections a call names, each run."""
-    named = [context.section(name).id for name in names]
+    named = [context.reads.section(name).id for name in names]
     outside = [section for section in named if section not in run]
     if outside:
         raise ToolError(
@@ -508,7 +508,7 @@ def is_transform_available(context: ToolContext) -> bool:
     switched_off = frozenset(str(name) for name in context.spec.get("disabled", ()))
     if not ToolsOn(switched_off).has("elastix_affine"):
         return False
-    return not all("affine" in view.frozen for view in context.sections())
+    return not all("affine" in view.frozen for view in context.reads.sections())
 
 
 def _job_interval(context: ToolContext) -> float | None:
@@ -519,7 +519,7 @@ def _job_interval(context: ToolContext) -> float | None:
 
 def _write_png(context: ToolContext, section: str, folder: Path, options: Options) -> Path:
     """Write a section as the agent oriented it, its delivered pixels."""
-    raster = context.section_raster(section, level=options.long_edge, raw=True)
+    raster = context.reads.section_raster(section, level=options.long_edge, raw=True)
     return write_png(raster.array, folder, section)
 
 
@@ -534,7 +534,7 @@ def _pictures(context: ToolContext, answer: Answer, *, view: bool) -> list[Image
     if _has_landed(answer.choice, answer.written):
         positions = answer.written.positions
         moved = [row.id for row in answer.rows if row.id in positions]
-        return context.positioning_picture(moved or [row.id for row in answer.rows])
+        return context.pictures.positioning_picture(moved or [row.id for row in answer.rows])
     return _proposal_pictures(context, answer)
 
 
@@ -553,7 +553,7 @@ def _proposal_pictures(context: ToolContext, answer: Answer) -> list[Image.Image
         if angles:
             plane["angles"] = angles
         proposal[row.id] = plane
-    return context.positioning_picture(list(proposal), proposal=proposal)
+    return context.pictures.positioning_picture(list(proposal), proposal=proposal)
 
 
 def _has_landed(choice: PartChoice, written: Written) -> bool:

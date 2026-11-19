@@ -4,7 +4,10 @@ A LangSlice engine (`docs/developers/plugins.md` in LangSlice) that offers SPOmi
 (Wang et al. 2026, Brief Bioinform) to the registration agent as one tool,
 `spomialign(sections, fit, rigid, section_image, atlas_image, mask, smoothness_um, matches, view)`.
 
-- `plugin.py`: the adapter (imports `langslice.plugin_api` and the two modules below).
+- `plugin.py`: the adapter (binds the tool its row of the tool table declares).
+- `settings.py` (constants, options), `declarations.py` (the description and stub the model sees),
+  `canvas.py` (a section and its atlas plane on one canvas), `landing.py` (a call's run and each
+  result written).
 - `matching.py`: RoMa's matches as SPOmiAlign takes them (the grid, the edge weighting, the
   suppression, the ranking).
 - `engine.py`: the fits on the matched pairs, and one call's run in the machine's GPU queue.

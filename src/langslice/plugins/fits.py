@@ -1,34 +1,69 @@
-"""The engine runs of a plugin context: an outside engine's files, the native fits.
+"""The engine runs of a plugin context (``ctx.fits``): an outside engine's files, the
+native fits.
 
-:class:`ContextFits` writes what an engine outside LangSlice registers and
-reads its answer back as a proposal, and runs the native engines
-(FireANTs SyN, the Elastix affine) with settings of the caller's, each
-returning a proposal that is not written.
+:class:`Fits` writes what an engine outside LangSlice registers and reads
+its answer back as a proposal, reads a registration file made elsewhere, and
+runs the native engines (FireANTs SyN, the Elastix affine) with settings of
+the caller's, each returning a proposal that is not written.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
 
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
-from langslice.core.stack.section import Section
+from langslice.plugins.frames import Frames, Grids
 from langslice.plugins.proposals import (
-    ContextProposals,
     DeformationProposal,
+    Proposals,
     TransformProposal,
+    is_invertible,
 )
+from langslice.plugins.reads import Records
 from langslice.tools.changing import warps
 
+if TYPE_CHECKING:
+    from langslice.tools.run import Run
 
-class ContextFits(ContextProposals):
-    """Run outside and native engines on a section, as proposals."""
+
+class Fits:
+    """Files and engines outside the context, as proposals: ``ctx.fits``.
+
+    Writes what an engine outside LangSlice registers and reads its answer
+    back (a transform file, a displacement field, a QuickNII or DeepSlice
+    registration file), and runs the native engines (FireANTs SyN, the
+    Elastix affine) with settings of the caller's, each returning a proposal
+    that is not written.
+
+    Parameters
+    ----------
+    run
+        The run the call belongs to: its job, workspace and spec.
+    records
+        How a section is found by filename.
+    grids
+        The fit grids of the context's sections.
+    frames
+        The context's atlas frames.
+    proposals
+        The context's proposals.
+    """
+
+    def __init__(
+        self, run: Run, records: Records, grids: Grids, frames: Frames, proposals: Proposals
+    ) -> None:
+        self._run = run
+        self._records = records
+        self._grids = grids
+        self._frames = frames
+        self._proposals = proposals
 
     def write_frame(
         self,
@@ -62,8 +97,8 @@ class ContextFits(ContextProposals):
                 RefusalCode.BAD_ARGUMENT,
                 f"format is one of {', '.join(IMAGE_FORMATS)}; got {format!r}",
             )
-        record = self._record(section)
-        f = self.fit_frame(record.id, stain=True)
+        record = self._records.get(section)
+        f = self._frames.fit_frame(record.id, stain=True)
         height, width = f.image.shape[:2]
         placed = (
             f.placed_atlas_to_section
@@ -96,7 +131,7 @@ class ContextFits(ContextProposals):
         written = {
             name: write_image(target / f"{name}.{format}", array) for name, array in images.items()
         }
-        grid = self._grid(record)
+        grid = self._grids.of(record)
         info = {
             "section": record.id,
             "fit_size": [int(width), int(height)],
@@ -132,7 +167,7 @@ class ContextFits(ContextProposals):
         spacing: float = 1.0,
     ) -> np.ndarray:
         """An outside engine's answer as the full map
-        :meth:`deformation_from_map` and :meth:`set_deformations` take
+        ``ctx.proposals.deformation_from_map`` and ``ctx.writes.set_deformations`` take
         (``(H, W, 2)`` native atlas pixels of every fit-grid pixel centre).
 
         *source*: a displacement-field image file (``.nii.gz``, ``.mha``,
@@ -149,19 +184,15 @@ class ContextFits(ContextProposals):
         images' spacing per pixel when they were not :meth:`write_frame`'s."""
         from langslice.core.maps.itk import inverted, mapped_points
 
-        if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
-            raise ToolError(
-                RefusalCode.BAD_ARGUMENT,
-                "fixed is 'section' or 'atlas'; atlas is 'placed' or 'native'",
-            )
+        _check_images(fixed, atlas)
         if fixed == "atlas" and atlas == "native":
             raise ToolError(
                 RefusalCode.BAD_ARGUMENT,
                 "a field with the atlas fixed is read on the fit grid: "
                 "register against placed_template (atlas='placed')",
             )
-        record = self._record(section)
-        width, height = self._grid(record).image.size
+        record = self._records.get(section)
+        width, height = self._grids.of(record).image.size
         try:
             points = mapped_points(source, (width, height), spacing=float(spacing))
             if fixed == "atlas":
@@ -170,7 +201,7 @@ class ContextFits(ContextProposals):
             raise ToolError(RefusalCode.BAD_ARGUMENT, f"{record.id}: {exc}") from exc
         if atlas == "native":
             return points
-        to_native = np.linalg.inv(self._placed(record))
+        to_native = np.linalg.inv(self._grids.placed(record))
         return np.stack(
             [
                 to_native[0, 0] * points[..., 0]
@@ -196,45 +227,24 @@ class ContextFits(ContextProposals):
         """An outside engine's affine (a transform file such as ANTs'
         ``0GenericAffine.mat``, or a ``SimpleITK`` transform; *fixed*,
         *atlas* and *spacing* as :meth:`map_from_itk`, either way round) as
-        a :class:`TransformProposal`, like :meth:`transform_from_matrix`.
+        a :class:`TransformProposal`, like ``ctx.proposals.transform_from_matrix``.
         ``BAD_ARGUMENT`` for a transform that is not affine."""
         from langslice.core.maps.itk import linear_matrix
 
-        if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
-            raise ToolError(
-                RefusalCode.BAD_ARGUMENT,
-                "fixed is 'section' or 'atlas'; atlas is 'placed' or 'native'",
-            )
-        record = self._record(section)
-        size = self._grid(record).image.size
+        _check_images(fixed, atlas)
+        record = self._records.get(section)
+        size = self._grids.of(record).image.size
         try:
             matrix = linear_matrix(source, (int(size[0]), int(size[1])), spacing=float(spacing))
         except (ValueError, RuntimeError) as exc:
             raise ToolError(RefusalCode.BAD_ARGUMENT, f"{record.id}: {exc}") from exc
         if fixed == "atlas":
-            if abs(np.linalg.det(matrix[:2, :2])) < 1e-12:
+            if not is_invertible(matrix):
                 raise ToolError(RefusalCode.BAD_ARGUMENT, f"{record.id}: the map is degenerate")
             matrix = np.linalg.inv(matrix)
         if atlas == "placed":
-            matrix = np.linalg.inv(self._placed(record)) @ matrix
-        return self.transform_from_matrix(record.id, matrix[:2], note=note)
-
-    def _placed(self, record: Section) -> np.ndarray:
-        """3x3: native atlas pixels -> fit-grid pixels under the section's
-        current placement (its stored transform, else none)."""
-        from langslice.core.fits import deformation
-
-        if record.transform:
-            try:
-                return np.asarray(
-                    deformation.fit_grid(
-                        self._run.state, self._run.workspace, record
-                    ).placement.atlas_to_section,
-                    dtype=np.float64,
-                )
-            except ValueError as exc:
-                raise ToolError(RefusalCode.PRECONDITION, f"{record.id}: {exc}") from exc
-        return np.asarray(self._grid(record).placement.atlas_to_section, dtype=np.float64)
+            matrix = np.linalg.inv(self._grids.placed(record)) @ matrix
+        return self._proposals.transform_from_matrix(record.id, matrix[:2], note=note)
 
     def fit_fireants(
         self,
@@ -255,7 +265,7 @@ class ContextFits(ContextProposals):
     ) -> DeformationProposal:
         """Run FireANTs SyN (the engine ``fireants_syn`` runs) on the section
         with settings of your own and return the result as a
-        :class:`DeformationProposal`, NOT written (:meth:`set_deformations`
+        :class:`DeformationProposal`, NOT written (``ctx.writes.set_deformations``
         writes it, recorded as this caller's, with the settings and the
         ``inputs`` / ``estimated`` blocks in its provenance).
 
@@ -267,7 +277,7 @@ class ContextFits(ContextProposals):
         (``mutual_information`` / ``local_correlation``), *edges*, *detail*
         (``coarse`` / ``standard`` / ``fine``); *exclude* adds regions to
         leave out. *mask*: ``"none"`` or the NAME of a mask of the section
-        (``make_mask`` made it; :meth:`mask` reads one): its weights at or above
+        (``make_mask`` made it; ``ctx.reads.mask`` reads one): its weights at or above
         0.5 are compared, the others left out. An array is refused
         (``BAD_ARGUMENT``): make the mask with ``make_mask`` so the job holds it.
         *start* ``linear`` fits from the linear placement, ``current`` on
@@ -277,7 +287,7 @@ class ContextFits(ContextProposals):
         from langslice.core.fits.deformable.render import composed_native_grid
         from langslice.tools.fitting import deformable, fit_regions
 
-        record = self._record(section)
+        record = self._records.get(section)
         workspace = self._run.workspace
         label = _mask_name(mask)
         if str(metric) not in deformable.METRICS:
@@ -335,7 +345,7 @@ class ContextFits(ContextProposals):
             "runtime_s": round(float(fitted.engine.get("runtime_s", 0.0)), 1),
         }
         held = fitted.provenance
-        return self.deformation_from_map(
+        return self._proposals.deformation_from_map(
             record.id,
             native_xy,
             note=note or "FireANTs SyN, settings of the caller's",
@@ -363,7 +373,7 @@ class ContextFits(ContextProposals):
     ) -> TransformProposal:
         """Run the Elastix affine (the engine ``elastix_affine`` runs) on the
         section from its current placement and return the result as a
-        :class:`TransformProposal`, NOT written (:meth:`set_transforms`
+        :class:`TransformProposal`, NOT written (``ctx.writes.set_transforms``
         writes it; its record keeps the call's settings under ``fit``).
         The settings are ``elastix_affine``'s, by its names and with its
         defaults: *restrict_to* (region entries, ``"CTX:left"`` for one side),
@@ -374,7 +384,7 @@ class ContextFits(ContextProposals):
         marked damage regions in the fit."""
         from langslice.tools.fitting.affine_fit import elastix_fit
 
-        record = self._record(section)
+        record = self._records.get(section)
         label = _mask_name(mask)
         fitted = elastix_fit(
             self._run.job,
@@ -388,7 +398,7 @@ class ContextFits(ContextProposals):
             section_image=str(section_image),
             edges=bool(edges),
         )
-        proposal = self.transform_from_params(
+        proposal = self._proposals.transform_from_params(
             record.id, fitted.params, note=note or "Elastix affine, settings of the caller's"
         )
         read = fitted.inputs
@@ -410,6 +420,113 @@ class ContextFits(ContextProposals):
             },
         }
         return replace(proposal, record=stored)
+
+    def read_registration(
+        self,
+        path: str | Path,
+        *,
+        sections: Sequence[str] = (),
+        at: Mapping[object, Mapping[str, Any]] | None = None,
+        registered_on: str = "file",
+    ) -> dict[str, Any]:
+        """A linear registration file made elsewhere (QuickNII or VisuAlign
+        JSON/XML, DeepSlice CSV/JSON/XML, a LangSlice ``registration.json``)
+        as placements for this job's sections. Nothing is written. Returns
+        ``{"placements": [...], "refused": {id: reason}, "missing": [id],
+        "unmatched": [file names]}``; a placement is ``{"id", "position_mm",
+        "pitch_deg", "yaw_deg", "rotation_deg", "flip", "params",
+        "pixel_size_um", "pixel_size_source", "out_of_plane_um",
+        "in_plane"}``.
+
+        Each section is read in its CURRENT orientation (quarter turn and flip
+        as the agent set them), so ``rotation_deg`` and ``flip`` are the
+        section's own and ``params`` (six normalized numbers ``[a, b, tx, c, d,
+        ty]``) are for the oriented render: pass them to ``ctx.writes.set_transforms``
+        as ``{"id", "params"}`` (or ``ctx.proposals.transform_from_params``) once the
+        section holds the placement they were read at. ``in_plane`` reads them
+        as rotation, scales and shear on that render
+        (:func:`~langslice.core.geometry.affine.decompose_affine`). *at*
+        ``{section: {"position_mm", "angles": (pitch, yaw)}}`` reads the file's
+        map on a plane of your choosing (the section's final position and
+        angles, e.g. a stack's propagated angle): ``params`` are then the
+        file's map projected onto that plane and ``out_of_plane_um`` is how far
+        the map lies off it; without *at* the file's own plane is used and
+        ``out_of_plane_um`` is about 0. ``params`` is None, with the reason in
+        ``params_note``, when the job has no pixel size for the section (the
+        six numbers are relative to a pixel size, so they mean nothing to a job
+        that would calibrate otherwise).
+
+        *registered_on* is the image the file's entries were made on:
+        ``"file"`` (default) the image file as stored, ``"oriented"`` the
+        section as its orientation turns and flips it, which is what a method
+        sees when the plugin hands it ``ctx.reads.section_raster``; the six numbers
+        are for the oriented render either way."""
+        from langslice.job.imports.placements import import_placements
+
+        self._records.fresh()
+        state = self._run.state
+        names = [self._records.get(ref).id for ref in sections] or [r.id for r in state.slices]
+        planes: dict[str, tuple[float, float, float]] = {}
+        for ref, plane in (at or {}).items():
+            name = self._records.get(ref).id
+            record = state.by_id(name)
+            assert record is not None
+            position = plane.get("position_mm", record.position_mm)
+            angles = plane.get("angles") or (record.pitch_deg, record.yaw_deg)
+            planes[name] = (float(position), float(angles[0]), float(angles[1]))
+        result = import_placements(
+            Path(path),
+            self._run.workspace,
+            section_ids=names,
+            orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices},
+            planes=planes,
+            registered_on=registered_on,
+        )
+        rows = []
+        for p in result.placements:
+            calibrated = p.pixel_size_source != "imported"
+            rows.append(
+                {
+                    "id": p.section_id,
+                    "position_mm": round(float(p.position_mm), 4),
+                    "pitch_deg": round(float(p.pitch_deg), 3),
+                    "yaw_deg": round(float(p.yaw_deg), 3),
+                    "rotation_deg": int(p.rotation_deg),
+                    "flip": bool(p.flip),
+                    "params": [float(v) for v in p.params] if calibrated else None,
+                    **(
+                        {}
+                        if calibrated
+                        else {
+                            "params_note": "the job has no pixel size for this section; the file's "
+                            "numbers imply one, which this job would not use"
+                        }
+                    ),
+                    "pixel_size_um": float(p.pixel_size_um),
+                    "pixel_size_source": p.pixel_size_source,
+                    "out_of_plane_um": round(float(p.placement.out_of_plane_um), 3),
+                    "in_plane": {
+                        k: (round(float(v), 5) if isinstance(v, float) else v)
+                        for k, v in p.placement.in_plane.items()
+                    },
+                }
+            )
+        return {
+            "placements": rows,
+            "refused": dict(result.refused),
+            "missing": list(result.missing),
+            "unmatched": list(result.unmatched),
+        }
+
+
+def _check_images(fixed: str, atlas: str) -> None:
+    """Refuse a *fixed* that is not ``section`` or ``atlas``, or an *atlas*
+    that is not ``placed`` or ``native``."""
+    if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
+        raise ToolError(
+            RefusalCode.BAD_ARGUMENT,
+            "fixed is 'section' or 'atlas'; atlas is 'placed' or 'native'",
+        )
 
 
 def _mask_name(mask: Any) -> str:

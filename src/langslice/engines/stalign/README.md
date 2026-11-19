@@ -6,6 +6,9 @@ registration agent as three tools. Design: Fable's proposal, adopted by Nash on
 2026-10-18.
 
 - `plugin.py`: the adapter (binds the tools its rows of the tool table declare).
+- `settings.py` (constants, options), `declarations.py` (the descriptions and stubs the model sees),
+  `prepare.py` (a section's target image and the atlas source), `landing.py` (`stalign_lddmm`'s run and
+  each result written), `plane_search.py` (`stalign_plane_search`).
 - `engine.py`: the STalign calls, in LangSlice's process; STalign is imported when a tool runs,
   never when the plugin loads.
 
@@ -21,7 +24,7 @@ are imported only by STalign's atlas download and analysis helpers, which LangSl
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work for
 plugins, `BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
-`ToolContext.angles_from_plane`, the `angles` task).
+`ctx.frames.angles_from_plane`, the `angles` task).
 
 ## Use
 
@@ -63,7 +66,7 @@ which the vendored `_result` adds.
   only (`LDDMM_3D_to_slice(niter=0, prefit=True)`: 27 trial planes, the best refined), from the
   section's current placement, against the BrainGlobe volume at 50 um (`../_atlas_average.py`,
   kept in the core's atlas cache). Gives each section's pitch, yaw and position in the stack's
-  convention (`ToolContext.angles_from_plane`), `at_search_edge`, the sections grouped by the
+  convention (`ctx.frames.angles_from_plane`), `at_search_edge`, the sections grouped by the
   sign of their yaw (a mirrored section reverses it; how small a yaw still tells its sign
   depends on the stack, so no threshold is set), the
   middle pitch and yaw magnitude. Writes nothing: the agent writes what it keeps with

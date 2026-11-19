@@ -1,73 +1,16 @@
-"""Tool plugins: the public API (``docs/developers/plugins.md``), importable as
-``langslice.plugin_api``.
+"""Tool plugins: the machinery behind ``langslice.plugin_api``.
 
-A plugin is a Python module whose factory returns a list of :class:`ToolSpec`;
-this package loads it, gives its handlers a :class:`ToolContext` and makes each
-tool a first-class tool of the job's toolbox. ``PLUGIN_API_VERSION`` is the
-API's version. Importing the package registers the loader the core calls for
-the plugins a ``JobSpec`` names.
+A plugin is a Python module whose factory returns a list of
+:class:`~langslice.core.plugins.ToolSpec`; :mod:`langslice.plugins.loader`
+loads it, :mod:`langslice.plugins.context` gives its handlers their
+``ToolContext`` and :mod:`langslice.plugins.runtime` makes each tool a
+first-class tool of the job's toolbox. Importing the package registers the
+loader the core calls for the plugins a ``JobSpec`` names. The names a plugin
+author imports are listed in :mod:`langslice.plugin_api`.
 """
 
 from __future__ import annotations
 
-from langslice.core.failures import ENGINE_FAILURES
-from langslice.core.fits.deformable.gpu_queue import gpu_turn, out_of_memory
-from langslice.core.fits.deformation import flag_words
-from langslice.core.hardware import map_sections
-from langslice.core.plugins import (
-    PLUGIN_API_VERSION,
-    Layer,
-    PluginError,
-    ToolError,
-    ToolResult,
-    ToolSpec,
-)
-from langslice.core.refusal import RefusalCode
-from langslice.job.settings.tools_on import ToolsOn
-from langslice.plugins import loader as _loader
-from langslice.plugins.context import ToolContext
-from langslice.plugins.frames import AtlasPlane, FitFrame
-from langslice.plugins.loader import as_refs, load
-from langslice.plugins.proposals import (
-    DeformationProposal,
-    TransformProposal,
-)
-from langslice.plugins.reads import (
-    AffineView,
-    AtlasView,
-    LayerRef,
-    SectionRaster,
-    SectionView,
-)
-from langslice.plugins.writes import WriteResult
+from langslice.plugins import loader
 
-_loader.install()
-
-__all__ = [
-    "ENGINE_FAILURES",
-    "PLUGIN_API_VERSION",
-    "AffineView",
-    "AtlasPlane",
-    "AtlasView",
-    "DeformationProposal",
-    "FitFrame",
-    "Layer",
-    "LayerRef",
-    "PluginError",
-    "RefusalCode",
-    "SectionRaster",
-    "SectionView",
-    "ToolContext",
-    "ToolError",
-    "ToolResult",
-    "ToolSpec",
-    "ToolsOn",
-    "TransformProposal",
-    "WriteResult",
-    "as_refs",
-    "flag_words",
-    "gpu_turn",
-    "load",
-    "map_sections",
-    "out_of_memory",
-]
+loader.install()

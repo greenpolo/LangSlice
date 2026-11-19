@@ -380,7 +380,7 @@ same name. One undo step per call. Through the library
 `IO_ERROR`.
 
 A script adds an image it computed with
-`job.context.add_image(id, name, array, note="")`
+`job.context.writes.add_image(id, name, array, note="")`
 ([library](../developers/library.md#your-own-method)): an `(H, W)` array on
 the section's working grid in the file's orientation, `uint8` or floats from
 0 to 1, recorded with the note as its source, one undo step.

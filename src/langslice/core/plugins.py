@@ -23,7 +23,7 @@ import numpy as np
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.tool_kinds import Group, Kind
 
-PLUGIN_API_VERSION = 1
+PLUGIN_API_VERSION = 2
 
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 SCRIPT_CALLER = "script"
@@ -110,7 +110,7 @@ class Layer:
     are: ``section_px`` (pixels of the section's image file, ``[x, y]``,
     pixel centres at integers, ``(0, 0)`` the centre of the first pixel; a
     raster covers the whole file whatever its size; a raster computed on a
-    ``section_image`` array is in frame ``oriented``, which :meth:`ToolContext.add_layer`
+    ``section_image`` array is in frame ``oriented``, which ``ctx.writes.add_layer``
     turns back to the file's orientation) or ``atlas_um``
     (``[x, y, z]`` in BrainGlobe atlas micrometres, the atlas's axis order).
     """

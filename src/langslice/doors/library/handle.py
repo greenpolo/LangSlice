@@ -526,7 +526,7 @@ def create_job(
     load_credentials()
     model = as_image_model(image_model)
     if plugins is not None:
-        from langslice.plugins import as_refs
+        from langslice.plugins.loader import as_refs
 
         refs = as_refs(plugins)
         if isinstance(images, JobSpec):

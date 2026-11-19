@@ -27,7 +27,7 @@ from langslice.core.stack.stack import Stack
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.plugins import provenance, runtime
+from langslice.plugins import runtime
 from langslice.providers.connections import resolve_image_model
 from langslice.tools.bookkeeping import exports, history, notes, submit
 from langslice.tools.catalog import enabled, verbs_for
@@ -203,8 +203,8 @@ def build_tools(
     }
     if variant.plugins:
         bodies.update(runtime.bodies(run, variant))
-        box.plugins = provenance.records(variant)
-        provenance.record(job, box.plugins)
+        box.plugins = runtime.plugin_records(variant)
+        runtime.record_plugins(job, box.plugins)
     box.tools = [
         declared_tool(name, bodies[name], box)
         for name in enabled(spec, scripting=scripting, image_model=image_model_connected)

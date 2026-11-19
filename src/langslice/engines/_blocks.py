@@ -64,7 +64,7 @@ def job_path(context: ToolContext, path: Path) -> str:
 def frame_for(ctx: ToolContext, sid: str, atlas_image: str, section_image: str) -> FitFrame:
     """The section's fit frame with *section_image* (a section image by name) and
     *atlas_image*."""
-    frame = ctx.fit_frame(sid, atlas=(atlas_image, "annotation"), image=section_image)
+    frame = ctx.frames.fit_frame(sid, atlas=(atlas_image, "annotation"), image=section_image)
     atlas_plane(frame, atlas_image)
     return frame
 
@@ -95,7 +95,7 @@ def section_mask(ctx: ToolContext, sid: str, mask: str) -> MaskView | None:
     ``"none"``."""
     if mask == "none":
         return None
-    return ctx.mask(sid, mask)
+    return ctx.reads.mask(sid, mask)
 
 
 def refuse_mask(tool: str, mask: str, why: str) -> None:
@@ -140,7 +140,7 @@ def inputs_block(
             "earlier_registration": bool(mask.earlier_registration),
         },
         "damage": {
-            "regions": list(ctx.section(frame.id).damaged_regions),
+            "regions": list(ctx.reads.section(frame.id).damaged_regions),
             "margin_mm": frame.damage_margin_mm,
             "side": "atlas",
         },

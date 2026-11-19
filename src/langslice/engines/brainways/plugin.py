@@ -320,7 +320,7 @@ def run_brainways_ap(
         ``BAD_ARGUMENT`` for a bad argument, ``ENGINE_UNAVAILABLE`` when the network
         cannot run here, ``FIT_FAILED`` for an atlas it does not fit.
     """
-    prior_mm = {view.id: view.position_mm for view in context.sections()}
+    prior_mm = {view.id: view.position_mm for view in context.reads.sections()}
     run = _sections_to_run(context, sections)
     propose_only = _propose_only(write)
     chosen = {sid: _channel_for(context, sid, channel) for sid in run}
@@ -378,15 +378,15 @@ def _write_positions(
     if propose_only:
         return None
     rows = [{"id": row.id, "position_mm": row.position_mm} for row in proposals]
-    with context.writing():
-        return context.set_positions(rows)
+    with context.writes.writing():
+        return context.writes.set_positions(rows)
 
 
 def _sections_to_run(context: ToolContext, sections: Sequence[str] | None) -> list[str]:
     if sections:
-        run = [context.section(name).id for name in sections]
+        run = [context.reads.section(name).id for name in sections]
     else:
-        run = [view.id for view in context.sections()]
+        run = [view.id for view in context.reads.sections()]
     if len(set(run)) != len(run):
         raise ToolError(RefusalCode.BAD_ARGUMENT, "a section is named twice in sections")
     return run
@@ -405,7 +405,7 @@ def _propose_only(write: Sequence[str] | None) -> bool:
 
 
 def _channel_for(context: ToolContext, sid: str, channel: str) -> str:
-    names = context.channels(sid)
+    names = context.reads.channels(sid)
     if not names:
         raise ToolError(RefusalCode.BAD_ARGUMENT, f"{sid} has no raw channel")
     if channel and channel not in names:
@@ -417,7 +417,7 @@ def _channel_for(context: ToolContext, sid: str, channel: str) -> str:
 
 
 def _reference_volume(context: ToolContext) -> network.ReferenceVolume:
-    atlas = context.atlas()
+    atlas = context.reads.atlas()
     shape = tuple(atlas.shape)
     off_grid = any(abs(um - ATLAS_UM) > 1e-6 for um in atlas.resolution_um)
     if atlas.name != ATLAS or shape != ATLAS_SHAPE or off_grid:
@@ -427,7 +427,7 @@ def _reference_volume(context: ToolContext) -> network.ReferenceVolume:
             f"resolution {list(atlas.resolution_um)} um; expected "
             f"{ATLAS} {list(ATLAS_SHAPE)} at {ATLAS_UM} um",
         )
-    return network.ReferenceVolume.from_voxels(context.atlas_volume())
+    return network.ReferenceVolume.from_voxels(context.frames.atlas_volume())
 
 
 def _network(options: Options) -> tuple[str, network.Network]:
@@ -459,7 +459,9 @@ def _network(options: Options) -> tuple[str, network.Network]:
 
 def _propose(context: ToolContext, engine: Engine, sid: str, channel: str) -> Proposal:
     started = time.monotonic()
-    raster = context.section_raster(sid, level=engine.options.long_edge, raw=True, images=[channel])
+    raster = context.reads.section_raster(
+        sid, level=engine.options.long_edge, raw=True, images=[channel]
+    )
     pixels = np.asarray(raster.array, np.uint8)[:, :, 0]
     write_png(pixels, engine.folder, sid)
 
@@ -523,12 +525,12 @@ def _pictures(
     if not view:
         return []
     if written:
-        ordered = sorted(written, key=lambda sid: context.section(sid).index)
-        return context.positioning_picture(ordered)
+        ordered = sorted(written, key=lambda sid: context.reads.section(sid).index)
+        return context.pictures.positioning_picture(ordered)
     proposal: dict[object, Mapping[str, object]] = {
         row.id: {"position_mm": row.position_mm} for row in proposals
     }
-    return context.positioning_picture([row.id for row in proposals], proposal=proposal)
+    return context.pictures.positioning_picture([row.id for row in proposals], proposal=proposal)
 
 
 def _save_call(

@@ -24,7 +24,7 @@ on every door, bound from their engine's adapter when the toolbox is built
 per-spec view (`catalog.verbs_for(spec)`, `langslice/tools/catalog.py`).
 `catalog.VERBS` holds the tools whose operation is in `tools/`; a verb
 outside it (an engine's, a plugin's) is declared from its stub.
-`langslice/plugins/provenance.py` records the job's own plugins only.
+`langslice/plugins/runtime.py` records the job's own plugins only.
 
 The text snapshot (`tests/snapshots/agent_text/`) pins what the doors
 declare.
@@ -97,76 +97,32 @@ bodies, and turned into an answer once per door:
   (`tools/CLAUDE.md`): its description, the tool's only description (the
   job statement names the tools and describes none), and its signature,
   for the run's `DescriptionFacts`.
-- `langslice/plugins/` (a layer of its own, below the engines and the doors; the
-  files named below are in it) — tool plugins (`docs/developers/plugins.md`);
-  `langslice/plugin_api.py` re-exports its names. `declared.py`: `engine_tool`
-  builds an engine tool's `ToolSpec` from its row of the tool table. `loader.py`: `load(ref, config)` imports
-  `module:factory`, calls it, checks every tool (`job.plugins.check_tool`),
-  builds the provenance (module, factory, versions, source
-  SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs
-  at import); `as_refs` (the library's objects: factory functions by
-  `module:qualname`, ToolSpecs as `inline:<digest>`).
-  `caller.py`: `Caller` (who a context works for: `Caller.of_tool(spec)` a
-  plugin tool, labels `plugin:<tool>`; `Caller.script()` a script's
-  `job.context`, label `script`, every property writable the job leaves free,
-  no `work_dir` / `start_work` (`TOOL_OFF`), `in_tool_call` False: its
-  reads sync the job first and its placement writes drop the deformations
-  they made stale, `merge_calls` False: each outermost write one undo step;
-  `provenance`: a deformation record's `plugin` or `script` entry, the latter
-  with `argv0`). `ToolContext(run, caller, call)` (`context.py`: the job,
-  `work_dir`, `start_work`) is assembled from one class per family of
-  methods, each built on the one below, so the plugin API stays flat:
-  `reads.py` `ContextReads` (the run, the caller, a section by filename;
-  `sections`, `section`, `atlas`, `channels` (a section's raw channel
-  names), `image_names` (its section images), `working_grid`, `raw_plane` /
-  `working_rgb` (a raw channel and the working copy in the file's
-  orientation, the frame `add_image` takes), `mask`, `section_inputs`,
-  `section_image`, `section_raster(images=, raw=)`, `layers`); `frames.py`
-  `ContextFrames` (`fit_frame` (`placed_atlas_to_section`: the current
-  placement; `image=` a section image as `section_image` with
-  `section_image_ref`), `atlas_slice`, `angles_from_plane`, `atlas_plane` /
-  `atlas_volume` (`AtlasPlane`: a plane at any placement), `to_atlas_um` /
-  `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`));
-  `proposals.py` `ContextProposals` (conversions `transform_from_matrix` /
-  `transform_from_params`, and `deformation_from_map` (a full
-  fit-grid-to-native map as a `DeformationProposal`,
-  `tools.warps.warp_from_map`; `start="current"` for a map made on top
-  of the held deformation, its chain kept; `settings`, `engine_settings`,
-  `engine_version` kept as a native fit's), `read_registration` (each
-  section in its current orientation, `params`, `at=` a fixed plane,
-  `registered_on="oriented"` for a file made on the oriented render));
-  `fits.py` `ContextFits` (`write_frame` / `map_from_itk` /
-  `transform_from_itk` (`core.maps.itk`: an outside engine's inputs and
-  answer), `fit_fireants` / `fit_elastix` (`tools.warps.fit_record`,
-  `tools.affine_fit.elastix_fit`: the native engines with settings and a
-  mask of the caller's own, by the tools' names and with their defaults
-  (`restrict_to`, `section_image`, `atlas_image`, `mask`, `smoothness_um`,
-  `metric`, `edges`, `detail`), a proposal not written, the settings as its
-  step's `settings` / the record's `fit`)); `writes.py` `ContextWrites`
-  (`set_positions`, `set_transforms`, `set_deformations`
-  (`tools.warps.apply_warps`, maps converted before the lock),
-  `mark_damage` through `tools/`, `add_image` (a made section image,
-  `tools.images.add_image`), `add_layer` through `job/plugin_store` (a
-  script's under `plugins/script/`), `expect=` fingerprints refusing
-  `STALE_INPUT` rows; `writing()` holds the lock around several writes; a
-  plugin call's writes are one undo step unless another write came
-  between); `pictures.py` `ContextPictures` (`overlay_picture` and
-  `positioning_picture` (a proposal drawn on a copy of the state), with a
-  deformation proposal drawn through an in-memory record store; a
-  proposal's note records no registration, `extra["registrations"]` empty),
-  `caption` (keeps the drawn picture's sections on the captioned copy, or
-  takes `sections=` for a picture of the handler's own, so the saved
-  picture records each section's registration)). `runtime.py`: the body of a plugin tool (limits, the context, a
-  write tool's call as one undo step, a `ToolError` / `Refused` left to the
-  tool door, any other exception `INTERNAL`, the reply and pictures from
-  the `ToolResult`). `provenance.py`:
-  `job.json`'s `plugins` and the declarations as the model sees them (also
-  `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
-  adapter plugin (LangSlice as a client of a configured server, allow-list,
-  `server__tool` names, `inputs` / `results` mapping through the context).
-  `DescriptionFacts.plugins` makes `declaration` read a plugin stub;
-  `look` takes `layers` on every job (plugins and scripts leave them; dropped
-  without the `section` and `overlay` modes).
+- `langslice/plugins/` (a layer of its own, below the engines and the doors) —
+  tool plugins (`docs/developers/plugins.md`); `langslice/plugin_api.py` lists
+  the names a plugin imports. `loader.py` loads `module:factory` (checks every
+  tool, builds the provenance, registers the `LoadedPlugin`; `install()` runs
+  when the package is imported) and `as_refs` names what the library was
+  handed; `declared.py` builds an engine tool's `ToolSpec` from its row of the
+  tool table; `runtime.py` is the body of a plugin tool (limits, the context,
+  the reply and pictures from the `ToolResult`) and the record a job keeps of
+  its plugins (`job.json`'s `plugins`, `ToolBox.plugins`). `caller.py`: `Caller`
+  (a plugin tool or a script, and what that allows) and `Call` (one call's id
+  and write bookkeeping). `ToolContext(run, caller, call)` (`context.py`:
+  `tool`, `spec`, `job_dir`, `call`, `work_dir`, `task_on`, `start_work`) holds
+  its parts as attributes, each a plain class given what it needs:
+  `reads` (`Reads`: sections, atlas, images, masks, layers), `frames`
+  (`Frames`: the fit frame, atlas planes, points), `proposals` (`Proposals`:
+  a method's result as a `TransformProposal` / `DeformationProposal`), `fits`
+  (`Fits`: an outside engine's files, the native engines, registration files),
+  `writes` (`Writes`: each write one undo step through the tools' operations,
+  and a script's writes logged as `script_write`) and `pictures` (`Pictures`).
+  `Records` (a section by filename) and `Grids` (a section's fit grid) are
+  shared by the parts, not part of the API. A script's `job.context`
+  (`doors/library/script_context.py`) is a `ToolContext` with the script
+  caller and the two `preview_*` calls. `DescriptionFacts.plugins` makes
+  `declaration` read a plugin stub; `look` takes `layers` on every job
+  (plugins and scripts leave them; dropped without the `section` and
+  `overlay` modes).
 - The job statement every door gives a registration agent is
   `tools/descriptions/statement.py` (`tools/CLAUDE.md`): `SYSTEM_PROMPT` (the
   connectors' agent files carry the same text,

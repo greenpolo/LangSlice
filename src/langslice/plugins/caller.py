@@ -1,7 +1,8 @@
-"""Who a plugin context works for: a plugin tool, or a script."""
+"""Who a plugin context works for (a plugin tool, or a script) and which call it is."""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -92,3 +93,42 @@ class Caller:
                 "meta": meta,
             }
         }
+
+
+class Call:
+    """One call of a context: who it works for, its id and its write bookkeeping.
+
+    The parts of a context that record the call's id or write share one
+    :class:`Call`. ``depth`` counts the nested ``writing()`` blocks open and
+    ``step`` is the last undo step the call made (start, pushed count, top
+    step), which its next outermost write may join. A script's call is
+    numbered: its id changes to ``script-<pid>-<n>`` when a write or a
+    proposal begins and stays until the outermost write ends.
+
+    Parameters
+    ----------
+    caller
+        Who the call works for.
+    call_id
+        The call's id, which the layers and records it makes keep.
+    """
+
+    def __init__(self, caller: Caller, call_id: str) -> None:
+        self.caller = caller
+        self.id = call_id
+        self.depth = 0
+        self.step: tuple[int, int, int] | None = None
+        self._count = 0
+        self._pending = False
+
+    def begin(self) -> None:
+        """Number a script's call when it is not numbered yet (no effect for a
+        plugin tool's call, whose id is the tool call's)."""
+        if self.caller.is_script and self.depth == 0 and not self._pending:
+            self._count += 1
+            self.id = f"{SCRIPT_CALLER}-{os.getpid()}-{self._count}"
+            self._pending = True
+
+    def settle(self) -> None:
+        """Let the next write of a script start a call of its own."""
+        self._pending = False
