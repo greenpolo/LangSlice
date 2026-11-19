@@ -28,7 +28,6 @@ _IMAGE_MODEL_OFF = (
     "provider).[[?fireants_syn  Fit each section's deformation to its stain "
     "with fireants_syn.]]]]"
 )
-IMAGE_MODEL_OFF = render(_IMAGE_MODEL_OFF)
 
 OPENING_SHOWS = (
     "They show every section in strips, in the stack's current order, each "
@@ -152,7 +151,7 @@ def read_notes(layout: JobLayout) -> str:
 
 
 def image_model_off_text(disabled: Collection[str]) -> str:
-    """Return :data:`IMAGE_MODEL_OFF` for a job.
+    """Return the line saying the image-model tool is off, for a job.
 
     Parameters
     ----------

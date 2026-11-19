@@ -866,7 +866,6 @@ def _draw_masks(
     from langslice.core.sections.native import unorient
 
     held = record.masks
-    layout: Any = getattr(ws, "layout", None)
     mapper = _Mapper(state, record, panels, ws, warp)
     notes: list[dict[str, Any]] = []
     for index, name in enumerate(request.masks):
@@ -878,7 +877,9 @@ def _draw_masks(
             )
             continue
         try:
-            view = section_masks.read_mask(layout, state, record, name)
+            if ws.job_folder is None:
+                raise ValueError("this workspace has no job folder to read a mask from")
+            view = section_masks.read_mask(ws.job_folder, state, record, name)
             raster = np.asarray(
                 unorient(
                     Image.fromarray(np.asarray(view.weights, dtype=np.float32), mode="F"),
@@ -904,7 +905,7 @@ def _draw_masks(
             entry.update(
                 drawn=False, reason=f"{record.id} has no mask {name!r}; make it with make_mask"
             )
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning("mask %s of %s could not be drawn", name, record.id, exc_info=True)
             entry.update(drawn=False, reason=f"the mask could not be read or placed ({exc})")
     return notes

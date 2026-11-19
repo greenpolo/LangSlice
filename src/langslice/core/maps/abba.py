@@ -1,41 +1,24 @@
-"""Exact conversion of normalized snapshot affines to ABBA's centred XY frame.
+"""An applied deformation as ABBA landmark pairs in ABBA's world frame.
 
-An applied deformation as ABBA landmark pairs, on top of LangSlice's affine
-step.
+The file export (``tools/bookkeeping/abba_export.py``) writes a section's
+deformation as a SECOND ABBA registration step (a BigWarp thin-plate spline,
+``BigWarpSource2DRegistration``) on top of the affine step that
+:func:`langslice.core.maps.abba_world.abba_placement` gives it. ABBA applies
+the affine first, so the warp step maps points ALREADY PLACED by the affine.
+This module computes that step's landmark pairs.
 
-The Fiji connector lands a section's deformation as a SECOND ABBA registration
-step (a BigWarp thin-plate spline, ``BigWarpSource2DRegistration``) on top of
-the affine step :func:`langslice.core.maps.abba.normalized_to_abba_affine`
-gives it. ABBA applies the affine first, so the warp step maps points ALREADY
-PLACED by the affine. This module computes that step's landmark pairs.
-
-The frame (derived from ``normalized_to_abba_affine``). The six stored numbers
-``M`` (``core.geometry.affine.denormalized_affine`` on the oriented working
-render of size ``(w, h)``) take an oriented render pixel ``x`` of the section
-to the render pixel ``M x`` where the linear placement draws the atlas point
-that belongs there (``core.fits.frame.linear_placement_matrix``:
-``atlas_to_render = M^-1 A``, ``A`` the atlas drawn on the render's frame). The
-ABBA affine row is ``S M S^-1`` with ``S(x) = extent * (x / (w, h) - 1/2)``,
-``extent`` the oriented snapshot's size in millimetres (the snapshot is centred
-on ABBA's world origin; the quarter turn and flip are the connector's
-orientation, ``R`` below, already inside the affine step). So after the affine
-step, the section's file pixel ``f`` sits at
-
-    before(f) = S M R f = S A n_lin(f),     n_lin = file_to_native (linear)
-
-(``R`` = ``SectionFrame.file_to_render``), and the atlas point the deformation
-gives it, ``n_w(f)`` (:func:`langslice.core.maps.section_maps.native_points`:
-the record's field on its fit grid, the working-grid resize and the orientation
-handled there), sits at
-
-    after(f) = S A n_w(f) = S M atlas_to_render n_w(f).
-
-The warp step moves ``before(f)`` to ``after(f)``. Its landmark pairs are
-returned as ``source`` = the point before (the section side of
-the step) and ``target`` = where it goes (the atlas side), centred ABBA
-world millimetres. ABBA resamples with the pull-back ``target -> source``,
-a TPS interpolating these pairs; :func:`warp_world_landmarks` checks that
-TPS, not the pairs.
+The caller passes two 3x3 maps on ``[x, y, 1]``: ``file_to_world`` takes a
+section's file pixel to ABBA's centred world millimetres after the affine
+step (the section side of a pair), and ``native_to_world`` takes a native
+atlas-plane pixel to the same millimetres. The atlas point the deformation
+gives a file pixel ``f`` is ``n_w(f)``
+(:func:`langslice.core.maps.section_maps.native_points`: the record's field
+on its fit grid, the working-grid resize and the orientation handled there).
+The warp step moves ``file_to_world(f)`` to ``native_to_world(n_w(f))``. Its
+landmark pairs are returned as ``source`` = the point before (the section
+side of the step) and ``target`` = where it goes (the atlas side), centred
+ABBA world millimetres. ABBA resamples with the pull-back ``target ->
+source``, a TPS interpolating these pairs.
 
 Where the pairs go. The region that matters is the atlas overlap: the
 section points inside the record's footprint (the placed atlas brain the
@@ -64,9 +47,8 @@ held-out probes inside the overlap (a lattice of twice the search grid's
 step, halfway between its points, never used to choose pairs), on both
 sides: on the atlas side, how far ABBA draws a section point from where
 LangSlice draws it (ABBA's inverse of the pull-back, by Newton's method),
-and on the section side. The connector's warp row carries the atlas side's
-median, 95th and 99th percentiles and maximum. The exact map's own
-smallest sampled Jacobian (a 65x65 screen) is reported, not enforced.
+and on the section side. The exact map's own smallest sampled Jacobian (a
+65x65 screen) is reported, not enforced.
 
 ``MIN_POINTS`` is the fewest pairs a warp takes and ``MIN_GRID_SIDE`` the
 even grid of that smallest budget.
@@ -77,13 +59,12 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from langslice.core.fits.deformable.geometry import sample_native
-from langslice.core.geometry.affine import denormalized_affine
 from langslice.core.maps.section_maps import (
     file_to_fit,
     native_points,
@@ -127,85 +108,6 @@ SCREEN_SIDE = 65
 MIN_REGION_FRACTION = 0.01
 
 
-def normalized_to_abba_affine(
-    params: Any,
-    *,
-    size: tuple[int, int],
-    pixel_size_um: float,
-    rotation_deg: int = 0,
-) -> np.ndarray:
-    """Return the 3×4 world-mm transform of a centred, calibrated snapshot.
-
-    ``size`` is the original exported image's full width and height; the
-    quarter-turn swaps its axes before the normalized affine is applied.
-    ``pixel_size_um`` is the export calibration, not the resized preview's.
-
-    Stored six-number transforms describe the oriented SECTION frame. They
-    already contain pivot displacement and shear, including when parameters
-    were chosen on a larger padded display canvas. Recovering them from the
-    rounded physical knobs instead would lose both.
-
-    ABBA's XY axes and the snapshot pixel axes increase in the same direction.
-    Conjugating the normalized transform by ``world = extent * (fraction-.5)``
-    therefore carries the full affine over directly, with no extra sign flip.
-    The slicing axis remains unchanged.
-    """
-    normalized = np.asarray(params, dtype=np.float64)
-    if normalized.size != 6 or not np.all(np.isfinite(normalized)):
-        raise ValueError("The snapshot affine must contain six finite parameters")
-    normalized = normalized.reshape(2, 3)
-    dimensions = np.asarray(size, dtype=np.float64)
-    if dimensions.shape != (2,) or not np.all(np.isfinite(dimensions) & (dimensions > 0)):
-        raise ValueError("Snapshot dimensions must be positive and finite")
-    if not np.isfinite(pixel_size_um) or pixel_size_um <= 0:
-        raise ValueError("Snapshot pixel size must be positive and finite")
-    if rotation_deg % 90:
-        raise ValueError("Snapshot orientation must be a multiple of 90 degrees")
-    if rotation_deg % 180:
-        dimensions = dimensions[::-1]
-    extent = dimensions * float(pixel_size_um) / 1000.0
-    linear = normalized[:, :2] * extent[:, None] / extent[None, :]
-    translation = extent * normalized[:, 2] + linear @ (extent / 2.0) - extent / 2.0
-    result = np.eye(3, 4, dtype=np.float64)
-    result[:2, :2] = linear
-    result[:2, 3] = translation
-    return result
-
-
-def world_frame(
-    frame: SectionFrame,
-    params: tuple[float, ...],
-    *,
-    size: tuple[int, int],
-    pixel_size_um: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """``(S @ M, S @ M @ atlas_to_render)``: 3x3 maps on ``[x, y, 1]`` from
-    an oriented render pixel, and from a native atlas-plane pixel, to ABBA's
-    centred world millimetres after LangSlice's affine step (see the module
-    text). *size* and *pixel_size_um* are the snapshot's, as the affine row
-    is built from them."""
-    dimensions = np.asarray(size, dtype=np.float64)
-    if dimensions.shape != (2,) or not np.all(np.isfinite(dimensions) & (dimensions > 0)):
-        raise ValueError("Snapshot dimensions must be positive and finite")
-    if tuple(int(v) for v in size) != tuple(int(v) for v in frame.file_size):
-        raise ValueError("The section frame was not built from this snapshot's pixels")
-    if not np.isfinite(pixel_size_um) or pixel_size_um <= 0:
-        raise ValueError("Snapshot pixel size must be positive and finite")
-    if int(frame.rotation_deg) % 180:
-        dimensions = dimensions[::-1]
-    extent = dimensions * float(pixel_size_um) / 1000.0
-    width, height = (float(v) for v in frame.render_size)
-    scale = np.array(
-        [
-            [extent[0] / width, 0.0, -extent[0] / 2.0],
-            [0.0, extent[1] / height, -extent[1] / 2.0],
-            [0.0, 0.0, 1.0],
-        ]
-    )
-    placed = scale @ np.vstack([denormalized_affine(params, frame.render_size), [0.0, 0.0, 1.0]])
-    return placed, placed @ np.asarray(frame.atlas_to_render, dtype=np.float64)
-
-
 @dataclass(frozen=True)
 class WarpLandmarks:
     """Hold a deformation's landmark pairs for ABBA and their accuracy.
@@ -244,11 +146,6 @@ class WarpLandmarks:
     min_exact_jacobian: float
     rounds: int
     dropped: int
-
-    @property
-    def within_tolerance(self) -> bool:
-        """Tell whether the atlas-side maximum is within the tolerance."""
-        return self.accuracy.atlas.max_mm <= self.tolerance_mm
 
 
 @dataclass(frozen=True)
@@ -318,56 +215,6 @@ class _WorldMap:
         )
         in_brain = cast("BoolArray", labels.reshape(-1) != 0)
         return on_footprint | in_brain
-
-
-def warp_world_landmarks(
-    frame: SectionFrame,
-    record: DeformableRecord,
-    params: tuple[float, ...],
-    *,
-    size: tuple[int, int],
-    pixel_size_um: float,
-    tolerance_mm: float = TOLERANCE_MM,
-) -> WarpLandmarks:
-    """Place the warp step's landmark pairs on top of the affine step.
-
-    Parameters
-    ----------
-    frame
-        The section's frame, built from the snapshot's pixels.
-    record
-        The applied deformation.
-    params
-        The section's six stored numbers (the ones *frame* was built from).
-    size
-        The snapshot's width and height in pixels.
-    pixel_size_um
-        The snapshot's calibration.
-    tolerance_mm
-        The search error at which pairs stop being added.
-
-    Returns
-    -------
-    WarpLandmarks
-        The pairs (module text) and their measured accuracy.
-
-    Raises
-    ------
-    ValueError
-        When the tolerance is not positive, the snapshot is not the
-        frame's, or the spline folds at every start and every grid.
-    """
-    render_to_world, native_to_world = world_frame(
-        frame, params, size=size, pixel_size_um=pixel_size_um
-    )
-    file_to_world = render_to_world @ np.asarray(frame.file_to_render, dtype=np.float64)
-    return world_landmarks(
-        frame,
-        record,
-        file_to_world,
-        native_to_world,
-        tolerance_mm=tolerance_mm,
-    )
 
 
 @dataclass(frozen=True)

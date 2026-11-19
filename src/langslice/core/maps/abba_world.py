@@ -1,9 +1,7 @@
 """A placed section in ABBA's own world frame, for an ABBA project file.
 
-The Fiji connector never needs ABBA's world frame: it places sections on
-snapshots ABBA itself exported (``abba.py`` beside this module). A project
-file written from a job opens the job's own images in ABBA, so the
-section's pixels are carried into ABBA's world here.
+A project file written from a job opens the job's own images in ABBA, so
+the section's pixels are carried into ABBA's world here.
 
 ABBA's frame, for its Allen CCFv3 atlas started coronal (x "RL", y "SI",
 z "AP"), as read off the transforms ABBA 0.25 writes into a QuPath project

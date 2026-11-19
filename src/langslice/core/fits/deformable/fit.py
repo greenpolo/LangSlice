@@ -23,7 +23,7 @@ import multiprocessing
 import os
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 import cv2
@@ -239,7 +239,7 @@ def prepare_fit(
     section grid's ``(H, W)``: a section mask's EM weights,
     :func:`langslice.core.sections.masks.section_weights`) are thresholded at
     :data:`~langslice.core.fits.deformable.masks.EM_MATCH_THRESHOLD` and ANDed
-    into the fixed mask (:func:`with_section_mask`); None compares every pixel
+    into the fixed mask; None compares every pixel
     the footprint covers.
     """
     width, height = section_image.size
@@ -422,28 +422,6 @@ def prepare_fit(
         step_weight=step_weight,
         brain_scale=scale,
     )
-
-
-def with_section_mask(prepared: PreparedFit, mask: np.ndarray) -> PreparedFit:
-    """*prepared* with its section mask narrowed to *mask* (bool, the section
-    grid's ``(H, W)``, True where the section is compared): the fixed mask
-    (a mask never adds a pixel back). In place; returns *prepared*. ``ValueError`` for a mask of
-    another shape or one that leaves nothing to compare."""
-    width, height = prepared.footprint.shape[1], prepared.footprint.shape[0]
-    keep = np.asarray(mask)
-    if keep.shape != (height, width):
-        raise ValueError(
-            f"the mask is the fit grid's (H, W) = ({height}, {width}); got {keep.shape}"
-        )
-    if prepared.inputs is None:
-        raise ValueError("A prepared warp has no engine fit to mask")
-    working = prepared.grid.to_working(keep.astype(np.float32)) > 0.5
-    fixed = prepared.inputs.fixed_mask & working
-    if not fixed.any():
-        raise ValueError("The mask leaves no section pixel to compare")
-    prepared.inputs = replace(prepared.inputs, fixed_mask=fixed)
-    prepared.details["section_mask_given"] = int(keep.sum())
-    return prepared
 
 
 def _taper_weight(
@@ -698,7 +676,6 @@ def finish_fit(
         "version": result.engine_version,
         "runtime_s": result.runtime_s,
         "native_parameters": result.native_parameters,
-        "notes": result.notes,
         **({"gpu_wait_s": round(result.gpu_wait_s, 1)} if result.gpu_wait_s else {}),
         **({"oom_retries": result.oom_retries} if result.oom_retries else {}),
         "working_grid": {

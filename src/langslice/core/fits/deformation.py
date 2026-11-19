@@ -576,7 +576,6 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
                 "code": flag["code"],
                 "region": flag.get("acronym"),
                 "area_ratio": None if ratio is None else round(float(ratio), 2),
-                "limits": flag.get("limits"),
             }
         )
     result["flags"] = flags[:MAX_FLAGS]

@@ -46,8 +46,6 @@ from langslice.plugin_api import (
     ToolSpec,
 )
 
-NAME = "SPOmiAlign"
-REF = "langslice.engines.spomialign.plugin:tools"
 DEFAULTS = {"device": ""}
 MISSING = (
     "SPOmiAlign cannot run here: its matcher, RoMa (the romatch package), "
@@ -56,12 +54,11 @@ MISSING = (
 )
 CANVAS_EDGE = 1536
 FITS = ("transform", "warp", "both")
-MODES = engine.MODES
 WRITES = {
-    "rigid": ("affine",),
-    "affine": ("affine",),
-    "warp": ("deformation",),
-    "affine_warp": ("affine", "deformation"),
+    engine.RIGID: ("affine",),
+    engine.AFFINE: ("affine",),
+    engine.WARP: ("deformation",),
+    engine.AFFINE_WARP: ("affine", "deformation"),
 }
 ENGINE_VERSION = "SPOmiAlign c7f8b7a"
 MATCHER = "RoMa roma_outdoor, coarse resolution 560"
@@ -71,8 +68,8 @@ def mode_of(fit: str, rigid: bool) -> str:
     """The engine mode of a call's *fit* and *rigid*: ``rigid`` or ``affine``
     for the transform, ``warp``, or ``affine_warp`` for both."""
     if fit == "transform":
-        return "rigid" if rigid else "affine"
-    return "warp" if fit == "warp" else "affine_warp"
+        return engine.RIGID if rigid else engine.AFFINE
+    return engine.WARP if fit == "warp" else engine.AFFINE_WARP
 
 
 NISSL = _blocks.NISSL
@@ -495,7 +492,7 @@ def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, object] | None:
             "SPOmiAlign starts from the section's placement: give it a transform first",
         )
         return {"id": sid, **refusal.payload()}
-    if mode != "warp" and view_of.deformation:
+    if mode != engine.WARP and view_of.deformation:
         refusal = ToolError(
             RefusalCode.HAS_DEFORMATION,
             "this fit would write a new transform, which clears the "
@@ -555,7 +552,7 @@ def _run(
             rows.append(refused)
             continue
         held = _blocks.section_mask(ctx, view_of.id, mask)
-        on_grid = mode == "warp" and frame.applied_map is not None
+        on_grid = mode == engine.WARP and frame.applied_map is not None
         pair = _inputs(
             frame,
             plane_image,
@@ -617,7 +614,7 @@ def _run(
                 failed = ToolError(RefusalCode.FIT_FAILED, got.error)
                 rows.append({**failed.payload(section_id=sid), "files": relative})
                 continue
-            what = mode.replace("_", " and ") if mode != "warp" else f"warp on {start}"
+            what = mode.replace("_", " and ") if mode != engine.WARP else f"warp on {start}"
             note = (
                 f"SPOmiAlign {what}, atlas {resolved}, {got.pairs} pairs, "
                 f"{in_damage} in marked damage dropped"
@@ -645,7 +642,7 @@ def _run(
             }
             if mask != "none":
                 row["mask_note"] = "approximated by dropping matches"
-            if mode != "warp":
+            if mode != engine.WARP:
                 to_native = (pair["from_canvas"] @ _homog(got.matrix) @ pair["to_canvas"])[:2]
                 proposal = ctx.transform_from_matrix(sid, to_native, note=note)
                 written = ctx.set_transforms([proposal.row()], expect={sid: digest})
@@ -653,7 +650,7 @@ def _run(
                     rows.append({**written.rows[0], "id": sid})
                     continue
                 row["transform"] = proposal.knobs
-            if mode in ("warp", "affine_warp"):
+            if mode in (engine.WARP, engine.AFFINE_WARP):
                 assert got.residual is not None
                 native = _full_map(frame, pair, got.matrix, got.residual)
                 warp = ctx.deformation_from_map(
@@ -667,7 +664,7 @@ def _run(
                     engine_version=ENGINE_VERSION,
                 )
                 written = ctx.set_deformations(
-                    [warp.row()], expect={sid: digest} if mode == "warp" else None
+                    [warp.row()], expect={sid: digest} if mode == engine.WARP else None
                 )
                 if sid not in written.written:
                     rows.append({**written.rows[0], "id": sid})

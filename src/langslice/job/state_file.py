@@ -22,12 +22,11 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
-from langslice.core.shared_files import replace_file
+from langslice.core.shared_files import write_json_atomic
 from langslice.core.space import as_plane
 from langslice.core.stack.json_reads import (
     flag_at,
@@ -51,25 +50,6 @@ Upgrade = Callable[[int, dict[str, Any]], JsonObject]
 
 FORMAT_KEY = "format_version"
 STATE_FORMAT_VERSION = 6
-
-
-def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
-    """Write *data* as JSON to *path* through a temporary file and a rename."""
-    directory = os.path.dirname(os.path.abspath(path))
-    os.makedirs(directory, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            if indent is None:
-                json.dump(data, handle, separators=(",", ":"))
-            else:
-                json.dump(data, handle, indent=indent)
-        os.chmod(tmp_path, 0o644)
-        replace_file(tmp_path, path)
-    except BaseException:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise
 
 
 def json_object(text: str) -> JsonObject | None:

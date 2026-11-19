@@ -1,7 +1,10 @@
-"""The ``langslice-job`` command: the agent CLI, the MCP tools as shell commands.
+"""The ``langslice-job`` command: the agent CLI, which sets a job up and checks it.
 
-``langslice-job FOLDER VERB [arguments]``
-(:mod:`langslice.doors.agent_cli.calls`), ``langslice-job FOLDER python SCRIPT
+``langslice-job FOLDER VERB [arguments]`` with the three verbs ``status``,
+``export_maps`` and ``review_comments``, plus ``init``, ``launch``, ``runs``
+and ``wait``
+(:mod:`langslice.doors.agent_cli.calls`; the registration itself is done
+through the MCP tools, not here), ``langslice-job FOLDER python SCRIPT
 [ARGS ...]`` (the agent's own script, run by the job's environment:
 :func:`langslice.doors.agent_cli.environment.python`), ``langslice-job ops``
 and ``langslice-job schema [VERB]`` (:mod:`langslice.doors.agent_cli.catalog`).

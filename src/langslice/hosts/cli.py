@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 from typing import cast
 
+from langslice.hosts.gui.window import TABS
+
 
 def add_gui_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = subparsers.add_parser(
@@ -35,7 +37,7 @@ def add_gui_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParse
     )
     p.add_argument(
         "--tab",
-        choices=("viewer", "prompt"),
+        choices=TABS,
         default="viewer",
         help="The tab the window opens on; prompt opens the prompt "
         "generator, filled in from the first FOLDER's job",

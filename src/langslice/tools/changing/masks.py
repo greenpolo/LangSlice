@@ -356,7 +356,7 @@ def read(job: Job, section: Section, name: str) -> MaskView:
     from langslice.core.sections.masks import read_mask
 
     try:
-        return read_mask(job.layout, job.state, section, name)
+        return read_mask(job.layout.folder, job.state, section, name)
     except KeyError as exc:
         raise Refused(
             RefusalCode.UNKNOWN_MASK,

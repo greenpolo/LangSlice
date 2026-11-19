@@ -75,13 +75,11 @@ workspace carries. Every module's imports are core-only:
   `pictures/media_keys.py` (the keys a tool's media travels under, read by the tool
   door, the ADK driver, MCP and the OAuth transport);
 - the geometry of a registration in ABBA's terms:
-  `maps/abba.py` (a normalized affine in ABBA's centred world
-  millimetres) and `maps/abba.py` (an applied deformation as the landmark
-  pairs of a SECOND ABBA step on top of the affine row:
-  `warp_world_landmarks(frame, record, params, size=, pixel_size_um=)`;
-  `source` = a section point as the affine step placed it, `target` = where
-  the deformation takes it, centred world mm, the frame derived from
-  `normalized_to_abba_affine` and `maps.section_maps.native_points`;
+  `maps/abba.py` (an applied deformation as the landmark
+  pairs of a SECOND ABBA step on top of the affine row, for the file export
+  `tools/bookkeeping/abba_export.py`; `source` = a section point as the affine
+  step placed it, `target` = where the deformation takes it, centred world mm,
+  via `maps.section_maps.native_points`;
   returns `WarpLandmarks`: at most 1089 pairs placed by
   `maps/tps_landmarks.py` (an even start grid over the atlas overlap's
   box, the record's footprint or the warped atlas brain, plus a coarse
@@ -160,9 +158,8 @@ the angles in a caption (empty for the flat plane).
   string's, so a reply prints, compares and serializes as before. Core,
   job and tools raise it; each door converts it once (`doors/CLAUDE.md`).
   `plugins.ToolError` is its subclass for plugins.
-- `hardware.py` — the machine and how many sections run at once: `detect`
-  (`Hardware`: cores, memory, the first GPU and its memory), `cpu_cores`
-  (`LANGSLICE_CPU_CORES` overrides), `section_workers(tasks, threads_each)`
+- `hardware.py` — the machine and how many sections run at once:
+  `cpu_cores` (`LANGSLICE_CPU_CORES` overrides), `section_workers(tasks, threads_each)`
   (the cores over the threads one task keeps busy), `map_sections` (a step
   per item on threads, in order, each in a copy of the caller's context so
   its pictures are noted; the first error raised after every step ends),
@@ -183,7 +180,7 @@ the angles in a caption (empty for the flat plane).
   (1 s), `replace_file` (`os.replace`, every atomic write's rename),
   `remove_tree` (`rmtree`, read-only files made writable).
 - `fits/flags.py` — `FitFlag`, the codes of a fit's flags (`FOLDS`,
-  `DISPLACEMENT_OUTSIZED`, `REGION_*`, `SCALE_CHANGED`, `SHEAR`): not
+  `DISPLACEMENT_OUTSIZED`, `REGION_FOLDED`, `REGION_VANISHED`, `SCALE_CHANGED`, `SHEAR`): not
   refusals, the fit is written; `SECTION_FLAGS`, the whole-section ones.
 - `pictures/placement.py` — a section on its physical canvas at a placement.
   `draw_canvas` is the one renderer of every placement picture (`look`'s
@@ -614,8 +611,7 @@ the angles in a caption (empty for the flat plane).
   `maps.abba.world_landmarks`; `ValueError` for a section not in one ABBA
   slice at the rotations). `maps/abba.py`'s `world_landmarks(...,
   max_points=)` places a warp's pairs in any such world frame (`budget`
-  scales the start grids for fewer pairs, 16 to 1089); `warp_world_landmarks` is it on a
-  snapshot's frame.
+  scales the start grids for fewer pairs, 16 to 1089).
 - `worker_threads.py` — `thread_share(workers)`, `started_with_threads(n)`:
   the thread counts a spawned worker process's numerical libraries start with.
 - `maps/itk.py` — images and transforms in the ITK world (SimpleITK), for an

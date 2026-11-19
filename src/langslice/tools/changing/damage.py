@@ -63,7 +63,7 @@ class DamageRegions:
 
 def _user_note(job: Job, record: Section) -> str:
     """The note the host gave with its mark ("" for none, or no mark)."""
-    marks = (job.spec.inputs or {}).get("damaged") or {}
+    marks = job.spec.inputs.get("damaged") or {}
     return str(marks.get(record.id) or "").strip() if record.id in job.host_damaged else ""
 
 

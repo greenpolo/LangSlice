@@ -13,7 +13,7 @@ import time
 import urllib.parse
 import webbrowser
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -43,7 +43,6 @@ class Creds:
     id_token: str | None = None
     account_id: str | None = None
     source: str = "?"
-    raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
 def _decode_jwt_payload(token: str) -> dict[str, Any]:
@@ -95,7 +94,6 @@ def creds_from_doc(doc: dict[str, Any], source: str) -> Creds:
         id_token=id_token,
         account_id=tokens.get("account_id") or account_id_from_id_token(id_token),
         source=source,
-        raw=doc,
     )
 
 
@@ -144,7 +142,6 @@ def refresh(creds: Creds) -> Creds:
         id_token=id_token,
         account_id=creds.account_id or account_id_from_id_token(id_token),
         source=creds.source,
-        raw=creds.raw,
     )
     if creds.source == str(openai_oauth_credentials_path()):
         _write_creds(new)
@@ -263,7 +260,7 @@ def login(
         server.server_close()
 
     if "code" not in result:
-        raise RuntimeError("Timed out waiting for sign-in.")
+        raise TimeoutError("Timed out waiting for sign-in.")
     if result.get("state") != state:
         raise RuntimeError("OAuth state mismatch - aborting.")
 

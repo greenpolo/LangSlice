@@ -196,8 +196,7 @@ The page is a React app (`web/`, below), built into `static/`.
   unterminated last line kept for the next round, a file grown shorter starts
   the watch over: a new `generation`) on `logs/events.jsonl`, `views.jsonl` and
   the newest `trace/*.jsonl`; `_Whole`s (size and mtime, one retry on a file
-  caught mid-rename) on `state.json`, `history/undo.json`, `job.json`,
-  `exports/spend.json`. `poll` at most every `POLL_S` (0.25 s), run by a
+  caught mid-rename) on `state.json` and `job.json`. `poll` at most every `POLL_S` (0.25 s), run by a
   page's snapshot request, so only watched jobs are read. One round's trace
   records and events are interleaved by time (`_in_time_order`: an event's
   `at` is UTC, the trace's local; within a second a model turn before the
@@ -214,11 +213,7 @@ The page is a React app (`web/`, below), built into `static/`.
   format migrated in memory as every door opens it, nothing written) with
   each section's registration number (`job.history.SectionHistories`); a state this
   version does not read (a newer or a pre-release format) shows its raw
-  `slices` fields with a note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo
-  depth after the call): a call that deepens it names the new depth (a first
-  event of any tool but a read, `job.settings.tool_table` kind `read`, names
-  it too; a plugin's or an older version's tool counts as a write); `undo` /
-  `redo` move names between the sides; a depth no event names is `Step n`. `status`:
+  `slices` fields. `status`:
   Submitted (`state.submitted`), Failed (a trace `error`, or a `summary`
   without a submit), Running (a `tool_start` without its end, or a file
   changed within `RECENT_S`), Idle (nothing changed for `IDLE_S`, 600 s:

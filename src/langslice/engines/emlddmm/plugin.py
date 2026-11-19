@@ -65,7 +65,6 @@ from langslice.plugin_api import (
     flag_words,
 )
 
-NAME = "emlddmm"
 DEFAULTS = {
     "device": "auto",
     "dtype": "float64",

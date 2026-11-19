@@ -5,12 +5,12 @@ agent CLI's calls, a SliceBench subprocess), so it learns everything from the
 job folder. :class:`JobWatcher` tails the append-only files by byte offset
 (``logs/events.jsonl``, ``views.jsonl`` and the newest ``trace/*.jsonl``),
 keeping an unterminated last line for the next round, and rereads the files
-that are replaced whole (``state.json``, ``history/undo.json``, ``job.json``,
-``exports/spend.json``) when their size or modification time changes.
+that are replaced whole (``state.json`` and ``job.json``) when their size or
+modification time changes.
 
 Everything a client needs comes back from :meth:`JobWatcher.snapshot` as plain
-JSON: the activity items since a cursor, the sections table, undo and redo,
-notes, spend, a status word and the agent's focus (:mod:`.focus`).
+JSON: the activity items since a cursor, the sections table, a status word and
+the agent's focus (:mod:`.focus`).
 :class:`JobList` is the set of jobs a GUI serves: the folders it was given
 and the jobs ``~/.langslice/recent_jobs.jsonl`` names.
 """
@@ -35,28 +35,22 @@ from langslice.hosts.gui.render import render_key
 from langslice.hosts.gui.transcripts import TranscriptWords, projects_root
 from langslice.job.folder.layout import (
     EVENTS_FILE,
-    EXPORTS_DIR,
-    HISTORY_DIR,
     JOB_DIRNAME,
     JOB_FILE,
     LOGS_DIR,
-    SPEND_FILE,
     STATE_FILE,
     TRACE_DIR,
-    UNDO_FILE,
     VIEWS_INDEX,
     JobLayout,
     held_image_folder,
 )
 from langslice.job.migrations import viewer_stack
 from langslice.job.settings.labels import label as tool_title
-from langslice.job.settings.tool_table import TOOLS
 from langslice.job.steps.history import SectionHistories
 
 POLL_S = 0.25
 RECENT_S = 30.0
 IDLE_S = 600.0
-_READS = frozenset(name for name, tool in TOOLS.items() if tool.kind == "read")
 MAX_RECENT = 40
 PICTURE = "view.jpg"
 MAX_TEXT = 60_000
@@ -264,22 +258,16 @@ class JobWatcher:
         self.trace: _Tail | None = None
         self.words = TranscriptWords(projects_root())
         self.state = _Whole(f / STATE_FILE)
-        self.history = _Whole(f / HISTORY_DIR / UNDO_FILE)
         self.job = _Whole(f / JOB_FILE)
-        self.spend = _Whole(f / EXPORTS_DIR / SPEND_FILE)
         self.items: list[dict[str, Any]] = []
         self.pictures: dict[int, Picture] = {}
         self.open_tools: dict[str, dict[str, Any]] = {}
-        self.step_labels: dict[int, str] = {}
-        self.redo_labels: list[str] = []
-        self.depth: int | None = None
         self.session: dict[str, Any] = {}
         self.summary: dict[str, Any] | None = None
         self.trace_error = False
         self.door: str | None = None
         self.state_version = 0
         self.rows: list[dict[str, Any]] = []
-        self.rows_note = ""
         self.rows_stale = False
         self.stack: Stack | None = None
         self.followed: Focus | None = None
@@ -310,14 +298,11 @@ class JobWatcher:
         changed = bool(events or views or trace_records)
         if self.job.read():
             changed = True
-        if self.spend.read():
-            changed = True
         state_changed = self.state.read() or self.rows_stale
-        history_changed = self.history.read()
         if state_changed:
             self.rows_stale = False
             self._rows()
-        if state_changed or history_changed or changed:
+        if state_changed or changed:
             self.state_version += 1
 
     def _read_trace(self) -> tuple[list[dict[str, Any]], bool]:
@@ -373,7 +358,6 @@ class JobWatcher:
                 self.followed = started_focus(record) or self.followed
             else:
                 self.open_tools.pop(key, None)
-                self._label_step(item, record.get("step"))
             self._append(item)
         elif kind == "open":
             self._append(
@@ -397,33 +381,6 @@ class JobWatcher:
             )
         elif kind == "plugins":
             self._append({"kind": "note", "at": at, "text": "Tool plugins loaded"})
-
-    def _label_step(self, item: dict[str, Any], step: Any) -> None:
-        """Follow the undo depth a ``tool_end`` reports (``step``: the undo
-        stack's length after the call): a write that deepens it labels the new
-        depth; undo and redo move labels between the two sides."""
-        if not isinstance(step, int) or isinstance(step, bool):
-            return
-        before, self.depth = self.depth, step
-        if item["failed"]:
-            return
-        words = _sections_words(item["sections"])
-        label = item["label"] + (f" ({words})" if words else "")
-        name = item["name"]
-        if name == "undo":
-            if before is not None:
-                for depth in range(before, step, -1):
-                    self.redo_labels.append(self.step_labels.pop(depth, f"Step {depth}"))
-            return
-        if name == "redo":
-            if before is not None:
-                for depth in range(before + 1, step + 1):
-                    if self.redo_labels:
-                        self.step_labels[depth] = self.redo_labels.pop()
-            return
-        if (before is None and name not in _READS) or (before is not None and step > before):
-            self.step_labels[step] = label
-            self.redo_labels.clear()
 
     def _add_trace(self, record: dict[str, Any]) -> None:
         kind = record.get("kind")
@@ -511,7 +468,7 @@ class JobWatcher:
         """The sections table from ``state.json``: the status rows when this
         LangSlice reads the state, else the raw section fields."""
         data = self.state.value
-        self.rows, self.rows_note, self.stack = [], "", None
+        self.rows, self.stack = [], None
         if not isinstance(data, dict):
             return
         try:
@@ -549,14 +506,8 @@ class JobWatcher:
                     }
                 )
             self.stack = state
-        except Exception as exc:
+        except Exception:
             self.rows, self.stack = [], None
-            self.rows_note = (
-                "This job's state is not one this LangSlice reads (an older "
-                "or newer format); the table shows its raw fields."
-            )
-            if not isinstance(exc, ValueError):
-                self.rows_note += f" ({type(exc).__name__})"
             slices = _list(data.get("slices"))
             ordered = sorted(
                 (s for s in slices if isinstance(s, dict)),
@@ -613,7 +564,6 @@ class JobWatcher:
             self.events.path,
             self.views.path,
             self.state.path,
-            self.history.path,
             self.job.path,
             self.trace.path if self.trace else None,
         ):
@@ -710,42 +660,6 @@ class JobWatcher:
             sentence = f"No activity for {_duration(quiet_s)}. {sentence}"
         return {"word": word, "sentence": sentence}
 
-    def undo(self) -> dict[str, list[str]]:
-        """The undo and redo steps, oldest first, each labelled by the call
-        that made it (``Step n`` when no event names it: an older folder)."""
-        index = _dict(self.history.value)
-        undo = _list(index.get("undo"))
-        redo = _list(index.get("redo"))
-        held = list(reversed(self.redo_labels))
-        return {
-            "undo": [self.step_labels.get(d, f"Step {d}") for d in range(1, len(undo) + 1)],
-            "redo": [
-                held[i] if i < len(held) else f"Step {len(undo) + i + 1}" for i in range(len(redo))
-            ],
-        }
-
-    def notes(self) -> dict[str, Any]:
-        job = _dict(self.job.value)
-        state = _dict(self.state.value)
-        run_notes = _list(state.get("notes"))
-        return {"user": str(job.get("notes") or ""), "run": [str(n) for n in run_notes][-50:]}
-
-    def spend_facts(self) -> dict[str, Any] | None:
-        spend = self.spend.value if isinstance(self.spend.value, dict) else None
-        if spend is None and self.summary is not None:
-            raw = self.summary.get("spend")
-            spend = raw if isinstance(raw, dict) else None
-        if spend is None:
-            return None
-        tokens = _dict(spend.get("tokens"))
-        return {
-            "model": spend.get("model"),
-            "lane": spend.get("lane"),
-            "tokens": {k: v for k, v in tokens.items() if isinstance(v, (int, float))},
-            "usd_estimate": spend.get("usd_estimate"),
-            "quota_used_percent": spend.get("quota_used_percent"),
-        }
-
     def snapshot(
         self, since: int = 0, generation: int = 0, state_version: int = -1
     ) -> dict[str, Any]:
@@ -769,10 +683,6 @@ class JobWatcher:
             if reset or state_version != self.state_version:
                 out.update(
                     sections=self.rows,
-                    sections_note=self.rows_note,
-                    history=self.undo(),
-                    notes=self.notes(),
-                    spend=self.spend_facts(),
                 )
             return out
 

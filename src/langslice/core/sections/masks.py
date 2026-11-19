@@ -303,12 +303,12 @@ def write_mask(
     return entry
 
 
-def read_mask(layout: _Layout, state: Stack, section: Section, name: str) -> MaskView:
+def read_mask(job_folder: str | Path, state: Stack, section: Section, name: str) -> MaskView:
     """The mask *name* of *section*. ``KeyError`` (the op's ``UNKNOWN_MASK``) when
     the section has none by that name; ``ValueError`` when its file cannot be
     read."""
     entry = section.masks[name]
-    path = layout.resolve(entry.file)
+    path = Path(job_folder) / entry.file
     try:
         with np.load(path) as data:
             weights = np.asarray(data["weights"], dtype=np.float32)

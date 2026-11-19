@@ -112,7 +112,6 @@ class EngineResult:
     native_parameters: dict[str, Any]
     runtime_s: float
     engine_version: str
-    notes: list[str] = field(default_factory=list)
     left_out: np.ndarray | None = None
     gpu_wait_s: float = 0.0
     oom_retries: int = 0

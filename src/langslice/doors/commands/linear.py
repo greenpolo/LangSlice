@@ -1,6 +1,7 @@
-"""``langslice linear``: the agent run, and the job spec every command that
-opens a stack makes from the job flags (``linear run``, ``mcp``, ``job
-FOLDER init``; the flags are :mod:`langslice.doors.commands.flags`)."""
+"""``langslice linear run``: the registration run of an agent LangSlice drives
+itself, and the job spec every command that opens a stack makes from the job
+flags (``linear run``, ``mcp``, ``langslice-job FOLDER init``; the flags are
+:mod:`langslice.doors.commands.flags`)."""
 
 from __future__ import annotations
 
@@ -367,7 +368,7 @@ def open_gui(spec: Any) -> None:
 
     from langslice.job.folder.layout import locate_job_folder
 
-    folder, _ = locate_job_folder(spec.image_folder, spec.job_dir, register=False)
+    folder = locate_job_folder(spec.image_folder, spec.job_dir, register=False)
     command = [sys.executable, "-c", "from langslice.cli import main; main()", "gui", str(folder)]
     try:
         subprocess.Popen(

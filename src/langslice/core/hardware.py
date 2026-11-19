@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-import ctypes
 import functools
 import logging
 import multiprocessing
@@ -30,7 +29,6 @@ import threading
 from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
-from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
 CORES_VARIABLE = "LANGSLICE_CPU_CORES"
@@ -40,29 +38,6 @@ logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")
-
-
-@dataclass(frozen=True)
-class Hardware:
-    """The machine's processor, memory and GPU (:func:`detect`)."""
-
-    cores: int
-    memory_gib: float
-    gpu: str | None = None
-    gpu_memory_gib: float = 0.0
-
-    def describe(self) -> str:
-        """Say the machine in one line.
-
-        Returns
-        -------
-        str
-            Its cores, memory and GPU.
-        """
-        words = f"{self.cores} cores, {self.memory_gib:.0f} GiB memory"
-        if self.gpu is None:
-            return f"{words}, no GPU"
-        return f"{words}, {self.gpu} ({self.gpu_memory_gib:.0f} GiB)"
 
 
 def cpu_cores() -> int:
@@ -82,50 +57,6 @@ def cpu_cores() -> int:
     return max(1, os.cpu_count() or 1)
 
 
-class _MemoryStatus(ctypes.Structure):
-    length: int
-    total_physical: int
-    _fields_ = [
-        ("length", ctypes.c_ulong),
-        ("load", ctypes.c_ulong),
-        ("total_physical", ctypes.c_ulonglong),
-        ("free_physical", ctypes.c_ulonglong),
-        ("total_page_file", ctypes.c_ulonglong),
-        ("free_page_file", ctypes.c_ulonglong),
-        ("total_virtual", ctypes.c_ulonglong),
-        ("free_virtual", ctypes.c_ulonglong),
-        ("free_extended_virtual", ctypes.c_ulonglong),
-    ]
-
-
-def _windows_memory() -> float:
-    if sys.platform != "win32":
-        return 0.0
-    status = _MemoryStatus()
-    status.length = ctypes.sizeof(_MemoryStatus)
-    kernel = ctypes.windll.kernel32
-    if not kernel.GlobalMemoryStatusEx(ctypes.byref(status)):
-        return 0.0
-    return int(status.total_physical) / GIB
-
-
-def memory_gib() -> float:
-    """Measure the machine's physical memory.
-
-    Returns
-    -------
-    float
-        The memory in GiB; 0 when it cannot be read.
-    """
-    try:
-        if sys.platform == "win32":
-            return _windows_memory()
-        pages = os.sysconf("SC_PHYS_PAGES")
-        return pages * os.sysconf("SC_PAGE_SIZE") / GIB
-    except (AttributeError, OSError, ValueError):
-        return 0.0
-
-
 def _first_gpu() -> tuple[str | None, float]:
     try:
         import torch
@@ -137,29 +68,6 @@ def _first_gpu() -> tuple[str | None, float]:
     except (AssertionError, ImportError, OSError, RuntimeError):
         return None, 0.0
     return name, total / GIB
-
-
-def detect(*, gpu: bool = True) -> Hardware:
-    """Find the machine LangSlice runs on.
-
-    Parameters
-    ----------
-    gpu
-        Ask torch for the first GPU (importing torch, which is slow the
-        first time); False leaves the GPU out.
-
-    Returns
-    -------
-    Hardware
-        Its cores, memory and GPU.
-    """
-    name, memory = _first_gpu() if gpu else (None, 0.0)
-    return Hardware(
-        cores=cpu_cores(),
-        memory_gib=round(memory_gib(), 1),
-        gpu=name,
-        gpu_memory_gib=round(memory, 1),
-    )
 
 
 def section_workers(tasks: int, threads_each: int) -> int:

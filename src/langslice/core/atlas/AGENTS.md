@@ -10,10 +10,9 @@ here is a verbatim copy — edit one, mirror to the other.
   offline: only an atlas already in the local cache loads, in either
   brainglobe-atlasapi layout, `<name>_v*/` or 3.x's
   `brainglobe-atlasapi/atlases/<name>/`),
-  position helpers (`position_mm_to_index`, `index_to_position_mm`,
+  position helpers (`position_mm_to_index`,
   `get_position_range_mm`), the reference plate (`get_reference_slice`) and
-  `get_root_mask`. The public surface is deliberately small: what LangSlice
-  itself reads.
+  `get_root_mask`. What LangSlice itself reads.
 - `disk_cache.py` — volumes derived from an atlas, kept on disk between
   processes (`docs/developers/architecture.md`, "Atlas cache"): `cached_volume(atlas,
   name, build)` reads `<cache>/<atlas>_v<version>/format<FORMAT>/<name>.npy`

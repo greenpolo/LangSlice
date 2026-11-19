@@ -34,11 +34,12 @@ from langslice.core.pictures.opening import (
 )
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import Stack
-from langslice.doors.agent.engine import EngineContext, build_context
 from langslice.doors.call_log import TRACE_DIR_ENV, HostTrace
 from langslice.doors.jobs import (
+    JobContext,
     NoJob,
     close_job,
+    context,
     find,
     image_model_off,
     provider_connected,
@@ -53,6 +54,7 @@ from langslice.doors.mcp.pages import (
 from langslice.doors.reference_card import write_card
 from langslice.doors.stdio import protocol_input
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.folder.layout import locate_job_folder
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
@@ -89,14 +91,14 @@ class Session:
 
     ``job`` is the core :class:`~langslice.job.job.Job` (state, spec,
     undo/redo, checkpoint, submit gates), the one
-    ``langslice.doors.agent.engine.run`` opens; ``box`` is the tools over it,
+    ``langslice.doors.jobs.open_folder`` opens; ``box`` is the tools over it,
     whose gates and delivery bookkeeping this door shares with the ADK agent's.
     The rest is the door's own: the user's notes, the opening pages and the
     trace.
     """
 
     job: Job
-    ctx: EngineContext
+    ctx: JobContext
     box: ToolBox
     trace: HostTrace | None
     notes: str = ""
@@ -133,9 +135,8 @@ def open_job(
     saved job's (the same place, as its index names it). The nonlinear
     task's image-model tool is offered only when that model is connected
     (:func:`langslice.doors.jobs.image_model_off`)."""
-    ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
-    assert ctx.job_folder is not None
-    job_folder = Path(ctx.job_folder)
+    job_folder = folder or locate_job_folder(spec.image_folder, spec.job_dir, emit=logger.info)
+    ctx = context(spec, job_folder, atlas_loader=atlas_loader)
     off = image_model_off(spec, provider_connected(spec))
     reason = refusal(spec, image_model=not off)
     if reason is not None:

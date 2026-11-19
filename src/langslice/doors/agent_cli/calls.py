@@ -961,10 +961,8 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
             "role": role,
             "job_folder": str(layout.folder),
             "prompt": made.prompt,
-            **made.facts,
         },
-        artifacts=[{"path": str(saved), "kind": "launch"}, *made.artifacts],
-        warnings=made.warnings,
+        artifacts=[{"path": str(saved), "kind": "launch"}],
     )
 
 

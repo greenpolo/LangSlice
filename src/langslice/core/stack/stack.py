@@ -247,21 +247,6 @@ class Stack:
         for section in self.slices:
             section.angles = (pitch, yaw)
 
-    @property
-    def pitch_deg(self) -> float:
-        """Return the stack-wide pitch (:attr:`stack_angles`)."""
-        return self.stack_angles[0]
-
-    @property
-    def yaw_deg(self) -> float:
-        """Return the stack-wide yaw (:attr:`stack_angles`)."""
-        return self.stack_angles[1]
-
-    @property
-    def is_oblique(self) -> bool:
-        """Return whether any section's plane is angled."""
-        return any(section.is_oblique for section in self.slices)
-
     def replace_with(self, new_state: Stack) -> None:
         """Overwrite this stack's contents with another stack's, in place.
 

@@ -90,9 +90,7 @@ JOB_COMMANDS: dict[str, str] = {
     "pip packages in it, listed in scripts/requirements.txt; `remove` deletes it and "
     "keeps that list, from which `env` rebuilds it.",
     "python SCRIPT [ARGS ...]": "Run your own Python script with the job's environment's "
-    "python (`env`, made when missing): its output and exit code are the script's. "
-    "Faster than calling that python yourself: LangSlice and the atlas are usually "
-    "loaded already.",
+    "python (`env`, made when missing): its output and exit code are the script's.",
 }
 
 

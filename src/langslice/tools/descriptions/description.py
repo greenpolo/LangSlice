@@ -43,8 +43,6 @@ AGENT_DOOR = "agent"
 
 CLI_DOOR = "cli"
 
-DOORS = (AGENT_DOOR, "mcp", CLI_DOOR)
-
 
 class Offered(Enum):
     """The fact of a run an argument exists in, beside what it needs on."""
@@ -95,7 +93,7 @@ class DescriptionFacts:
             False when the door cannot reach the job's image model, so no
             base prompt is described.
         door
-            The door the run is declared for, one of :data:`DOORS`.
+            The door the run is declared for, ``agent``, ``mcp`` or ``cli``.
         prompt
             The image model's own base prompt; None: the job's own
             (``nonlinear.image_prompt``), else LangSlice's for the run's

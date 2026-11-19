@@ -226,7 +226,7 @@ class Job(JobBorderTraces):
         old inputs and drop the new ones.
         """
         if folder is None:
-            folder, _fallback = locate_job_folder(
+            folder = locate_job_folder(
                 workspace.image_folder, spec.job_dir, emit=workspace.progress
             )
         images = Path(os.path.abspath(workspace.image_folder))

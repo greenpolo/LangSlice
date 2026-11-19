@@ -58,7 +58,6 @@ from langslice.plugin_api import (
     map_sections,
 )
 
-NAME = "STalign"
 DEFAULTS = {
     "device": "auto",
     "threads": 4,
@@ -233,10 +232,6 @@ def stalign_plane_search(
 
 
 PLANE_PARAMS = {"nt": 4, "sigmaM": 2.0, "sigmaB": 2.0, "sigmaA": 2.0, "muA": 3.0, "muB": 0.0}
-
-
-def _homog(m: np.ndarray) -> np.ndarray:
-    return np.vstack([np.asarray(m, np.float64)[:2], [0.0, 0.0, 1.0]])
 
 
 def _down(image: np.ndarray, factor: float) -> tuple[np.ndarray, tuple[float, float]]:

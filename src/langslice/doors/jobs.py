@@ -15,13 +15,14 @@ tools on top are the same toolbox the agent and MCP doors use
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.workspace import Workspace, log_progress
+from langslice.core.workspace import Workspace
 from langslice.doors.reference_card import write_card
 from langslice.job.folder.layout import (
     JobLayout,
@@ -37,6 +38,8 @@ from langslice.job.settings.spec import JobSpec
 if TYPE_CHECKING:
     from langslice.core.fits.trace.request import ImageModel
     from langslice.tools.pipeline import ToolBox
+
+logger = logging.getLogger(__name__)
 
 OPEN_MAX_VIEW_EDGE = 1 << 15
 
@@ -89,7 +92,7 @@ def provider_connected(spec: JobSpec) -> bool:
 def image_model_off(spec: JobSpec, connected: bool) -> bool:
     """Whether *spec*'s nonlinear task names an image model that is not
     *connected*: then ``trace_borders`` is not offered and every door's
-    statement says why (``statement.IMAGE_MODEL_OFF``). The spec is left as
+    statement says why (``door_text.image_model_off_text``). The spec is left as
     it is: the job keeps its provider for a door that can reach it."""
     return spec.has("nonlinear") and spec.nonlinear.uses_image_model and not connected
 
@@ -136,7 +139,7 @@ def context(
         image_folder=os.path.abspath(spec.image_folder),
         job_folder=str(folder),
         results_path=spec.out or str(JobLayout(folder).results_file),
-        emit=emit or log_progress,
+        emit=emit,
         **kwargs,
     )
 
@@ -303,9 +306,7 @@ def create(
     ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
     with its reference card.
     *image_model* and *door* as in :func:`open_folder`."""
-    folder, _fallback = locate_job_folder(
-        spec.image_folder, spec.job_dir, emit=emit or log_progress
-    )
+    folder = locate_job_folder(spec.image_folder, spec.job_dir, emit=emit or logger.info)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path)
     ctx.spec = job.spec
@@ -339,7 +340,7 @@ def with_registration(
     """
     from langslice.job.imports.placements import registration_inputs
 
-    clashes = [key for key in REGISTRATION_EXCLUDES if (spec.inputs or {}).get(key)]
+    clashes = [key for key in REGISTRATION_EXCLUDES if spec.inputs.get(key)]
     if clashes:
         raise ValueError(
             f"A registration file supplies the {', '.join(clashes)}; give "
@@ -351,10 +352,10 @@ def with_registration(
     folder = Path(spec.job_dir) if spec.job_dir else job_folder_for(spec.image_folder)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     imported = registration_inputs(path, ctx)
-    say = emit or log_progress
+    say = emit or logger.info
     for warning in imported.report["warnings"]:
         say(f"[registration] {warning}")
     import dataclasses
 
-    supplied = {**(spec.inputs or {}), **imported.inputs}
+    supplied = {**spec.inputs, **imported.inputs}
     return dataclasses.replace(spec, inputs=supplied), imported.report

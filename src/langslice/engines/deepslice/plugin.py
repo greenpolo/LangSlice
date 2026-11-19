@@ -65,7 +65,6 @@ from langslice.plugin_api import (
 )
 
 OPTIONS = ("ensemble", "long_edge", "cache_folder")
-REF = "langslice.engines.deepslice.plugin:tools"
 ConfigValue = bool | int | float | str
 NAMED, MARKED = "named", "marked damage"
 

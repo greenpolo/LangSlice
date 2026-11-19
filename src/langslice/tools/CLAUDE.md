@@ -63,7 +63,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   Texts are prose at no indentation with the model's line breaks; a
   trailing backslash joins a line too long for the source. A passage that
   names a tool or an option carries needs marks (`job/settings/needs.py`).
-  `DescriptionFacts` is what of a run changes the text: `door` (`DOORS`),
+  `DescriptionFacts` is what of a run changes the text: `door` (`agent`, `mcp` or `cli`),
   `auto` (the caller sizes pictures), `forced_view`, `positions`,
   `uncapped`, `prompt` (the base image prompt; empty without an image
   model), `switched_off`, `absent` and `plugins` (a plugin's text renders
@@ -96,7 +96,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   and atlas, what the run changes, the raw channels and section images, the
   atlas images, the picture size, the deformable engine.
 - `door_text.py` — what the doors add: `opening_for_mcp`,
-  `IMAGE_MODEL_OFF`, `status_and_notes`, `user_notes_lines`, `read_notes`,
+  `image_model_off_text`, `status_and_notes`, `user_notes_lines`, `read_notes`,
   `NOTES_KEY`, `image_model_state`.
 - `fixes.py` — the agent CLI's fix sentence per refusal code.
 
@@ -529,7 +529,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   stain fit with a `FitSettings` of the caller's own on that section image
   (`UNKNOWN_IMAGE`), in this process under the engine lock,
   written nowhere (a script's `job.context.fit_fireants`): the record;
-  `mask` through `core.fits.deformable.fit.with_section_mask`, `em` False runs
+  `mask` through `core.fits.deformable.fit.prepare_fit`'s `section_weights`, `em` False runs
   once, `marked` adds the section's marked regions to `exclude`. Refused:
   `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`,
   `INVALID_LINEAR_PLACEMENT`, `FIT_FAILED`.

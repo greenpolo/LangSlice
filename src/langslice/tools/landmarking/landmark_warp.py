@@ -120,7 +120,7 @@ def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
         return ", ".join("a fixed corner" if i < 4 else names[i - 4] for i in group)
 
     groups = "; ".join(ids(group) for group in exc.vertices[:6])
-    if "Repeated" in str(exc):
+    if exc.repeated:
         return (
             f"Pairs with the same section point cannot be triangulated ({groups}). "
             "Move one section endpoint of each group, or delete one pair."

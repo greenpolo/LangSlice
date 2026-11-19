@@ -137,7 +137,7 @@ def build_tools(
     connected), so the tools are those of a run without one: no
     ``trace_borders``, ``submit`` not waiting for traces. The spec itself is
     left as it is. *door* is who reads the declarations (``agent``, ``mcp``,
-    ``cli``: ``tools.descriptions.description.DOORS``). *event_door*
+    ``cli``). *event_door*
     is the door the job folder's ``logs/events.jsonl`` names for every call
     (None: *door*; the library's is ``library``).
 
