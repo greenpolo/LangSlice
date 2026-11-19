@@ -425,7 +425,7 @@ class Job(JobBorderTraces):
         )
 
     def busy_refusal(self, section_ids: Collection[str]) -> Refused | None:
-        """:class:`Refused` ``SECTION_BUSY`` (``ids``, ``work``, ``message``) when background
+        """:class:`Refused` ``BUSY`` (``ids``, ``work``, ``message``) when background
         work is running on any of *section_ids* (it will write them when it
         lands, from what they hold now), else None. The landing of that work
         itself is not refused."""
@@ -438,7 +438,7 @@ class Job(JobBorderTraces):
             for work in works
         )
         return Refused(
-            RefusalCode.SECTION_BUSY,
+            RefusalCode.BUSY,
             ids=list(busy),
             work=[work.id for work in works],
             message=f"{running}. Nothing written: write to it once the work "

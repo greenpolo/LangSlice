@@ -46,7 +46,7 @@ __all__ = [
 MAX_TEXT = 500
 KEY_DIGITS = 16
 MIN_SIDE = 0.005
-BAD_BOX = "A box is four numbers: [x0, y0, x1, y1]."
+BOX_IS_FOUR_NUMBERS = "A box is four numbers: [x0, y0, x1, y1]."
 
 _WRITING = threading.Lock()
 
@@ -227,16 +227,16 @@ def _write(layout: JobLayout, comments: list[Comment]) -> None:
 
 def _fraction(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ReviewError(BAD_BOX)
+        raise ReviewError(BOX_IS_FOUR_NUMBERS)
     return min(max(float(value), 0.0), 1.0)
 
 
 def _box(value: object) -> list[float]:
     if not isinstance(value, (list, tuple)):
-        raise ReviewError(BAD_BOX)
+        raise ReviewError(BOX_IS_FOUR_NUMBERS)
     numbers = [_fraction(v) for v in cast("list[object]", value)]
     if len(numbers) != 4:
-        raise ReviewError(BAD_BOX)
+        raise ReviewError(BOX_IS_FOUR_NUMBERS)
     x0, x1 = sorted((numbers[0], numbers[2]))
     y0, y1 = sorted((numbers[1], numbers[3]))
     if x1 - x0 < MIN_SIDE or y1 - y0 < MIN_SIDE:

@@ -122,11 +122,11 @@ def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
     if exc.repeated:
         return (
             f"Pairs with the same section point cannot be triangulated ({groups}). "
-            "Move one section endpoint of each group, or delete one pair."
+            "Move one section endpoint of each group, or delete one pair, then apply again."
         )
     return (
         f"The section points of {groups} lie on one line, a zero-area triangle. "
-        "Move one of those section endpoints off the line, or delete one pair."
+        "Move one of those section endpoints off the line, or delete one pair, then apply again."
     )
 
 
@@ -169,16 +169,16 @@ def _require_applicable(job: Job, record: Section) -> tuple[Pair, ...]:
     pairs = geometry.section_pairs(record)
     if len(pairs) < 3:
         raise Refused(
-            RefusalCode.INSUFFICIENT_LANDMARKS,
+            RefusalCode.PRECONDITION,
             message=f"{record.id} has {len(pairs)} saved pair(s); at least "
             "three corresponding pairs are required"
             + job.spec.tools_on.say("set_landmarks", " (set_landmarks adds them)")
-            + ".",
+            + "; add pairs, then apply again.",
         )
     stale_ids = [pair.id for pair in pairs if geometry.stale(job.state, record, pair)]
     if stale_ids:
         raise Refused(
-            RefusalCode.STALE_LANDMARK_PLANE,
+            RefusalCode.STALE_INPUT,
             pairs=stale_ids,
             message=f"Pairs {', '.join(stale_ids)} were placed against an "
             f"earlier atlas plane of {record.id}. Draw its current atlas "
@@ -203,7 +203,7 @@ def _mesh(
         return visualign_mesh(source, target, size=size)
     except DegenerateMesh as exc:
         raise Refused(
-            RefusalCode.LANDMARK_TRIANGULATION_FAILED,
+            RefusalCode.BAD_ARGUMENT,
             pairs=sorted({names[i - 4] for group in exc.vertices for i in group if i >= 4}),
             message=_degenerate_words(exc, names),
         ) from exc
@@ -293,7 +293,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> Land
             current = None
         if held is not None and current is None:
             raise Refused(
-                RefusalCode.LANDMARK_WARP_UNAVAILABLE,
+                RefusalCode.IO_ERROR,
                 message="The current deformation cannot be read; undo it first.",
             )
         replacing = current is not None and current.engine.get("name") == "landmark_triangulation"
@@ -361,7 +361,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> Land
         result.engine["name"] = "landmark_triangulation"
         result.stored_step = step
     except (ValueError, OSError) as exc:
-        raise Refused(RefusalCode.LANDMARK_TRIANGULATION_FAILED, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     key = digest(
         {
             "landmarks": revision,

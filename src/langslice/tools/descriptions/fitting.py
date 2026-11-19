@@ -40,7 +40,7 @@ adjusts from where the
 section is and does not search from scratch: it moves a section by
 small amounts and does not turn it over. The section's marked damage
 regions are left out of the atlas automatically. A section that holds a
-deformation is refused with HAS_DEFORMATION: undo the deformation
+deformation is refused: undo the deformation
 first{warp}. Each fit is written as the
 section's transform, one undoable write for the call."""
 
@@ -48,7 +48,7 @@ section's transform, one undoable write for the call."""
 def _elastix_small_region(on: ToolsOn) -> str:
     manual = on.say("interactive_transform", " or interactive_transform")
     return f"""\
-A region too small for elastix is skipped with REGION_TOO_SMALL; use
+A region too small for elastix is skipped; use
 a larger region{manual}. No fit is written for it."""
 
 

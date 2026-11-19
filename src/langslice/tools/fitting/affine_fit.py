@@ -197,10 +197,10 @@ def refit_refusal(section: Section) -> Refused:
     Returns
     -------
     Refused
-        ``HAS_DEFORMATION``, saying to undo the deformation first.
+        ``PRECONDITION``, saying to undo the deformation first.
     """
     return Refused(
-        RefusalCode.HAS_DEFORMATION,
+        RefusalCode.PRECONDITION,
         f"{section.id} holds a deformation, which a new transform would "
         "leave misplaced; undo the deformation first, or fit a warp on it.",
     )
@@ -227,11 +227,11 @@ def _fit_elastix(
     (:func:`langslice.core.sections.damage.exclusions`). The fit reads
     *section_image* (a section image, by name) with the section mask *mask* by
     name (``"none"`` or one the section holds; a stale one is that section's
-    row, ``STALE_MASK``) and, with *edges*, the edge pair; every ok row carries
+    row, ``STALE_INPUT``) and, with *edges*, the edge pair; every ok row carries
     the ``inputs`` the fit read
     (:class:`langslice.core.fits.inputs.InputsBlock`) and ``estimated`` (null:
     Elastix estimates no weighting). A section that holds a deformation is
-    refused (``HAS_DEFORMATION``), and so is one whose affine is frozen, and so
+    refused (``PRECONDITION``), and so is one whose affine is frozen, and so
     is a fit that turns over a section whose orientation is frozen
     (:func:`reverses_orientation`; its row says ``FROZEN``). Every fit that
     succeeded is written as ONE undo step (:func:`set_transforms`,
@@ -417,10 +417,9 @@ def elastix_fit(
     masks (:mod:`langslice.tools.changing.masks`), its weights under 0.5 left
     out.
 
-    Refused: ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (an image
-    the atlas does not have), ``UNKNOWN_IMAGE``, ``UNKNOWN_MASK``,
-    ``STALE_MASK``, ``HAS_DEFORMATION``, ``UNKNOWN_REGIONS``, ``NO_SIDES``,
-    ``REGION_TOO_SMALL``, ``FIT_FAILED``.
+    Refused: ``NOT_FOUND``, ``BAD_ARGUMENT`` (an image
+    the atlas does not have, a region too small), ``STALE_INPUT``,
+    ``PRECONDITION``, ``FIT_FAILED``.
     """
     record = job.state.resolve(section)
     if record is None:
@@ -430,7 +429,7 @@ def elastix_fit(
     try:
         resolved = resolve_image(workspace.atlas, str(atlas_image))
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     section_image = check_image(job, workspace, [record], section_image)
     include = region_entries(workspace, job.state, list(restrict_to))
     dropped = region_entries(workspace, job.state, list(exclude))
@@ -503,19 +502,18 @@ def elastix_affine(
     *restrict_to* fits by those atlas regions only (sides allowed; empty: every
     region). Each section's marked damage regions are left out automatically
     (:func:`langslice.core.sections.damage.exclusions`). A section that holds a
-    deformation is that section's row ``HAS_DEFORMATION``.
+    deformation is that section's row ``PRECONDITION``.
 
     Every ok row of a call with *restrict_to* carries ``restrict_box``: the
     regions' bounding box on that section's canvas as ``[x0, y0, x1, y1]``
     fractions (``core.pictures.canvas.zoom_box``'s zoom), so a later picture
     can zoom on them; absent when the regions are not in that plane. Refused
-    (nothing fitted): ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (``atlas_image`` not
-    one of the atlas's images, a region that is not text, no section named),
-    ``UNKNOWN_IMAGE``, ``UNKNOWN_MASK``.
+    (nothing fitted): ``NOT_FOUND``, ``BAD_ARGUMENT`` (``atlas_image`` not
+    one of the atlas's images, a region that is not text, no section named).
     """
     if not sections:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message="sections must name one or more sections",
         )
 
@@ -523,9 +521,9 @@ def elastix_affine(
     try:
         image = resolve_image(workspace.atlas, asked)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     if any(not isinstance(name, str) for name in restrict_to):
-        raise Refused(RefusalCode.BAD_ARGS, message="restrict_to lists atlas regions")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="restrict_to lists atlas regions")
     records = []
     for ref in sections:
         record = job.state.resolve(ref)
@@ -625,7 +623,7 @@ def elastix_affine_tool(
     check_atlas_image(workspace, atlas_image)
     named = as_list(sections)
     if not named:
-        raise Refused(RefusalCode.BAD_ARGS, "sections must name one or more sections")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "sections must name one or more sections")
     check_section_count(job, "elastix_affine", len(named))
     done = elastix_affine(
         job,

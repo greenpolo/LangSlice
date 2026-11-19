@@ -132,7 +132,7 @@ def _check_elastix_region(
     span = (int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1) if xs.size else (0, 0)
     if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN**2:
         raise Refused(
-            RefusalCode.REGION_TOO_SMALL,
+            RefusalCode.BAD_ARGUMENT,
             f"Region is too small for elastix. Select a larger region{instead}; "
             "no fit was run. "
             f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.",

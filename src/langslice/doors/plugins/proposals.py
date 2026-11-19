@@ -99,12 +99,12 @@ class ContextProposals(ContextFrames):
         engines return. The result is a refinement of the section's current
         placement exactly as an Elastix fit is, in the six normalized numbers
         and the knobs about the section's stored pivot (else the canvas
-        centre). ``ToolError`` ``BAD_MATRIX`` for a degenerate map."""
+        centre). ``ToolError`` ``BAD_ARGUMENT`` for a degenerate map."""
         record = self._record(section)
         grid = self._grid(record)
         m = np.vstack([np.asarray(matrix, dtype=np.float64).reshape(2, 3), [0.0, 0.0, 1.0]])
         if not np.isfinite(m).all() or abs(np.linalg.det(m[:2, :2])) < 1e-9:
-            raise ToolError(RefusalCode.BAD_MATRIX, "the map is degenerate or not finite")
+            raise ToolError(RefusalCode.BAD_ARGUMENT, "the map is degenerate or not finite")
         step = np.asarray(grid.placement.atlas_to_section, dtype=np.float64) @ m
         params = cast("Grid", grid).params_after(IDENTITY_PARAMS, step)
         return self.transform_from_params(record.id, params, note=note)
@@ -131,7 +131,7 @@ class ContextProposals(ContextFrames):
         values = [float(v) for v in params]
         if len(values) != 6 or not np.isfinite(values).all():
             raise ToolError(
-                RefusalCode.BAD_ARGS, "a transform is six finite numbers [a, b, tx, c, d, ty]"
+                RefusalCode.BAD_ARGUMENT, "a transform is six finite numbers [a, b, tx, c, d, ty]"
             )
         workspace, state = self._run.workspace, self._run.state
         rendered = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
@@ -147,7 +147,7 @@ class ContextProposals(ContextFrames):
                 record.yaw_deg,
             )
         except ValueError as exc:
-            raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT, f"{record.id}: {exc}") from exc
+            raise ToolError(RefusalCode.PRECONDITION, f"{record.id}: {exc}") from exc
         in_section = denormalized_affine(values, rendered.size)
         ox, oy = (float(v) for v in geometry.section_offset)
         shift = np.array([[1.0, 0.0, ox], [0.0, 1.0, oy], [0.0, 0.0, 1.0]])
@@ -219,7 +219,7 @@ class ContextProposals(ContextFrames):
         :attr:`FitFrame.applied_map`): that deformation is its record's
         parent and its steps stay before this one, as a native fit chains, and
         it is written only while the section still holds it (``STALE_INPUT``);
-        ``BAD_ARGS`` when it holds none. *settings* (the call's settings, by
+        ``BAD_ARGUMENT`` when it holds none. *settings* (the call's settings, by
         the tool's names) are the step's, which ``status`` and the
         registration list show; *engine_settings* (what the engine ran at, in
         its own units) and *engine_version* go to the record's ``engine``, as
@@ -230,9 +230,9 @@ class ContextProposals(ContextFrames):
         what ``make_mask(source="fit")`` copies); None when it estimated none.
         *provenance*: JSON values added to the record's provenance (the
         ``inputs`` and ``estimated`` blocks of a fit,
-        :mod:`langslice.core.fits.inputs`). ``ToolError`` ``BAD_FIELD`` for an
+        :mod:`langslice.core.fits.inputs`). ``ToolError`` ``BAD_ARGUMENT`` for an
         array of another shape, not float or not finite;
-        ``INVALID_LINEAR_PLACEMENT`` for a section without a position or a
+        ``PRECONDITION`` for a section without a position or a
         transform."""
         import json
 
@@ -243,7 +243,7 @@ class ContextProposals(ContextFrames):
             plain_meta = to_jsonable(dict(meta or {}), strict=True)
             json.dumps(plain_meta)
         except (TypeError, ValueError) as exc:
-            raise ToolError(RefusalCode.BAD_ARGS, f"meta is JSON values: {exc}") from exc
+            raise ToolError(RefusalCode.BAD_ARGUMENT, f"meta is JSON values: {exc}") from exc
         text = str(note or "").strip()
         given = to_jsonable(dict(provenance or {}), strict=True)
         fitted_with = to_jsonable(dict(settings or {}), strict=True)

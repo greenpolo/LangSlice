@@ -185,13 +185,18 @@ def prepare_linear_registration(
         if transform is None:
             raise ValueError(ctx.settings.missing_transform)
         if transform.stale:
-            raise ValueError("The written affine is marked stale")
+            raise ValueError(
+                "The written affine is marked stale; write the section's transform again"
+            )
         orientation = transform.orientation
         params = transform.params
     if orientation is not None:
         expected = {"flip": section.flip, "rotation_deg": section.rotation_deg}
         if any(key in orientation and orientation[key] != value for key, value in expected.items()):
-            raise ValueError("The written affine has a different section orientation")
+            raise ValueError(
+                "The written affine has a different section orientation; "
+                "write the section's transform again"
+            )
     if state.atlas != ctx.settings.atlas or state.plane != ctx.settings.plane:
         raise ValueError("State and rendering context disagree about the atlas or plane")
     if state.plane not in ("coronal", "sagittal", "horizontal"):

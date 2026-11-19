@@ -112,7 +112,7 @@ def position_sections(
     the order of the positions (:func:`order_by_position`); the answer lists
     that order. Either part may be left out; nothing written commits nothing.
 
-    Refused, nothing written: ``BAD_ARGS`` (an entry that is not an id with a
+    Refused, nothing written: ``BAD_ARGUMENT`` (an entry that is not an id with a
     finite number, angles that are not two finite numbers, nothing asked), and
     ``FROZEN`` (a section named has its position frozen, or the angles are
     asked while any section has its cutting angles frozen: the angles are one
@@ -130,18 +130,20 @@ def position_sections(
     for entry in entries:
         if not isinstance(entry, Mapping) or "id" not in entry:
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message="each section is {id, position_mm}",
             )
         given = cast("Mapping[str, object]", entry).get("position_mm")
         if not isinstance(given, (int, float, str)):
-            raise Refused(RefusalCode.BAD_ARGS, message="position_mm must be a number")
+            raise Refused(RefusalCode.BAD_ARGUMENT, message="position_mm must be a number")
         try:
             value = float(given)
         except ValueError:
-            raise Refused(RefusalCode.BAD_ARGS, message="position_mm must be a number") from None
+            raise Refused(
+                RefusalCode.BAD_ARGUMENT, message="position_mm must be a number"
+            ) from None
         if not math.isfinite(value):
-            raise Refused(RefusalCode.BAD_ARGS, message="position_mm must be finite")
+            raise Refused(RefusalCode.BAD_ARGUMENT, message="position_mm must be finite")
         pairs.append((entry["id"], value))
     angles: tuple[float, float] | None = None
     if cutting_angles is not None:
@@ -152,13 +154,13 @@ def position_sections(
             )
         except (TypeError, ValueError, KeyError):
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message="cutting_angles is {pitch_deg, yaw_deg}",
             ) from None
         if not all(math.isfinite(value) for value in angles):
-            raise Refused(RefusalCode.BAD_ARGS, message="cutting angles must be finite")
+            raise Refused(RefusalCode.BAD_ARGUMENT, message="cutting angles must be finite")
     if not pairs and angles is None:
-        raise Refused(RefusalCode.BAD_ARGS, message="give sections or cutting_angles")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="give sections or cutting_angles")
     if pairs:
         named = [
             record.id for ref, _value in pairs if (record := job.state.resolve(ref)) is not None

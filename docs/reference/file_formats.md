@@ -584,7 +584,7 @@ folds everywhere), `warp_error_um` (per warped section, the spline's
 distance from the deformation over the atlas overlap: `median`, `p99`,
 `max`) and `note`. A stack whose sections' cutting angles differ, an atlas
 other than the Allen mouse CCFv3 (10, 25, 50 or 100 um) or a plane other
-than coronal is refused (`BAD_ARGS`).
+than coronal is refused (`BAD_ARGUMENT`).
 
 ### `dmc_brainmap/<animal>/`
 

@@ -10,13 +10,16 @@ nothing else; progress and logs go to stderr. The envelope::
      "artifacts": [{"path": "...", "kind": "view"}, ...],
      "warnings": ["..."],
      "next": ["langslice-job ... wait <id>"],
-     "error": {"code": "...", "message": "...", "fix": "..."}}   # only when not ok
+     "error": {"code": "...", "message": "..."}}   # only when not ok
 
-Exit codes: 0 ok, 2 bad arguments (the call itself is wrong), 3 refused by
-the job (a gate or a rule: the stack is not in a state the verb accepts),
-4 internal error. Pictures are never inlined: they are saved in the job
-folder and listed under ``artifacts`` by absolute path and kind (``view``
-the JPEG, ``view_json`` its frame, ``labels`` the uint32 atlas ids,
+``error.message`` says what was found and what to do next. ``error.fix`` is
+there only where the CLI computes a corrected call itself (an unknown flag).
+
+Exit codes: 0 ok, 2 bad arguments (``BAD_ARGUMENT`` and ``NOT_FOUND``: the
+call itself names something wrong), 3 refused by the job (a gate or a rule:
+the stack is not in a state the verb accepts), 4 internal error. Pictures are never
+inlined: they are saved in the job folder and listed under ``artifacts`` by
+absolute path and kind (``view`` the JPEG, ``view_json`` its frame, ``labels`` the uint32 atlas ids,
 ``borders`` the drawn borders, ``results`` an export, ``card`` the
 reference card); ``picture_files`` repeats the JPEGs' paths (kinds
 :data:`PICTURE_KINDS`), in order, second in the envelope, where an agent
@@ -26,7 +29,6 @@ reading the reply sees them first.
 from __future__ import annotations
 
 import contextlib
-import contextvars
 import io
 import json
 import os
@@ -36,8 +38,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langslice.core.refusal import RefusalCode
-from langslice.job.settings.tools_on import ToolsOn
-from langslice.tools.descriptions.fixes import FIXES
 
 PICTURE_KINDS = ("view", "opening")
 
@@ -46,28 +46,12 @@ EXIT_ARGUMENTS = 2
 EXIT_REFUSED = 3
 EXIT_INTERNAL = 4
 
-ARGUMENT_CODES = frozenset(
-    {
-        RefusalCode.MISSING_ARGUMENTS,
-        RefusalCode.DUPLICATE_SLICE_IDS,
-        RefusalCode.NO_SIDES,
-        RefusalCode.WRONG_SIDE_PAIR,
-        RefusalCode.EMPTY_BOX,
-        RefusalCode.NO_JOB,
-        RefusalCode.NO_IMAGES,
-        RefusalCode.ATLAS_ENDPOINT_OUTSIDE,
-        RefusalCode.NO_SUCH_PATH,
-    }
-)
-
-DISABLED: contextvars.ContextVar[ToolsOn] = contextvars.ContextVar("langslice_disabled")
+ARGUMENT_CODES = frozenset({RefusalCode.BAD_ARGUMENT, RefusalCode.NOT_FOUND})
 
 
 def exit_code(code: str) -> int:
     """The exit code of a refusal *code*."""
-    if code in ARGUMENT_CODES or code.startswith(("BAD_", "UNKNOWN_", "TOO_MANY_")):
-        return EXIT_ARGUMENTS
-    return EXIT_REFUSED
+    return EXIT_ARGUMENTS if code in ARGUMENT_CODES else EXIT_REFUSED
 
 
 @dataclass
@@ -111,33 +95,16 @@ class Envelope:
         exit: int | None = None,
         fix: str | None = None,
         result: Any = None,
-        job: str = "<folder>",
-        verb: str = "VERB",
     ) -> Envelope:
-        """A refused or failed call; *fix* defaults to :data:`FIXES`."""
-        status = exit if exit is not None else exit_code(code)
-        hint = (
-            fix
-            if fix is not None
-            else FIXES.get(
-                code,
-                (
-                    f"See `langslice-job schema {verb}` for the arguments."
-                    if status == EXIT_ARGUMENTS
-                    else f"See the stack with `langslice-job {job} status`, then retry."
-                    if status == EXIT_REFUSED
-                    else "Report it; the log is on stderr."
-                ),
-            )
-        )
-        if callable(hint):
-            hint = hint(DISABLED.get(ToolsOn()))
-        hint = hint.replace("{job}", job).replace("{verb}", verb)
+        """A refused or failed call; *fix* is a corrected call the CLI computed."""
+        error: dict[str, Any] = {"code": code, "message": message}
+        if fix is not None:
+            error["fix"] = fix
         return cls(
             ok=False,
             result=result,
-            exit=status,
-            error={"code": code, "message": message, "fix": hint},
+            exit=exit if exit is not None else exit_code(code),
+            error=error,
             next=[],
         )
 

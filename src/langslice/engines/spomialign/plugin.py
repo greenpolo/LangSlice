@@ -7,7 +7,7 @@ it is imported from this package (no ``PYTHONPATH``). Option
 when torch sees one, else the CPU). The method itself runs in this process,
 in ``engine.py`` and ``matching.py``, on RoMa (``romatch``, LangSlice's
 ``engines`` extra), imported only when a call runs; a call without it is
-refused ``ENGINE_MISSING``. This module imports only
+refused ``ENGINE_UNAVAILABLE``. This module imports only
 ``langslice.plugin_api`` and the engine.
 
 Each call puts the section on SPOmiAlign's canvas, runs the engine on (atlas
@@ -21,7 +21,7 @@ with the atlas resampled onto it through that deformation
 (``FitFrame.applied_map``), so the warp starts on top of a landmark warp, as
 ``stalign_lddmm`` does. A new transform clears a deformation, so rigid,
 affine and affine_warp are refused on a section that holds one
-(``HAS_DEFORMATION``).
+(``PRECONDITION``).
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ DEFAULTS = {"device": ""}
 MISSING = (
     "SPOmiAlign cannot run here: its matcher, RoMa (the romatch package), "
     "is not installed; install LangSlice's engines extra: "
-    'pip install "langslice[engines]"'
+    'pip install "langslice[engines]". Use another method, or ask the user to install it.'
 )
 CANVAS_EDGE = 1536
 FITS = ("transform", "warp", "both")
@@ -353,10 +353,11 @@ def _engine(
         missing = [name for name in matching.weights_missing() if name in absent]
         if missing:
             raise ToolError(
-                RefusalCode.ENGINE_MISSING,
+                RefusalCode.ENGINE_UNAVAILABLE,
                 "SPOmiAlign's matcher weights are not in torch's "
                 "hub cache and could not be downloaded: "
-                + ", ".join(matching.WEIGHTS[name] for name in missing),
+                + ", ".join(matching.WEIGHTS[name] for name in missing)
+                + ". Use another method, or ask the user to install it.",
             ) from error
         first = str(error).strip().splitlines()[:1] or ["no message"]
         raise ToolError(
@@ -506,13 +507,13 @@ def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, object] | None:
         return {"id": sid, **refusal.payload()}
     if frame.placed_atlas_to_section is None:
         refusal = ToolError(
-            RefusalCode.INVALID_LINEAR_PLACEMENT,
+            RefusalCode.PRECONDITION,
             "SPOmiAlign starts from the section's placement: give it a transform first",
         )
         return {"id": sid, **refusal.payload()}
     if mode != engine.WARP and view_of.deformation:
         refusal = ToolError(
-            RefusalCode.HAS_DEFORMATION,
+            RefusalCode.PRECONDITION,
             "this fit would write a new transform, which clears the "
             'section\'s deformation; fit "warp" to build on it',
         )
@@ -534,21 +535,21 @@ def _run(
     view: bool,
 ) -> ToolResult:
     if fit not in FITS:
-        raise ToolError(RefusalCode.BAD_ARGS, f"fit is one of {', '.join(FITS)}; got {fit!r}")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, f"fit is one of {', '.join(FITS)}; got {fit!r}")
     if rigid and fit != "transform":
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "rigid fits the transform alone: SPOmiAlign's warp "
             "follows an affine or the registration the section holds; give fit "
             '"transform" with rigid, or leave rigid false',
         )
     mode = mode_of(fit, bool(rigid))
     if not sections:
-        raise ToolError(RefusalCode.BAD_ARGS, "name one to twenty sections")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "name one to twenty sections")
     if int(matches) < 3:
-        raise ToolError(RefusalCode.BAD_ARGS, "matches is at least 3")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "matches is at least 3")
     if not float(smoothness_um) > 0:
-        raise ToolError(RefusalCode.BAD_ARGS, "smoothness_um is above 0")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "smoothness_um is above 0")
     matches, smoothness_um = int(matches), float(smoothness_um)
     settings = {
         "fit": fit,
@@ -710,7 +711,7 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
         view: bool = True,
     ) -> ToolResult:
         if not matching.is_installed():
-            raise ToolError(RefusalCode.ENGINE_MISSING, MISSING)
+            raise ToolError(RefusalCode.ENGINE_UNAVAILABLE, MISSING)
         return _run(
             ctx,
             options,

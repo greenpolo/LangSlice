@@ -163,7 +163,8 @@ class FolderLock:
             retried(lock.acquire)
         except Timeout as exc:
             raise JobBusy(
-                f"{self.path.parent} is locked by another writer (waited {self.timeout:g} s)"
+                f"{self.path.parent} is locked by another writer (waited {self.timeout:g} s); "
+                "call again once it has finished"
             ) from exc
         except PermissionError:
             logger.warning("Cannot lock %s; working without the lock", self.path)

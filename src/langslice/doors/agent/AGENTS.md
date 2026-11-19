@@ -228,7 +228,7 @@ A host's controls, all plain `JobSpec` fields:
   `deformation` the agent may not change; `"*"` is every section. A frozen
   property keeps the value `inputs` supplies, else its "none" (a frozen
   affine without a supplied transform gets `job.host_transform()`, `kind`
-  `"host"`, identity, which satisfies `MISSING_TRANSFORMS`; a frozen
+  `"host"`, identity, which satisfies `GATE_REFUSED`; a frozen
   deformation needs no deformation at `submit`). The tools refuse a write that
   would change one, `FROZEN` (`Job.frozen_refusal`); a fit under a frozen
   orientation keeps the section's handedness; a task whose properties are all
@@ -238,7 +238,7 @@ A host's controls, all plain `JobSpec` fields:
   `frozen` tell the agent.
 - **`nonlinear.require_deformation`** (`--nonlinear-require-deformation`, default off):
   every section needs a deformation, and `submit` is refused
-  (`MISSING_DEFORMATIONS`) until it has one; off, a deformation is the
+  (`GATE_REFUSED`) until it has one; off, a deformation is the
   agent's choice and the job line says so.
 - **`force_view`**: the change tools always return their picture (their
   `view` argument is not declared).
@@ -300,7 +300,7 @@ The job line asks for a deformation on a section where it improves on its
 linear placement, with the section's stain (and, with an image model, the
 borders it traces) as the evidence. When the host requires a deformation on
 every section (`require_deformation`), the line says every section and
-`submit` refuses `MISSING_DEFORMATIONS` until every section holds a
+`submit` refuses `GATE_REFUSED` until every section holds a
 deformation at its current `linear_key`; otherwise `submit` has no
 deformation gate.
 
@@ -311,7 +311,7 @@ deformation gate.
   FireANTs SyN on a section image against one of the atlas's images, on
   top of each section's current registration (each fit builds on the one
   before; undo is how to start over), the marked damage regions left out;
-  at most 4 sections per call; `ENGINE_MISSING` without torch and fireants.
+  at most 4 sections per call; `ENGINE_UNAVAILABLE` without torch and fireants.
 - `trace_borders(section, prompt="", restrict_to=[])`: LangSlice's own
   method, packaged: the image model traces the atlas borders onto the
   section (the agent's per-section edit of the base prompt, which the
@@ -372,11 +372,11 @@ This is guidance, not enforcement.
 
 **Gates are constraints, not coaching.** A refusal states the numbers that
 caused it; a failed `submit` neither writes nor ends the run. `submit`
-waits for the background work, then refuses `MISSING_POSITIONS`,
-`STRICT_INTERVAL` (spacing within 10% of the interval and no breaks, with
-`--position-strict-interval`), `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must
-exceed 1.5x the median written spacing), `MISSING_TRANSFORMS` (every
-section, damaged included) and, with `nonlinear`, `MISSING_DEFORMATIONS`.
+waits for the background work, then refuses `GATE_REFUSED` (a section still
+at its initial position; spacing outside 10% of the interval or any break,
+with `--position-strict-interval`; a reported break not above 1.5x the median
+written spacing; a section without a transform, damaged included; with
+`nonlinear`, a section without a deformation).
 Gates run only for tasks that are on.
 
 **One transform representation.** Elastix, interactive, imported: every

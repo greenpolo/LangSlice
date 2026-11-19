@@ -219,7 +219,7 @@ class JobHandle:
         ``full_resolution``. The grid is the section's working copy, or with
         *full_resolution* the image file's own pixels. A section without a
         placement, or whose deformation record or file cannot be read, raises
-        ``ValueError``; an unknown name, ``UNKNOWN_SLICE_IDS``
+        ``ValueError``; an unknown name, ``NOT_FOUND``
         (:class:`langslice.core.refusal.Refused`)."""
         from langslice.tools.bookkeeping.exports import section_maps
 

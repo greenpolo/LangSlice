@@ -50,7 +50,8 @@ def command(layout: JobLayout, positional: list[str]) -> Envelope:
     removing = action == "remove" and not packages
     if not removing and (action not in ("", "install") or (action == "install" and not packages)):
         return Envelope.failure(
-            RefusalCode.BAD_ARGS, "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`."
+            RefusalCode.BAD_ARGUMENT,
+            "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`.",
         )
     try:
         if removing:
@@ -61,7 +62,7 @@ def command(layout: JobLayout, positional: list[str]) -> Envelope:
         if packages:
             install(layout, packages)
     except (OSError, subprocess.SubprocessError) as exc:
-        return Envelope.failure(RefusalCode.ENV_FAILED, str(exc))
+        return Envelope.failure(RefusalCode.IO_ERROR, str(exc))
     return Envelope(result={**describe(layout), "rebuilt_from_requirements": built})
 
 
@@ -258,8 +259,8 @@ def python(folder: str, rest: list[str]) -> int:
     (:func:`script_path`). Its stdout, stderr
     and exit code are the script's, as ``env/bin/python SCRIPT ARGS`` gives
     them: this process becomes that python. A call that cannot start the
-    script prints the envelope of its refusal (``NO_JOB``, ``BAD_ARGS``,
-    ``ENV_FAILED``) and returns its exit code."""
+    script prints the envelope of its refusal (``NOT_FOUND``, ``BAD_ARGUMENT``,
+    ``IO_ERROR``) and returns its exit code."""
     from langslice.doors.agent_cli.envelope import emit
     from langslice.doors.call_log import log_call
     from langslice.doors.jobs import NoJob, find
@@ -267,20 +268,19 @@ def python(folder: str, rest: list[str]) -> int:
     try:
         layout = JobLayout(find(folder))
     except NoJob as exc:
-        return emit(Envelope.failure(RefusalCode.NO_JOB, str(exc)))
+        return emit(Envelope.failure(RefusalCode.NOT_FOUND, str(exc)))
     if not rest or rest[0].startswith("-"):
         return emit(
             Envelope.failure(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 f"python takes a script and its arguments: {PYTHON_USAGE} "
                 "(no interpreter options).",
-                verb="python",
             )
         )
     try:
         ensure(layout)
     except (OSError, subprocess.SubprocessError) as exc:
-        return emit(Envelope.failure(RefusalCode.ENV_FAILED, str(exc), verb="python"))
+        return emit(Envelope.failure(RefusalCode.IO_ERROR, str(exc)))
     rest = [script_path(layout, rest[0]), *rest[1:]]
     log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest)})
     interpreter = python_of(env_dir(layout))

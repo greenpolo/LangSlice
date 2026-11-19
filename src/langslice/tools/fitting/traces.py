@@ -115,11 +115,9 @@ def _start_trace(
         facts = {"id": section_id, **refusal.facts}
         raise Refused(refusal.code, **facts) from refusal
     except ValueError as exc:
-        raise Refused(
-            RefusalCode.INVALID_LINEAR_PLACEMENT, id=section_id, message=str(exc)
-        ) from exc
+        raise Refused(RefusalCode.PRECONDITION, id=section_id, message=str(exc)) from exc
     except OSError as exc:
-        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR, id=section_id, message=str(exc)) from exc
+        raise Refused(RefusalCode.IO_ERROR, id=section_id, message=str(exc)) from exc
     with job.writing():
         before = job.snapshot()
         now = job.state.by_id(section_id)
@@ -144,12 +142,6 @@ def _start_trace(
 TRACE_WORK = "trace_borders"
 TRACE_FIT = deformation.Choice(
     fit_section=deformation.TRACED_BORDERS, fit_atlas="borders", smoothness_um=80.0
-)
-_STALE_CODES = (
-    RefusalCode.STALE_INPUT,
-    RefusalCode.TRACE_STALE,
-    RefusalCode.TRACE_RUNNING,
-    RefusalCode.NO_TRACE,
 )
 
 
@@ -195,12 +187,12 @@ def trace_borders(
     this placement and region choice, and whose fit the section's applied
     deformation already holds, fits nothing again (``landed``, no work).
     Refused before any image call:
-    ``ENGINE_MISSING``; ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES``
-    (a bad *restrict_to*, or one that leaves no region on the plane);
-    ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` (other background work runs on
+    ``ENGINE_UNAVAILABLE``; ``BAD_ARGUMENT`` / ``NOT_FOUND`` / ``PRECONDITION``
+    (a bad *restrict_to*, or one that leaves no region on the plane, or an
+    unknown section); ``BUSY`` (other background work runs on
     the section); ``FROZEN`` (the section's deformation is frozen);
-    ``INVALID_LINEAR_PLACEMENT`` (no usable transform);
-    ``BORDER_TRACE_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
+    ``PRECONDITION`` (no usable transform);
+    ``IO_ERROR``; ``STALE_INPUT`` (the geometry changed
     while the call was prepared).
     """
     refuse_without_engine()
@@ -256,7 +248,7 @@ def land_trace(
         return Landed(
             status=FAILED,
             text=f"{section_id} is no longer in the stack; nothing was applied.",
-            result={"error": RefusalCode.UNKNOWN_SLICE_IDS},
+            result={"error": RefusalCode.NOT_FOUND},
         )
     held = record.border_trace
     form = _trace_json(record)
@@ -279,7 +271,7 @@ def land_trace(
         return Landed(
             status=FAILED,
             text=f"the image model's call failed ({reason}); nothing was applied.",
-            result={"error": RefusalCode.TRACE_FAILED, "trace": trace},
+            result={"error": RefusalCode.FIT_FAILED, "trace": trace},
         )
     if (
         section_inputs(state, record, deformation=True) != expected
@@ -295,7 +287,7 @@ def land_trace(
     refusal = fitted.refusal
     if refusal is not None or fitted.applied is None:
         assert refusal is not None
-        if refusal.code in _STALE_CODES:
+        if refusal.code == RefusalCode.STALE_INPUT:
             return _stale(trace)
         return Landed(
             status=FAILED,

@@ -130,8 +130,8 @@ STalign takes no section mask: it sorts the section's pixels itself. Before
 each comparison every pixel is weighted between matching (compared),
 background (slide, ignored) and artifact (debris, ignored), from the
 mismatch and from the background and artifact means (sorting, below). The
-final sorting is saved with the deformation{mask_from_sorting}. A named mask is refused
-(MASK_UNSUPPORTED){mask_engines}. STalign fits the whole
+final sorting is saved with the deformation{mask_from_sorting}. A named mask is
+refused{mask_engines}. STalign fits the whole
 section: it takes no regions{refine_regions}. It keeps its own brightness
 scaling: slide 0, typical tissue 1.
 
@@ -302,7 +302,7 @@ def _target(frame: Any) -> tuple[np.ndarray, dict[str, Any]]:
     )
     tissue = float(np.median(grey[outline])) if outline.any() else float(grey.mean())
     if abs(tissue - slide) < 1e-6:
-        raise ToolError(RefusalCode.NO_TISSUE, "the section's tissue and slide look the same")
+        raise ToolError(RefusalCode.FIT_FAILED, "the section's tissue and slide look the same")
     unit = (grey - slide) / (tissue - slide)
     s_um = _scale_um(frame)
     down, (sx, sy) = _down(unit.astype(np.float32), TARGET_UM / s_um)
@@ -397,7 +397,7 @@ def _sorting_params(sorting: dict[str, Any]) -> dict[str, Any]:
     method = str(sorting.pop("method", "classic"))
     if method not in SORTING_METHODS:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"sorting method is one of {', '.join(SORTING_METHODS)}; got {method!r}",
         )
     known = {
@@ -411,7 +411,7 @@ def _sorting_params(sorting: dict[str, Any]) -> dict[str, Any]:
     unknown = [key for key in sorting if key not in known]
     if unknown:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"unknown sorting keys {unknown}; the keys are method, {', '.join(known)}, artifact",
         )
     params: dict[str, Any] = {known[key]: float(value) for key, value in sorting.items()}
@@ -525,9 +525,9 @@ def _lddmm(
     view: bool,
 ) -> ToolResult:
     if not sections:
-        raise ToolError(RefusalCode.BAD_ARGS, "name one to twenty sections")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "name one to twenty sections")
     if fit not in FITS:
-        raise ToolError(RefusalCode.BAD_ARGS, f"fit is one of {', '.join(FITS)}; got {fit!r}")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, f"fit is one of {', '.join(FITS)}; got {fit!r}")
     affine = fit == "both"
     sorted_params = _sorting_params(sorting)
     params = {
@@ -558,7 +558,7 @@ def _lddmm(
         sid = view_of.id
         if affine and view_of.deformation:
             refusal = ToolError(
-                RefusalCode.HAS_DEFORMATION,
+                RefusalCode.PRECONDITION,
                 'fit "both" would refit the transform, which '
                 'clears the section\'s deformation; fit "warp" to bend on top of it',
             )
@@ -566,9 +566,7 @@ def _lddmm(
             continue
         frame, plane_image, resolved = _frame(ctx, sid, atlas_image, section_image)
         if frame.placed_atlas_to_section is None:
-            refusal = ToolError(
-                RefusalCode.INVALID_LINEAR_PLACEMENT, "the section needs a transform first"
-            )
+            refusal = ToolError(RefusalCode.PRECONDITION, "the section needs a transform first")
             rows.append({"id": sid, **refusal.payload()})
             continue
         digest = ctx.section_inputs(sid, deformation=True)
@@ -745,7 +743,7 @@ def _lddmm(
             payload = (
                 as_payload()
                 if as_payload
-                else {"error": RefusalCode.NOT_STARTED, "message": str(exc)}
+                else {"error": RefusalCode.ENGINE_UNAVAILABLE, "message": str(exc)}
             )
             rows.append(
                 {
@@ -905,7 +903,7 @@ def _plane_search(
     view: bool,
 ) -> ToolResult:
     if not sections:
-        raise ToolError(RefusalCode.BAD_ARGS, "name one to eight sections")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "name one to eight sections")
     call = _PlaneCall(
         ctx,
         how,

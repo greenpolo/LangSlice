@@ -82,7 +82,7 @@ def _check_name(name: Any) -> str:
     text = str(name or "").strip()
     if text.lower() in RESERVED_NAMES or not NAME_PATTERN.match(text):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"name is 1 to 40 letters, digits, '_' or '-' and "
             f"not {NO_MASK!r} (that is the fits' word for no mask).",
         )
@@ -94,7 +94,7 @@ def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
     held = [key for key in ("method", "artifact") if key in given]
     if held:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"sorting is the fits' EM with an "
             f"artifact class: it takes no {' or '.join(held)}; its keys are "
             f"{list(SORTING_KEYS)}.",
@@ -102,17 +102,17 @@ def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
     unknown = sorted(set(given) - set(SORTING_KEYS))
     if unknown:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"sorting takes {list(SORTING_KEYS)}; not {unknown}.",
         )
     try:
         values = {key: float(value) for key, value in given.items()}
     except (TypeError, ValueError) as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message="sorting values are numbers.") from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="sorting values are numbers.") from exc
     for key, value in values.items():
         if not np.isfinite(value) or value < 0:
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message=f"sorting {key} is a number from 0 up.",
             )
     return values
@@ -161,11 +161,11 @@ def make_mask(
     brings the entry back).
 
     A section that cannot get its mask is that section's row
-    (``INVALID_LINEAR_PLACEMENT``, ``NO_DEFORMATION`` / ``NO_SORTING`` for source
+    (``PRECONDITION`` for source
     ``fit``, ``FIT_FAILED``); the others are written. Refused, nothing written:
-    ``UNKNOWN_SLICE_IDS``, ``SECTION_BUSY``, ``BAD_ARGS`` (the name, the source,
-    the starting points, an atlas image the atlas does not have), ``UNKNOWN_IMAGE``,
-    ``UNKNOWN_MASK`` (delete of a name no section named holds), and, when no
+    ``NOT_FOUND`` (a section, an image, a delete of a name no section named
+    holds), ``BUSY``, ``BAD_ARGUMENT`` (the name, the source,
+    the starting points, an atlas image the atlas does not have), and, when no
     section could get its mask, the first section's refusal.
     """
     targets = _records(job, sections)
@@ -175,7 +175,7 @@ def make_mask(
         holding = [section for section in targets if label in section.masks]
         if not holding:
             raise Refused(
-                RefusalCode.UNKNOWN_MASK,
+                RefusalCode.NOT_FOUND,
                 message=f"no section named holds a mask {label!r}.",
                 masks=sorted({mask for section in targets for mask in section.masks}),
             )
@@ -190,7 +190,7 @@ def make_mask(
         )
     kind = str(source or "em").strip().lower()
     if kind not in SOURCES:
-        raise Refused(RefusalCode.BAD_ARGS, message=f"source is one of {list(SOURCES)}.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=f"source is one of {list(SOURCES)}.")
     params = _check_sorting(sorting)
     image = str(section_image or PREPROCESSED).strip()
     resolved = ""
@@ -198,7 +198,7 @@ def make_mask(
         try:
             resolved = resolve_image(workspace.atlas, str(atlas_image or "nissl"))
         except ValueError as exc:
-            raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+            raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
         check_image(job, workspace, targets, image)
     rows: list[MaskMade] = []
     first: Refused | None = None
@@ -239,14 +239,16 @@ def _from_fit(job: Job, section: Section, name: str) -> MaskRef:
 
     if job.deformations.current(job.state, section) is None:
         raise Refused(
-            RefusalCode.NO_DEFORMATION,
-            message=f"{section.id} holds no deformation, so there is no fit sorting to copy.",
+            RefusalCode.PRECONDITION,
+            message=f"{section.id} holds no deformation, so there is no fit sorting to copy: "
+            'fit one first, or make the mask with source "em".',
         )
     weights = fit_weights(job.deformations, job.state, section)
     if weights is None:
         raise Refused(
-            RefusalCode.NO_SORTING,
-            message=f"{section.id}'s deformation saved no sorting (its engine estimated none).",
+            RefusalCode.PRECONDITION,
+            message=f"{section.id}'s deformation saved no sorting (its engine estimated none): "
+            'make the mask with source "em".',
         )
     held = job.deformations.current(job.state, section)
     atlas = held.settings.atlas_image if held is not None and held.settings is not None else ""
@@ -290,7 +292,7 @@ def _from_em(
         grid = deformation.fit_grid(job.state, workspace, section)
     except (ValueError, OSError) as exc:
         raise Refused(
-            RefusalCode.INVALID_LINEAR_PLACEMENT,
+            RefusalCode.PRECONDITION,
             message=f"{section.id}: {exc}",
         ) from exc
     try:
@@ -342,11 +344,11 @@ def _write(
     try:
         return write_mask(job.layout, section, name, weights, facts)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
 
 
 def read(job: Job, section: Section, name: str) -> MaskView:
-    """The mask *name* of *section* with its weights (``UNKNOWN_MASK`` when it
+    """The mask *name* of *section* with its weights (``NOT_FOUND`` when it
     has none by that name);
     :attr:`~langslice.core.sections.masks.MaskView.stale`
     says whether the section changed since."""
@@ -356,7 +358,7 @@ def read(job: Job, section: Section, name: str) -> MaskView:
         return read_mask(job.layout.folder, job.state, section, name)
     except KeyError as exc:
         raise Refused(
-            RefusalCode.UNKNOWN_MASK,
+            RefusalCode.NOT_FOUND,
             message=f"{section.id} has no mask {name!r}"
             + job.spec.tools_on.say(
                 "make_mask", "; make it with make_mask", "; status lists each section's masks"
@@ -369,7 +371,7 @@ def read(job: Job, section: Section, name: str) -> MaskView:
 
 
 def stale_mask(job: Job, section_id: str, name: str) -> str:
-    """Return the ``STALE_MASK`` message, worded for the job.
+    """Return the ``STALE_INPUT`` message, worded for the job.
 
     Parameters
     ----------
@@ -394,7 +396,7 @@ def stale_mask(job: Job, section_id: str, name: str) -> str:
 def section_weights(job: Job, section: Section, name: str) -> np.ndarray | None:
     """The weights the fit *name* names reads on *section*, a float array on
     its
-    fit grid; None for ``"none"``. Refused: ``UNKNOWN_MASK``, ``STALE_MASK``
+    fit grid; None for ``"none"``. Refused: ``NOT_FOUND``, ``STALE_INPUT``
     (the section changed since the mask was made)."""
     from langslice.core.sections.masks import section_weights as weights_of
 
@@ -404,7 +406,7 @@ def section_weights(job: Job, section: Section, name: str) -> np.ndarray | None:
     view = read(job, section, label)
     if view.stale:
         raise Refused(
-            RefusalCode.STALE_MASK,
+            RefusalCode.STALE_INPUT,
             message=stale_mask(job, section.id, label),
         )
     return weights_of(view)

@@ -25,6 +25,6 @@ licence, on TensorFlow from the ``langslice[engines]`` extra; Brainways
 same extra); STalign (GPL-3.0) and emlddmm (Apache-2.0) vendored whole as
 ``langslice_vendor.stalign`` and ``langslice_vendor.emlddmm``, on torch. A
 call whose engine is not installed (DeepSlice or SPOmiAlign without the
-extra) is refused at tool-call time with ``ENGINE_MISSING``, never at load
+extra) is refused at tool-call time with ``ENGINE_UNAVAILABLE``, never at load
 time.
 """

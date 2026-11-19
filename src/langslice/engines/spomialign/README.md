@@ -19,7 +19,7 @@ pip install "langslice[engines]"
 ```
 
 torch, SimpleITK and OpenCV are LangSlice's own dependencies. RoMa and torch are imported
-only when a call runs; a call without RoMa installed is refused `ENGINE_MISSING`, naming the
+only when a call runs; a call without RoMa installed is refused `ENGINE_UNAVAILABLE`, naming the
 extra.
 
 ## Use
@@ -42,12 +42,12 @@ load from torch's hub cache (`TORCH_HOME`, else `~/.cache/torch`; on Windows
 `fit` (`"transform"`, `"warp"`, `"both"`) and `rigid` choose the engine's mode:
 `"transform"` is SPOmiAlign's `affine`, or with `rigid` its `rigid`; `"warp"` its
 `bspline`; `"both"` its `affine+bspline` default (`affine_warp` below). `rigid` with
-another `fit` is refused `BAD_ARGS`.
+another `fit` is refused `BAD_ARGUMENT`.
 
 1. **Refusals first**, per section, before the engine runs: `FROZEN` (the affine for
    rigid, affine and affine_warp; the deformation for warp and affine_warp),
-   `INVALID_LINEAR_PLACEMENT` (no transform: SPOmiAlign starts from the placement), and
-   `HAS_DEFORMATION` for rigid, affine or affine_warp on a section that holds a
+   `PRECONDITION` (no transform: SPOmiAlign starts from the placement), and
+   `PRECONDITION` for rigid, affine or affine_warp on a section that holds a
    deformation (a new transform would clear it; a landmark warp is a deformation).
 2. **Canvas.** Rigid, affine and affine_warp: the atlas plane at the section's position and
    cutting angles, upsampled to about 1536 px on its long edge, with the section's
@@ -125,7 +125,7 @@ Apache-2.0.
 2026-10-19:
 
 - **Landmarks kept.** Rat sagittal s139 with a noisy landmark warp (the displaced
-  cerebellum): `affine_warp` refused `HAS_DEFORMATION`; `warp` started from the landmark
+  cerebellum): `affine_warp` refused `PRECONDITION`; `warp` started from the landmark
   warp and the cerebellum stayed in the atlas cerebellum, while the forebrain moved into its
   outlines (10 s on the GPU, model load included).
 - **Carey s0314, rigid then warp (an older run with smoothing_px 30).** Ventricles and dorsal cortex closer;
@@ -142,6 +142,6 @@ section maps and `matches.csv` identical), and the same results run after run.
 
 One RGB image pair per call. No weighting in the matcher: a section mask can only drop matches whose section end has weight under 0.5 (the reply says "approximated by dropping matches"), and it estimates no mask of its own (`estimated` is null). Brightness: 8-bit, Nissl rendered dark on white. `smoothness_um` (a Gaussian sigma on the displacement field, as `fireants_syn`'s is) becomes `smoothing_px` per section from the canvas geometry.
 
-A call without the `engines` extra is refused with `ENGINE_MISSING`; so is one whose RoMa
+A call without the `engines` extra is refused with `ENGINE_UNAVAILABLE`; so is one whose RoMa
 weights are missing from torch's hub cache and cannot be downloaded (the reply names their
 URLs). Any other failure to load the matcher or to run on the device is `FIT_FAILED`.

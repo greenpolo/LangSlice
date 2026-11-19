@@ -179,7 +179,7 @@ def normalize_arguments(func: Callable[..., Any], args: Mapping[str, Any]) -> di
     check) would refuse a number where the schema says text with no word on
     how sections are named. So a whole number in a text argument (``id``,
     ``section``) or in a list of text (``slices``) becomes its text, and the
-    tool's own refusal (``UNKNOWN_SLICE_IDS``) says that sections are named
+    tool's own refusal (``NOT_FOUND``) says that sections are named
     by filename and lists them. A null inside a typed-dict
     argument (``cutting_angles``, each ``sections`` dict) means "not given",
     as the tools read it, and is dropped; a null object argument is its
@@ -210,7 +210,7 @@ def normalize_arguments(func: Callable[..., Any], args: Mapping[str, Any]) -> di
 def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> Refused | None:
     """The refusal for unknown or misplaced arguments, or None when all are known.
 
-    The refusal is ``UNKNOWN_ARGUMENTS``, with ``tool``, ``problems`` and
+    The refusal is ``BAD_ARGUMENT``, with ``tool``, ``problems`` and
     ``message``.
 
     Checks the top-level names against *func*'s signature, and every key of
@@ -280,7 +280,7 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> Refus
         for problem in problems
     )
     return Refused(
-        RefusalCode.UNKNOWN_ARGUMENTS,
+        RefusalCode.BAD_ARGUMENT,
         tool=name,
         problems=problems,
         message=f"{name}: {message} Nothing was done.",

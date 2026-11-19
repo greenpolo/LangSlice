@@ -170,7 +170,7 @@ millimetres along the slicing axis.
 For the session that sets a job up and checks it, not for registering:
 `langslice-job {layout.folder} COMMAND`: `init` (`schema init`: its flags), `launch --role
 register|register-scripting`, `status`, {export_command}`env`, `python SCRIPT`.
-Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal.
+Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`, `error.message`), 4 internal.
 
 ## Tools
 A registration agent has these as MCP tools; a script has them as methods (Python, below).

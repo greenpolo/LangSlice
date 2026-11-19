@@ -18,20 +18,31 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.stack import (
     unknown_sections as state_unknown_sections,
 )
+from langslice.job.settings.tools_on import ToolsOn
 
 if TYPE_CHECKING:
     from langslice.job.job import Job
 
 
+def put_back_words(on: ToolsOn) -> str:
+    """The sentence that says how to leave a deformation that cannot be
+    read: another registration (where *on* has the tool), or undo."""
+    return (
+        "Put the section back on another registration"
+        + on.say("restore_registration", " (restore_registration)")
+        + ", or undo the step that applied it."
+    )
+
+
 def unknown_sections(state: Stack, refs: object) -> Refused:
-    """``UNKNOWN_SLICE_IDS`` for *refs* that name no section: the refs, the
+    """``NOT_FOUND`` for *refs* that name no section: the refs, the
     valid filenames and the message saying sections are named by filename
     (:func:`langslice.core.stack.stack.unknown_sections`)."""
-    return Refused(RefusalCode.UNKNOWN_SLICE_IDS, **state_unknown_sections(state, refs))
+    return Refused(RefusalCode.NOT_FOUND, **state_unknown_sections(state, refs))
 
 
 def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> None:
-    """Raise :class:`Refused` ``SECTION_BUSY`` when background work is running
+    """Raise :class:`Refused` ``BUSY`` when background work is running
     on any of *section_ids* (:meth:`~langslice.job.job.Job.busy_refusal`), else
     ``FROZEN`` when a write to *properties* of any of them would change what
     the job froze: the whole call refuses, nothing written."""
@@ -59,7 +70,7 @@ def section_refusal(
     Returns
     -------
     Refused or None
-        ``SECTION_BUSY`` (``work``, ``message``) or ``FROZEN``
+        ``BUSY`` (``work``, ``message``) or ``FROZEN``
         (``properties``, ``message``); None when the section may be written.
     """
     refusal = job.busy_refusal([section_id]) or job.frozen_refusal([section_id], *properties)
@@ -124,7 +135,7 @@ def check_section_count(
 ) -> None:
     """Refuse a call of tool *name* naming too many sections.
 
-    ``TOO_MANY_SECTIONS``, with ``max_sections`` and ``requested``, when
+    ``BAD_ARGUMENT``, with ``max_sections`` and ``requested``, when
     *count* sections is more than *cap*, the tool's own limit (its ``limits["sections"]`` in
     :data:`langslice.tools.catalog.VERBS`), held for *reason*; or, for the
     transform tools, more than the door lets one call take
@@ -139,7 +150,7 @@ def check_section_count(
         why = " here"
     if cap is not None and count > cap:
         raise Refused(
-            RefusalCode.TOO_MANY_SECTIONS,
+            RefusalCode.BAD_ARGUMENT,
             max_sections=cap,
             requested=count,
             message=f"{name} takes at most {cap} sections per call{why}; "

@@ -19,7 +19,7 @@ made: the slot spacing is an argument of the agent's, not a plugin setting.
   (`../_atlas_images.py`, kept under `~/.cache/langslice-engines`).
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work,
-`SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`, `angles_from_plane`, the `angles`
+`BUSY`, `FitFrame.applied_map`, `plane.native_to_um`, `angles_from_plane`, the `angles`
 task). No further seam was needed.
 
 ## Use
@@ -47,7 +47,7 @@ the plugin API's `gpu_turn`, as STalign's, SPOmiAlign's and LangSlice's own GPU 
   `artifact`):
   the joint fit of the placed sections on the stack's current plane (`lock_slice_axis`,
   `out_of_plane=False`, slice matching), one piece of background work over the whole stack (every
-  section in it is `SECTION_BUSY` until it lands), one undo step. Per section: a transform and
+  section in it is `BUSY` until it lands), one undo step. Per section: a transform and
   its cut of the warp; a section that holds a deformation, or whose affine is frozen, keeps its
   transform and gets the rigid change folded into its deformation; a section with a frozen
   deformation is fitted for the stack but not written. The start reply names the work, the stack
@@ -68,9 +68,9 @@ the plugin API's `gpu_turn`, as STalign's, SPOmiAlign's and LangSlice's own GPU 
 
 `slot_um` has no default; the description tells the agent to get the order and rough positions
 right, then set it to the section thickness or about half the interval between neighbours. The
-call is refused `STACK_TOO_LARGE` when slots x rows x columns (the grid is the union of the slides'
+call is refused `BAD_ARGUMENT` when slots x rows x columns (the grid is the union of the slides'
 footprints, so slide size counts) x 0.4 GB per million voxels (float64) is over `memory_limit_gb`,
-naming the slot spacing that would fit; two sections in one slot is `BAD_ARGS`. Sections whose
+naming the slot spacing that would fit; two sections in one slot is `BAD_ARGUMENT`. Sections whose
 planes differ by under 1 degree (an imported placement's rounding) count as one stack; the largest
 tilt is kept in `settings.json`. The borrowed Nissl `ccfv3augmented_nissl` is built
 as LangSlice builds it (the augmented template on the atlas grid, 0.35 mm AP offset, zero outside

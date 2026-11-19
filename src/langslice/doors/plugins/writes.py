@@ -43,7 +43,7 @@ class WriteResult:
     """What a write did. ``ok`` is False when the call was refused whole
     (``error`` is the code, ``message`` the words; nothing was written);
     otherwise ``rows`` has one row per section asked, ``status`` ``ok`` or
-    ``error`` with the code (``FROZEN``, ``STALE_INPUT``, ``UNKNOWN_SLICE_IDS``,
+    ``error`` with the code (``FROZEN``, ``STALE_INPUT``, ``NOT_FOUND``,
     ...), and ``written`` the ids written (one undo step)."""
 
     ok: bool = True
@@ -74,10 +74,10 @@ class WriteResult:
         -------
         ToolError
             The code and words of that section's row, or of the whole
-            call when it was refused whole; ``NOT_WRITTEN`` when neither
+            call when it was refused whole; ``PRECONDITION`` when neither
             names a reason.
         """
-        code: object = self.error or RefusalCode.NOT_WRITTEN
+        code: object = self.error or RefusalCode.PRECONDITION
         words: object = self.message
         rows = cast("list[dict[str, object]]", self.rows)
         for row in rows:
@@ -106,7 +106,7 @@ class ContextWrites(ContextProposals):
         mirror image); ``uint8``, or floats from 0 to 1. Saved as
         ``sections/<stem>/images/<name>.png``, one undo step; every fit and
         ``look`` can then read it by name. Returns its entry (``source``,
-        ``file``, ``digest``). ``ToolError`` ``BAD_ARGS`` for a raw channel's
+        ``file``, ``digest``). ``ToolError`` ``BAD_ARGUMENT`` for a raw channel's
         name, another shape or values."""
         from langslice.tools.changing import images as ops_images
 
@@ -123,13 +123,13 @@ class ContextWrites(ContextProposals):
         caller = self._caller
         if caller.kind != "write":
             raise ToolError(
-                RefusalCode.READ_TOOL_WRITES,
+                RefusalCode.INTERNAL,
                 f"{caller.name} is declared a read tool and writes nothing; declare kind='write'",
             )
         outside = [name for name in properties if name not in caller.writes]
         if outside:
             raise ToolError(
-                RefusalCode.WRITE_NOT_DECLARED,
+                RefusalCode.INTERNAL,
                 f"{caller.name} writes {outside} but declares writes={list(caller.writes)}",
             )
 
@@ -279,7 +279,7 @@ class ContextWrites(ContextProposals):
                     if record is None:
                         if "params" not in row:
                             raise ToolError(
-                                RefusalCode.BAD_ARGS, "a row is {id, transform} or {id, params}"
+                                RefusalCode.BAD_ARGUMENT, "a row is {id, transform} or {id, params}"
                             )
                         note = str(row.get("note") or "")
                         stored = self.transform_from_params(name, row["params"], note=note).affine
@@ -310,8 +310,8 @@ class ContextWrites(ContextProposals):
         it): it replaces the section's deformation, or, a proposal made on top
         of it (``deformation_from_map(start="current")``), keeps its steps
         before its own. Per section: a frozen deformation
-        is ``FROZEN``, a map that cannot be stored ``BAD_FIELD``, one
-        whose transform cannot be used ``INVALID_LINEAR_PLACEMENT``, one whose
+        is ``FROZEN``, a map that cannot be stored ``BAD_ARGUMENT``, one
+        whose transform cannot be used ``PRECONDITION``, one whose
         inputs differ from *expect* (or whose placement moved since its
         proposal was made) ``STALE_INPUT``. A map is converted before the
         job's write lock is taken, so a long tool holds it only to write.
@@ -338,7 +338,7 @@ class ContextWrites(ContextProposals):
                 if proposal is None:
                     if "map" not in row:
                         raise ToolError(
-                            RefusalCode.BAD_ARGS,
+                            RefusalCode.BAD_ARGUMENT,
                             "a row is {id, map, note?, meta?} or {id, deformation}",
                         )
                     proposal = self.deformation_from_map(
@@ -346,7 +346,7 @@ class ContextWrites(ContextProposals):
                     )
                 elif not isinstance(proposal, DeformationProposal) or proposal.id != name:
                     raise ToolError(
-                        RefusalCode.BAD_ARGS,
+                        RefusalCode.BAD_ARGUMENT,
                         "deformation is this section's DeformationProposal (deformation_from_map)",
                     )
             except Refused as refusal:

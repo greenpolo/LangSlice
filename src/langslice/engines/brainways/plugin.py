@@ -12,7 +12,7 @@ The network runs in LangSlice's process (``network.py`` and ``images.py``
 beside this file: the part of Brainways 0.1.16.3 that finds a position,
 vendored under the GPL-3.0). It needs torch, a core dependency; a call
 where torch does not import, or where the weights cannot be fetched, is
-refused with ``ENGINE_MISSING``.
+refused with ``ENGINE_UNAVAILABLE``.
 
 One tool, ``brainways_ap``, offered on ``whs_sd_rat_39um`` coronal jobs
 only and absent elsewhere. Its input is ONE raw channel of each section as
@@ -309,7 +309,7 @@ def run_brainways_ap(
     Raises
     ------
     ToolError
-        ``BAD_ARGS`` for a bad argument, ``ENGINE_MISSING`` when the network
+        ``BAD_ARGUMENT`` for a bad argument, ``ENGINE_UNAVAILABLE`` when the network
         cannot run here, ``FIT_FAILED`` for an atlas it does not fit.
     """
     prior_mm = {view.id: view.position_mm for view in context.sections()}
@@ -393,7 +393,7 @@ def _sections_to_run(context: ToolContext, sections: Sequence[str] | None) -> li
     else:
         run = [view.id for view in context.sections()]
     if len(set(run)) != len(run):
-        raise ToolError(RefusalCode.BAD_ARGS, "a section is named twice in sections")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "a section is named twice in sections")
     return run
 
 
@@ -403,7 +403,7 @@ def _propose_only(write: Sequence[str] | None) -> bool:
     unknown = [part for part in write if part not in PARTS]
     if unknown:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f'write takes a list: ["positions"] or empty (writes nothing); got {unknown}',
         )
     return not write
@@ -412,10 +412,10 @@ def _propose_only(write: Sequence[str] | None) -> bool:
 def _channel_for(context: ToolContext, sid: str, channel: str) -> str:
     names = context.channels(sid)
     if not names:
-        raise ToolError(RefusalCode.BAD_ARGS, f"{sid} has no raw channel")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, f"{sid} has no raw channel")
     if channel and channel not in names:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"{sid} has no channel {channel!r}; its channels: {', '.join(names)}",
         )
     return channel or names[0]
@@ -449,22 +449,24 @@ def _network(options: Options) -> tuple[Device, network.Network]:
         device = network.resolve_device(options.device)
     except ImportError as error:
         raise ToolError(
-            RefusalCode.ENGINE_MISSING,
+            RefusalCode.ENGINE_UNAVAILABLE,
             f"Brainways cannot run here: torch does not import ({error}); "
-            f"install LangSlice with its engines: {INSTALL}",
+            f"install LangSlice with its engines: {INSTALL}. Use another method, or ask the user "
+            "to install it.",
         ) from error
     if device == Device.CUDA and not network.cuda_available():
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "Brainways: device cuda was asked for and torch sees no GPU",
         )
     try:
         net = network.load_network(device, cache_folder=options.cache_folder)
     except (OSError, ValueError) as error:
         raise ToolError(
-            RefusalCode.ENGINE_MISSING,
+            RefusalCode.ENGINE_UNAVAILABLE,
             f"Brainways cannot run here: its weights could not be fetched "
-            f"from Hugging Face ({network.REPOSITORY}): {error}",
+            f"from Hugging Face ({network.REPOSITORY}): {error}. Use another method, "
+            "or ask the user to install it.",
         ) from error
     return device, net
 
@@ -538,7 +540,7 @@ def _row_errors(result: WriteResult | None) -> dict[str, str]:
     errors: dict[str, str] = {}
     for row in cast("list[dict[str, object]]", result.rows):
         if row.get("status") != RowStatus.OK:
-            errors[str(row.get("id"))] = str(row.get("error", "NOT_WRITTEN"))
+            errors[str(row.get("id"))] = str(row.get("error", RefusalCode.PRECONDITION))
     return errors
 
 

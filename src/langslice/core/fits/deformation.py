@@ -97,7 +97,7 @@ def engine_available() -> bool:
     return all(importlib.util.find_spec(name) is not None for name in ("fireants", "torch"))
 
 
-ENGINE_MISSING = (
+DEFORMABLE_ENGINE_UNIMPORTABLE = (
     "The deformable engine cannot run on this host: torch and fireants must both "
     "import. They are LangSlice's dependencies: reinstall LangSlice "
     "(its pyproject.toml pins the FireANTs build)"
@@ -271,14 +271,14 @@ def traced_lines(
     status = None if held is None else held.status
     if running:
         raise Refused(
-            RefusalCode.TRACE_TIMEOUT,
+            RefusalCode.BUSY,
             f"{section.id}'s border trace is still running "
             f"after {waited_s:g} s of waiting; call again later.",
             id=section.id,
         )
     if status == "running":
         raise Refused(
-            RefusalCode.TRACE_RUNNING,
+            RefusalCode.STALE_INPUT,
             f"{section.id}'s border trace is recorded as "
             "running, but no call is running in this session; "
             "trace the section again.",
@@ -286,20 +286,20 @@ def traced_lines(
         )
     if held is not None and status == "error":
         raise Refused(
-            RefusalCode.TRACE_FAILED,
+            RefusalCode.FIT_FAILED,
             f"{section.id}'s border trace failed: " + (held.message or held.error or "no image"),
             id=section.id,
         )
     if held is None or status != "ok":
         raise Refused(
-            RefusalCode.NO_TRACE,
+            RefusalCode.PRECONDITION,
             f"{section.id} has no completed border trace; a "
             "traced fit needs one: trace the section first.",
             id=section.id,
         )
     if held.geometry_fingerprint != handoff.correction_fingerprint(state, ctx, section.id):
         raise Refused(
-            RefusalCode.TRACE_STALE,
+            RefusalCode.STALE_INPUT,
             f"{section.id}'s border trace was made at "
             "a different placement; trace the current placement "
             "first.",
@@ -313,7 +313,7 @@ def traced_lines(
     request_path = directory / "request.json"
     if not lines_path.exists() or not request_path.exists():
         raise Refused(
-            RefusalCode.NO_TRACE,
+            RefusalCode.PRECONDITION,
             f"{section.id}'s border trace files are missing ({stored}); trace the section again.",
             id=section.id,
         )
@@ -483,7 +483,7 @@ class RecordStore:
         -------
         DeformableRecord or None
             The record; None when none is saved. Refused
-            ``DEFORMATION_UNREADABLE`` when one is saved that cannot be read
+            ``IO_ERROR`` when one is saved that cannot be read
             (a format this version does not read, its files gone).
         """
         record = self.cache.get(key)
@@ -494,7 +494,7 @@ class RecordStore:
                     record = DeformableRecord.load(folder)
                 except ValueError as exc:
                     raise Refused(
-                        RefusalCode.DEFORMATION_UNREADABLE,
+                        RefusalCode.IO_ERROR,
                         f"{section_id}'s deformation cannot be read ({exc}); "
                         "nothing was drawn or fitted from it. Put the section "
                         "back on another registration, or undo the step that "

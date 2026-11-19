@@ -243,7 +243,7 @@ def em_sorting(
 def fit_weights(store: RecordStore, state: Stack, record: Section) -> np.ndarray | None:
     """The applied deformation record's saved sorting as float32 on the fit
     grid, or None when the section holds no deformation or its record saved no
-    sorting (``make_mask`` source ``fit``: ``NO_DEFORMATION`` / ``NO_SORTING``)."""
+    sorting (``make_mask`` source ``fit``: ``PRECONDITION``)."""
     held = store.current(state, record)
     if held is None or held.weights is None:
         return None
@@ -304,7 +304,7 @@ def write_mask(
 
 
 def read_mask(job_folder: str | Path, state: Stack, section: Section, name: str) -> MaskView:
-    """The mask *name* of *section*. ``KeyError`` (the op's ``UNKNOWN_MASK``) when
+    """The mask *name* of *section*. ``KeyError`` (the op's ``NOT_FOUND``) when
     the section has none by that name; ``ValueError`` when its file cannot be
     read."""
     entry = section.masks[name]

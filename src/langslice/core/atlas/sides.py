@@ -30,11 +30,10 @@ anatomical left. They are derived, never guessed from the tissue:
    ``bottom`` (the half toward smaller section y is the top). A mirrored
    placement thus swaps the halves, as it swaps the tissue.
 
-A sagittal plane lies within one hemisphere (``NO_SIDES``). Naming the pair
-the picture does not have (``left`` where the halves are top and bottom) is
-refused with ``WRONG_SIDE_PAIR``, its message naming the pair to use; a
-midline at 45 degrees (within :data:`DIAGONAL_TOLERANCE`) is refused with
-``SIDES_AMBIGUOUS``.
+A sagittal plane lies within one hemisphere. Naming the pair the picture does
+not have (``left`` where the halves are top and bottom), and a midline at 45
+degrees (within :data:`DIAGONAL_TOLERANCE`), are refused too, every one with
+``PRECONDITION``; the message names the pair to use where there is one.
 """
 
 from __future__ import annotations
@@ -110,7 +109,7 @@ def ml_halves(
 
     if plane == "sagittal":
         raise Refused(
-            RefusalCode.NO_SIDES,
+            RefusalCode.PRECONDITION,
             "A sagittal section lies within one hemisphere, so a "
             "region cannot be limited to one side.",
         )
@@ -119,7 +118,7 @@ def ml_halves(
     coords = plane_index_coordinates(atlas, position_mm, plane, pitch_deg, yaw_deg)
     ml = np.asarray(coords[axis], dtype=np.float64)
     if ml.shape[0] < 2 or ml.shape[1] < 2:
-        raise Refused(RefusalCode.NO_SIDES, "The atlas plane is too small to have sides.")
+        raise Refused(RefusalCode.PRECONDITION, "The atlas plane is too small to have sides.")
     gradient = np.array([ml[0, 1] - ml[0, 0], ml[1, 0] - ml[0, 0]], dtype=np.float64)
     count = context.shape[axis]
     metadata = getattr(atlas, "metadata", None) or {}
@@ -161,15 +160,13 @@ def native_left(
     high, gradient = ml_halves(atlas, position_mm, plane, pitch_deg, yaw_deg)
     linear = np.asarray(native_to_display, dtype=np.float64)[:2, :2]
     if not np.isfinite(linear).all() or abs(np.linalg.det(linear)) < 1e-12:
-        raise Refused(
-            RefusalCode.SIDES_AMBIGUOUS, "The placement is degenerate, so it has no sides."
-        )
+        raise Refused(RefusalCode.PRECONDITION, "The placement is degenerate, so it has no sides.")
     shown = np.linalg.inv(linear).T @ gradient
     if not np.isfinite(shown).all() or np.hypot(*shown) < 1e-9:
-        raise Refused(RefusalCode.NO_SIDES, "The atlas plane does not cross the midline.")
+        raise Refused(RefusalCode.PRECONDITION, "The atlas plane does not cross the midline.")
     if abs(abs(shown[0]) - abs(shown[1])) <= DIAGONAL_TOLERANCE * max(abs(shown[0]), abs(shown[1])):
         raise Refused(
-            RefusalCode.SIDES_AMBIGUOUS,
+            RefusalCode.PRECONDITION,
             "This placement turns the midline to 45 degrees, "
             "so neither left/right nor top/bottom is defined.",
         )
@@ -182,7 +179,7 @@ def restrict(mask: np.ndarray, side: str | None, left: np.ndarray | None) -> np.
     """*mask* limited to one side (unchanged for no side).
 
     *left* is :func:`native_left`'s mask; a side outside its pair is refused
-    (``WRONG_SIDE_PAIR``) with the pair this picture has.
+    (``PRECONDITION``) with the pair this picture has.
     """
     if side is None:
         return mask
@@ -192,7 +189,7 @@ def restrict(mask: np.ndarray, side: str | None, left: np.ndarray | None) -> np.
     if side not in names:
         runs = "vertically" if names == LEFT_RIGHT else "horizontally"
         raise Refused(
-            RefusalCode.WRONG_SIDE_PAIR,
+            RefusalCode.PRECONDITION,
             f"On this picture the midline runs {runs}, so its "
             f"halves are {names[0]!r} and {names[1]!r}, not {side!r}: name "
             f'one of those (e.g. "CTX:{names[0]}").',

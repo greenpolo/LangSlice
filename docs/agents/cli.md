@@ -66,7 +66,7 @@ MODULE:FACTORY`, or `create_job(plugins=...)` in Python) has those after them.
 (the comments left in the LangSlice window, with their pictures saved as
 files) only. Any other
 tool (`look`, `position_sections`, the fits, `undo`, `submit` and the rest)
-is refused with `VERB_OFF` and a `fix` that says where it is: a registration
+is refused with `TOOL_OFF`, its message saying where it is: a registration
 agent's MCP tool, or `langslice.open_job(FOLDER).TOOL(...)` in a script.
 `langslice-job FOLDER ops` lists what the command line runs.
 
@@ -102,10 +102,10 @@ the call ends the run too. `--background` answers at once with the run id.
 `runs ID` and `wait ID` address a particular run. `wait` answers within 30
 seconds the same way: the run's answer, or its state `running` (`ok`, exit 0)
 and the command that waits again; a run whose process ended without an
-answer is `RUN_LOST` (exit 4). `--timeout SECONDS` sets how long it waits.
+answer is `INTERNAL` (exit 4). `--timeout SECONDS` sets how long it waits.
 A detached run needs a shell that lets a process outlive the command that
 started it; a sandbox that ends them when the command returns (Claude Code's)
-loses every run (`RUN_LOST`). `LANGSLICE_DETACH=0` runs the call in the
+loses every run (`INTERNAL`). `LANGSLICE_DETACH=0` runs the call in the
 calling process, as one call, and `1` detaches it; unset, it is detached
 except under Claude Code (`CLAUDECODE` set).
 
@@ -119,7 +119,8 @@ Stdout contains one JSON envelope; diagnostics go to stderr:
 
 `result` contains the reply; `--verbose` includes its full text and stack
 rows. `artifacts` lists absolute file paths and kinds. A failed call has an
-`error` with a `code`, `message` and `fix`.
+`error` with a `code` and a `message` that says what to do next (an
+unknown flag adds a `fix`, the corrected call).
 
 | Exit code | Meaning |
 |---|---|
@@ -140,7 +141,7 @@ save and return every picture they draw, and `interactive_transform` and
 job's own `transform.max_parallel` for those two, `fireants_syn`'s section cap
 (20: each fitted section is held in memory until the call writes them all)
 and any limit a tool plugin declares; the job card states them, and the
-refusal (`TOO_MANY_SECTIONS`) says why. (LangSlice's
+refusal (`BAD_ARGUMENT`) says why. (LangSlice's
 own agent and MCP keep four pictures, and four transform sections, per call.)
 
 ## The job's own Python environment

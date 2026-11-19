@@ -141,7 +141,7 @@ own writes through the library's `job.context` are not checked against
 | The library | No picture limit. `interactive_transform` and `elastix_affine` take any number of sections. |
 | Every door | `fireants_syn` takes at most 20 sections per call (each fitted section is held in memory, about 170 MB, until the call writes them all). A job's [`transform.max_parallel`](settings.md#transform-settings) below 4 caps both transform tools at that number. |
 
-A call over a limit is refused with `TOO_MANY_SECTIONS` and nothing is done.
+A call over a limit is refused with `BAD_ARGUMENT` and nothing is done.
 
 ## Conventions every tool uses
 
@@ -159,10 +159,10 @@ A call over a limit is refused with `TOO_MANY_SECTIONS` and nothing is done.
   from the tissue, so a mirrored placement swaps them. Where the midline runs
   closer to horizontal on the picture (a horizontal section shown with the
   anterior-posterior axis across), the halves are `top` and `bottom`. A
-  sagittal plane lies in one hemisphere and has no sides (`NO_SIDES`).
-  Naming the pair a picture does not have is refused with
-  `WRONG_SIDE_PAIR`, whose message names the pair to use; a side on a
-  midline at 45 degrees is refused with `SIDES_AMBIGUOUS`.
+  sagittal plane lies in one hemisphere and has no sides (`PRECONDITION`).
+  Naming the pair a picture does not have is refused (`PRECONDITION`), the
+  message naming the pair to use; a side on a midline at 45 degrees is
+  refused the same way.
 - **Pictures** are numbered, captioned and saved in the job folder. A
   later tool names a picture by its number, and points on it by `x`, `y`
   pixels from its top-left corner. Picture size changes what is shown, never
@@ -207,7 +207,7 @@ A call over a limit is refused with `TOO_MANY_SECTIONS` and nothing is done.
 - **Undo.** Every write is one undo step and is saved at once.
 - **Background work and conflicts.** Work running in the background
   (`trace_borders`, a plugin's) holds its sections: any write to them is
-  refused `SECTION_BUSY`, naming the work, until it lands. Long fits compute
+  refused `BUSY`, naming the work, until it lands. Long fits compute
   outside the job's write lock and check their inputs again before they
   apply: a section whose inputs changed meanwhile is `STALE_INPUT`, and the
   other sections' results still apply.
@@ -253,16 +253,16 @@ its initial position is `position_source: "initial"` in `status`;
 `look(mode="atlas", sections=[...])` draws one atlas picture per section, at
 that section's own position and cutting angles (captioned `atlas at 5.00 mm
 ... (s0.png's cutting angles)`); `positions_mm` given with `sections` is
-refused `BAD_ARGS` unless it is the sections' own positions.
+refused `BAD_ARGUMENT` unless it is the sections' own positions.
 
 `registrations={filename: number}` (with `overlay` or `section`) draws each
 named section under that earlier registration and writes nothing. The caption
 says `registration 3 (not held)` (or `(held)`), the picture index records the
 registration drawn, and a zoom of the picture draws it again without calling
 it stale. With `sections` empty only the named sections are drawn; a named
-section missing from `sections`, or another mode, is `BAD_ARGS`, and the
-registration's own refusals apply (`UNKNOWN_REGISTRATION`,
-`REGISTRATION_ELSEWHERE`, `DEFORMATION_UNREADABLE`).
+section missing from `sections`, or another mode, is `BAD_ARGUMENT`, and the
+registration's own refusals apply (`NOT_FOUND`,
+`STALE_INPUT`, `IO_ERROR`).
 
 `images` with several raw channels draws each in its own colour with automatic
 contrast per section: black at the background and full colour at the tissue's
@@ -323,7 +323,7 @@ optionally with a side, and uses the saved picture's placement, deformation
 and display settings; the region must occur in that plane. `zoom` on a sheet
 takes the box on the tile holding most of it and zooms that tile's own
 picture (the reply's `sheet` and `box`, the box in that picture's pixels);
-`region` is refused on a sheet, and a box over no tile is `EMPTY_BOX`.
+`region` is refused on a sheet, and a box over no tile is `BAD_ARGUMENT`.
 
 ### `make_image`
 
@@ -376,8 +376,8 @@ and read back from its file. `weights` empty is every raw channel by its
 tissue coverage; an image cannot be its own source, and a raw channel's name
 cannot be made. Naming `sections` remakes the image for them alone under the
 same name. One undo step per call. Through the library
-`view` returns every section. Refusals: `BAD_ARGS`, `UNKNOWN_SLICE_IDS`,
-`UNKNOWN_IMAGE`, `RENDER_FAILED`.
+`view` returns every section. Refusals: `BAD_ARGUMENT`, `NOT_FOUND`,
+`IO_ERROR`.
 
 A script adds an image it computed with
 `job.context.add_image(id, name, array, note="")`
@@ -410,7 +410,7 @@ Looks regions up in the atlas hierarchy by acronym, name or id. Text only.
 |---|---|---|
 | `query` | empty | Text matched against acronyms and names, or an exact acronym or id. |
 | `section` | none | A placed section: each row then says whether the region appears in that section's atlas plane. |
-|  | none | Up to 40 `{picture, x, y}` points of saved pictures: the region drawn at each, and the regions containing it. A picture of the section alone draws no atlas and is refused (`NO_ATLAS_IN_PICTURE`). |
+|  | none | Up to 40 `{picture, x, y}` points of saved pictures: the region drawn at each, and the regions containing it. A picture of the section alone draws no atlas and is refused (`BAD_ARGUMENT`). |
 
 Returns at most 40 rows: acronym, id, name, ancestry and descendant count.
 
@@ -425,7 +425,7 @@ on the whole picture. It reads what the picture drew: the saved `labels.tif`
 of an overlay or a zoom of one, the section's atlas plane for an atlas picture
 drawn with `look(mode="atlas", sections=[...])`, and the source picture of a
 crop. An atlas picture not tied to a section is refused with
-`NO_ATLAS_IN_PICTURE`, as is a picture of the section alone.
+`BAD_ARGUMENT`, as is a picture of the section alone.
 
 ### `grep_atlas_view`
 
@@ -487,7 +487,7 @@ the picture index (`views.jsonl`), never its pixels.
 
 **Details.** A path that does not exist is `NOT_FOUND`, naming the nearest
 folder above it and what it holds; a path under `trace/` is refused
-(`BAD_PATH`). A picture file's answer says how to see it again: `zoom` by its
+(`BAD_ARGUMENT`). A picture file's answer says how to see it again: `zoom` by its
 number or, in a job without `zoom`, the `look` call that draws the view again
 on the stack as it is now.
 
@@ -568,7 +568,7 @@ always apply.
 
 A mask stays usable after fits and moves (`status` marks it
 `earlier_registration`); after the section is turned or flipped a fit
-refuses it (`STALE_MASK`) until it is made again.
+refuses it (`STALE_INPUT`) until it is made again.
 
 **In a run when** Linear or Nonlinear is on. **Switch off:** `make_mask`,
 which also removes the `mask` argument of the fits and `look`'s `masks`.
@@ -577,7 +577,7 @@ which also removes the `mask` argument of the fits and `look`'s `masks`.
 current registration: the atlas image placed through its transform and
 applied deformation, on a 20 µm working grid. `fit` is copied from the sorting
 the section's applied deformation saved when its engine estimated one
-(`NO_DEFORMATION` or `NO_SORTING` when there is none). There is no threshold
+(`PRECONDITION` when there is none). There is no threshold
 mask and no drawn mask. `elastix_affine` and `fireants_syn` cut the weights at
 0.5 and combine them with the section's own mask; a tool plugin's engine uses
 them as its own limits say. With `mask="none"` every pixel inside the placed
@@ -623,7 +623,7 @@ to any earlier registration and leaves the others as they are.
 | `view` | true | Return each section's overlay. |
 
 A deformation fitted with the section at another position or cutting angles
-is refused (`REGISTRATION_ELSEWHERE`) until the section is back there.
+is refused (`STALE_INPUT`) until the section is back there.
 
 **In a run when** Linear or Nonlinear is on. **Switch off:**
 `restore_registration`.
@@ -636,9 +636,9 @@ that made it and when, its `transform`, its `deformation` (`method`, `steps`,
 `settings`), `pictures` (the numbers of the pictures the write that left it
 saved), the one held, and `not_here` for one fitted at another position or
 cutting angles. A section that cannot go back is its own row (`results`) and
-the others are written: `UNKNOWN_REGISTRATION` for a number it never held
-(the row lists its numbers), `REGISTRATION_ELSEWHERE` (above), `FROZEN` for a
-frozen property it would change, `SECTION_BUSY` while background work runs on
+the others are written: `NOT_FOUND` for a number it never held
+(the row lists its numbers), `STALE_INPUT` (above), `FROZEN` for a
+frozen property it would change, `BUSY` while background work runs on
 it. When no section can go back, the first row's code leads the reply. A
 registration held before its section's list began (a job made by an older
 LangSlice) is listed when a write replaces it, or when the tool lists the
@@ -658,7 +658,7 @@ while something is missing:
 - Linear on: every section needs a transform, damaged ones included.
 - Nonlinear on: no deformation is required, unless the job sets
   [`require_deformation`](settings.md#nonlinear-settings); then every
-  section needs one at its current placement (`MISSING_DEFORMATIONS`),
+  section needs one at its current placement (`GATE_REFUSED`),
   except sections whose deformation is frozen. An image-model trace is never
   required.
 
@@ -749,7 +749,7 @@ Refines each section's current placement automatically with
 [Elastix](https://elastix.dev), matching a section image against an atlas
 image. It adjusts from where the section is and does not search from scratch;
 it does not mirror a section. The section's marked damage regions are left
-out. A section that holds a deformation is refused (`HAS_DEFORMATION`). The
+out. A section that holds a deformation is refused (`PRECONDITION`). The
 sections of a call are fitted at once in worker processes, as many as the
 processor's cores allow at eight threads each (`LANGSLICE_CPU_CORES` sets the
 core count; below 16 cores they are fitted in turn).
@@ -767,7 +767,7 @@ core count; below 16 cores they are fitted in turn).
 A fit that changes the scale along either axis by more than a factor of 0.8
 to 1.25 is flagged `SCALE_CHANGED`, one that changes the shear by more than
 0.15 `SHEAR`, and one that turns the section more than 45 degrees says so. A
-region too small for Elastix is refused (`REGION_TOO_SMALL`).
+region too small for Elastix is refused (`BAD_ARGUMENT`).
 
 **In a run when** Linear is on. **Switch off:** `elastix_affine`.
 
@@ -775,8 +775,8 @@ region too small for Elastix is refused (`REGION_TOO_SMALL`).
 Each flag is also worded in the row's `warning`; a section that holds only
 part of the brain (a hemisphere) can be stretched over atlas it does not hold.
 For a deformed section, undo the deformation first or fit a warp on it. A call that fits nothing answers with the code and sentence every
-section was refused for when they share one (`HAS_DEFORMATION`, `FROZEN`),
-else `NOTHING_FITTED`, each row naming its own; `fireants_syn` answers the
+section was refused for when they share one (`PRECONDITION`, `FROZEN`),
+else `FIT_FAILED`, each row naming its own; `fireants_syn` answers the
 same way. A restricted fit highlights those regions' borders and may zoom its
 picture to them; other borders stay faint. A region is too small when its
 support outside the damage marks spans fewer than four native atlas pixels in
@@ -897,7 +897,7 @@ of the whole image, panel offsets included. On a zoom, x,y are the numbers its
 grid prints, so a number read off any grid works whether the call names the
 zoom or the whole picture; a point the zoom does not show is refused with the
 range it covers. An atlas endpoint outside the atlas is refused before
-anything is written (`ATLAS_ENDPOINT_OUTSIDE`), naming the pair and giving
+anything is written (`BAD_ARGUMENT`), naming the pair and giving
 the nearest point 1.5 atlas pixels inside the outline. A generic atlas
 picture drawn by `positions_mm` has no section and cannot supply endpoints.
 When MCP shrinks pictures to fit its reply budget, the delivered sizes get new
@@ -918,7 +918,7 @@ endpoint names the pair (its index and id), the endpoint, the picture and the
 x,y, and says what to do: a point outside the image content gives the
 picture's content box, a picture without geometry for the section or drawn at
 an earlier atlas plane says which picture to draw again, and
-`TOO_MANY_LANDMARK_VIEWS` says to resend with `view=false` or in calls of
+`BAD_ARGUMENT` says to resend with `view=false` or in calls of
 four. A section whose `deformation` is frozen is refused (`FROZEN`) by both
 landmark tools.
 
@@ -1014,7 +1014,7 @@ The base prompt is LangSlice's for the provider, or the job's own
 [`nonlinear.image_prompt`](settings.md#nonlinear-settings). The work runs in
 the background: the tool returns at once, later replies deliver the result,
 `status` lists the work still running, and `submit` waits for it. A write to
-the section is refused (`SECTION_BUSY`) until the work lands. The first answer
+the section is refused (`BUSY`) until the work lands. The first answer
 at a placement and region choice is saved and reused. The job folder keeps
 the prompts, the raw reply, the extracted lines and the fit.
 

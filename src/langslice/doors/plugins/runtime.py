@@ -46,7 +46,7 @@ def _picture(item: Any) -> Image.Image | str:
 def _check_limit(tool: ToolSpec, arguments: Mapping[str, Any]) -> None:
     """Refuse a call naming more sections than the tool's limits allow.
 
-    The refusal is ``TOO_MANY_SECTIONS``, with the cap and the count.
+    The refusal is ``BAD_ARGUMENT``, with the cap and the count.
     """
     cap = tool.limits.get("sections")
     if cap is not None:
@@ -54,7 +54,7 @@ def _check_limit(tool: ToolSpec, arguments: Mapping[str, Any]) -> None:
         count = len(named) if isinstance(named, (list, tuple)) else 0
         if count > cap:
             raise Refused(
-                RefusalCode.TOO_MANY_SECTIONS,
+                RefusalCode.BAD_ARGUMENT,
                 max_sections=cap,
                 requested=count,
                 message=f"{tool.name} takes at most {cap} sections per call "
@@ -67,11 +67,11 @@ def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     """The reply a handler's *result* makes: its ``reply`` (``status`` ``ok``
     unless it says otherwise), and its pictures under the media key, at most
     ``limits["pictures"]`` of them (the rest counted in ``pictures_not_shown``);
-    ``PLUGIN_FAILED`` when it is no :class:`ToolResult`."""
+    ``INTERNAL`` when it is no :class:`ToolResult`."""
     if not isinstance(result, ToolResult):
         kind = type(cast("object", result)).__name__
         raise Refused(
-            RefusalCode.PLUGIN_FAILED,
+            RefusalCode.INTERNAL,
             tool=tool.name,
             message=f"{tool.name}'s handler returned {kind}, not a ToolResult",
         )
@@ -115,7 +115,7 @@ def body(run: Run, tool: ToolSpec, facts: DescriptionFacts) -> Callable[..., Any
         except Exception as exc:
             logger.exception("plugin tool %s failed", tool.name)
             raise Refused(
-                RefusalCode.PLUGIN_FAILED, tool=tool.name, message=f"{type(exc).__name__}: {exc}"
+                RefusalCode.INTERNAL, tool=tool.name, message=f"{type(exc).__name__}: {exc}"
             ) from exc
         return reply_of(tool, result)
 

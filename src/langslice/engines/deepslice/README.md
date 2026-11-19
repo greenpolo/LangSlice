@@ -45,7 +45,7 @@ kept; empty is `~/.cache/langslice/deepslice`). Any other option is refused when
 loads. The tool's pictures come back only when the call sets `view` true.
 
 **In the process.** Nothing of TensorFlow is imported until the tool runs. A call is refused
-`ENGINE_MISSING` when a package of the extra is missing (the message names it and
+`ENGINE_UNAVAILABLE` when a package of the extra is missing (the message names it and
 `pip install "langslice[engines]"`; nothing written, no call folder) or when the weights
 cannot be fetched. TensorFlow runs on the CPU: every GPU is hidden from it before it sets up
 its devices, so it never takes the GPU memory the fits on torch use. `TF_USE_LEGACY_KERAS=1`

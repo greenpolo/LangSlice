@@ -98,8 +98,8 @@ def search_regions(
     or a descendant appears in the atlas plane at its placement. Returns
     ``query``, ``matches`` (the total), ``rows`` (at most
     :data:`~langslice.core.atlas.search.GREP_ATLAS_LIMIT`), ``more`` when some
-    were left out. Refused: ``BAD_ARGS`` (empty query), ``NO_STRUCTURES``,
-    ``UNKNOWN_SLICE_IDS``.
+    were left out. Refused: ``BAD_ARGUMENT`` (empty query), ``PRECONDITION``,
+    ``NOT_FOUND``.
 
     With *points* (``{picture, x, y}`` of saved pictures; x, y as everywhere:
     on a zoom, the numbers its grid prints), ``points`` in the result says, per
@@ -108,7 +108,9 @@ def search_regions(
     """
     text = str(query).strip()
     if not text and not points:
-        raise Refused(RefusalCode.BAD_ARGS, message="Empty query: give a query, points, or both.")
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, message="Empty query: give a query, points, or both."
+        )
     found = region_at_points(job, workspace, points) if points else None
     if not text:
         return {"points": found}
@@ -121,7 +123,7 @@ def search_regions(
 def _grep_regions(job: Job, workspace: Workspace, text: str, section: object) -> dict[str, Any]:
     entries = list(structure_table(workspace.atlas).values())
     if not entries:
-        raise Refused(RefusalCode.NO_STRUCTURES, message="This atlas has no region hierarchy.")
+        raise Refused(RefusalCode.PRECONDITION, message="This atlas has no region hierarchy.")
     state = job.state
     present: set[int] | None = None
     if section != "":
@@ -203,22 +205,24 @@ def region_at_points(
     picture drew: its saved ``labels.tif`` for a section on its atlas (the
     drawn atlas, whatever deformation the section carries), the section's atlas
     plane for an atlas picture drawn for a section, the source picture of a crop.
-    Refused: ``BAD_ARGS``, ``UNKNOWN_PICTURE``, ``NO_STRUCTURES``,
-    ``NO_ATLAS_IN_PICTURE`` (a picture that draws no atlas)."""
+    Refused: ``BAD_ARGUMENT`` (including a picture that draws no atlas),
+    ``NOT_FOUND``, ``PRECONDITION``."""
     from langslice.core.geometry.pixel_frames import source_frame
 
     structures = structure_table(workspace.atlas)
     if not structures:
-        raise Refused(RefusalCode.NO_STRUCTURES, message="This atlas has no region hierarchy.")
+        raise Refused(RefusalCode.PRECONDITION, message="This atlas has no region hierarchy.")
     if (
         isinstance(points, (str, bytes))
         or not isinstance(points, Sequence)
         or any(not isinstance(p, dict) for p in points)
     ):
-        raise Refused(RefusalCode.BAD_ARGS, message="points is a list of {picture, x, y} objects.")
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, message="points is a list of {picture, x, y} objects."
+        )
     if len(points) > MAX_POINTS:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message=f"At most {MAX_POINTS} points per call; you sent "
             f"{len(points)}. Send them in calls of {MAX_POINTS} or fewer.",
         )
@@ -231,18 +235,18 @@ def region_at_points(
             seq, x, y = int(point["picture"]), float(point["x"]), float(point["y"])
         except (KeyError, TypeError, ValueError):
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message=f"{here}: a point needs picture (a saved picture "
                 "number), x and y in pixels.",
             ) from None
         if set(point) - {"picture", "x", "y"} or isinstance(point["picture"], bool):
             raise Refused(
-                RefusalCode.BAD_ARGS, message=f"{here}: a point is picture, x and y only."
+                RefusalCode.BAD_ARGUMENT, message=f"{here}: a point is picture, x and y only."
             )
         record = job.views.lookup(seq)
         if record is None:
             raise Refused(
-                RefusalCode.UNKNOWN_PICTURE,
+                RefusalCode.NOT_FOUND,
                 picture=seq,
                 message=f"{here}: there is no saved picture {seq}. Use "
                 "the picture number a look"
@@ -315,7 +319,7 @@ def _plane_label(
     if not panels or not held:
         sectionless = mode == "section"
         raise Refused(
-            RefusalCode.NO_ATLAS_IN_PICTURE,
+            RefusalCode.BAD_ARGUMENT,
             picture=seq,
             message=(
                 f"Picture {seq} shows the section alone, with no atlas drawn on it, so no "
@@ -353,28 +357,30 @@ def _resolved(
     regions: object,
 ) -> list[tuple[str, frozenset[int]]]:
     """``(name as asked, ids with descendants)`` per region. Refused:
-    ``BAD_ARGS``, ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``."""
+    ``BAD_ARGUMENT``, ``PRECONDITION``, ``NOT_FOUND``."""
     from langslice.core.atlas.sides import has_sides
     from langslice.core.fits.deformable.plane_images import resolve_entries
     from langslice.core.sections.damage import normalized_entries
 
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
-        raise Refused(RefusalCode.BAD_ARGS, message="regions is a list of acronyms, names or ids.")
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, message="regions is a list of acronyms, names or ids."
+        )
     try:
         names = normalized_entries(str(entry) for entry in regions)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     if not names:
-        raise Refused(RefusalCode.BAD_ARGS, message="Name at least one region.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="Name at least one region.")
     if not structure_table(workspace.atlas):
-        raise Refused(RefusalCode.NO_STRUCTURES, message="This atlas has no region hierarchy.")
+        raise Refused(RefusalCode.PRECONDITION, message="This atlas has no region hierarchy.")
     try:
         found = resolve_entries(workspace.atlas, names)
     except ValueError as exc:
-        raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from exc
+        raise Refused(RefusalCode.NOT_FOUND, message=str(exc)) from exc
     if state.plane == "sagittal" and has_sides(names):
         raise Refused(
-            RefusalCode.NO_SIDES,
+            RefusalCode.PRECONDITION,
             message="A sagittal section lies within one hemisphere, so a "
             "region cannot be limited to one side.",
         )
@@ -559,20 +565,20 @@ def draw_regions(
     Each picture is saved like a ``look`` picture (recipe, caption, number),
     so it can be zoomed. At most ``Job.picture_cap`` (None: all)
     are shown; the rest are ``not_shown``. ``regions_not_in_plane`` names, per
-    position, the regions with no pixel in that plane. Refused: ``BAD_ARGS``,
-    ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``, ``WRONG_SIDE_PAIR`` (a side
-    the picture does not have: its message names the pair to use), ``SIDES_AMBIGUOUS``.
+    position, the regions with no pixel in that plane. Refused: ``BAD_ARGUMENT``,
+    ``NOT_FOUND``, ``PRECONDITION`` (including a side the picture does not
+    have: its message names the pair to use).
     """
     state = job.state
     resolved = _resolved(workspace, state, regions)
     if isinstance(positions_mm, (str, bytes)) or not isinstance(positions_mm, Sequence):
-        raise Refused(RefusalCode.BAD_ARGS, message="positions_mm is a list of numbers.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="positions_mm is a list of numbers.")
     try:
         asked = [float(v) for v in positions_mm]
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, message="positions_mm must be numbers.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="positions_mm must be numbers.") from None
     if not asked:
-        raise Refused(RefusalCode.BAD_ARGS, message="Give at least one position.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="Give at least one position.")
     low, high = workspace.position_range
     used = [min(max(v, low), high) for v in asked]
     angles = state.view_angles

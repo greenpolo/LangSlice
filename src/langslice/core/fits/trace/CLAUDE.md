@@ -34,7 +34,7 @@ yellow.
 It keeps the call-key folders and attempts, takes the image model as an
 argument, and leaves fitting to the tools layer. A running attempt holds a
 lock on its call key's `.call.lock`: another process asking the same call
-meanwhile is refused `IMAGE_CALL_IN_PROGRESS` (after `CLAIM_WAIT_S`, 1 s;
+meanwhile is refused `BUSY` (after `CLAIM_WAIT_S`, 1 s;
 a reply saved meanwhile is returned `cached`), and an attempt whose process
 died releases it, so the call is made again as the next attempt. The call
 key's `result.json` (and the attempt's copy) store `artifact_dir` and

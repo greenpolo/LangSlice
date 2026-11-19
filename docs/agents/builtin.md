@@ -59,11 +59,11 @@ base it may edit per section, and its traces are recorded as an untested
 profile (`custom`).
 
 An interrupted job resumes from its checkpoint. Resuming with different
-supplied inputs is refused with `INPUTS_CHANGED`, and `init` with other job
-settings than the saved job's with `SETTINGS_CHANGED`; `--no-resume` starts the job
+supplied inputs is refused with `STALE_INPUT`, and `init` with other job
+settings than the saved job's with `STALE_INPUT`; `--no-resume` starts the job
 over. Every write is checkpointed and undoable. Calls through different
 interfaces pick up each other's saved changes. A write waits for the job
-folder's lock while another holds it (up to 300 s, then `JOB_BUSY`); a read
+folder's lock while another holds it (up to 300 s, then `BUSY`); a read
 (`look`, `zoom`, `status`, the atlas and job-folder tools) never waits: it
 reads the job as it was last saved.
 

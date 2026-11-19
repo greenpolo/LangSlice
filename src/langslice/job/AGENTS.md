@@ -267,7 +267,7 @@ spec: `job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
 anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--no-resume`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
-agent CLI's `init` answers `INPUTS_CHANGED` (exit 3).
+agent CLI's `init` answers `STALE_INPUT` (exit 3).
 
 **Opening a job without writing.** `Job.open` writes `job.json` and a
 first checkpoint. `Job.load(spec, workspace, folder=)` opens an
@@ -535,7 +535,7 @@ longer exist be taken over by the images it is opened with.
   picture's `step` is the undo history's depth), `frozen_for(id)` and
   `frozen_refusal(ids, *properties)` (the `FROZEN` `Refused` when a write to a
   property the job froze on one of the sections would change it: `ids`,
-  `properties`, `message`; `busy_refusal(ids)` the `SECTION_BUSY` one),
+  `properties`, `message`; `busy_refusal(ids)` the `BUSY` one),
   `emit_results` (atomic).
   `ingest`; in `host_inputs.py`, `apply_host_inputs` (the host's inputs, each section named
   checked; `spec.frozen` must name sections that are here, a frozen position
@@ -559,11 +559,11 @@ longer exist be taken over by the images it is opened with.
   against the atlas and the section's placement as `mark_damage` checks the
   agent's (`core.sections.damage.checked_entries`, `side_pair_refusal`). The submit
   gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`,
-  status `refused`, or None), in order and only for the tasks that are on: `MISSING_POSITIONS` (a section still at its initial position),
-  `STRICT_INTERVAL` or
-  `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
-  `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
-  section (`NonlinearSpec.require_deformation`). The sections whose
+  status `refused`, or None), in order and only for the tasks that are on, each `GATE_REFUSED`: a section
+  still at its initial position, then a strict interval broken or a reported
+  break the written positions do not support, then a section without a
+  transform, then a section without a deformation, only where the host
+  requires one on every section (`NonlinearSpec.require_deformation`). The sections whose
   deformation is frozen need no deformation and no image correction.
 - `public_files.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
@@ -662,7 +662,7 @@ longer exist be taken over by the images it is opened with.
   writes never share one.
 - `browse.py` — read-only browsing of the job folder for `tools/looking/files.py`: `resolve`
   (a path relative to the folder, or absolute inside it; `..` and a symlink
-  pointing out are refused, `Refused` `BAD_PATH`; one that does not exist,
+  pointing out are refused, `Refused` `BAD_ARGUMENT`; one that does not exist,
   `NOT_FOUND` with `nearest`, the nearest folder above it that exists, and
   `holds`, at most `NEAREST_NAMES` of its names), `list_entries`, `search`
   (regex, else plain text; case-insensitive; text files only), `read_lines`,
@@ -670,7 +670,7 @@ longer exist be taken over by the images it is opened with.
   `SEARCH_MATCHES`, `READ_LINES`, `TEXT_BYTES`, `LINE_CHARS`). A walk skips
   symlinks leaving the folder. `HIDDEN` (`TRACE_DIR`, the agent transcripts;
   `is_hidden`): left out of every listing, search, walk and a missing path's
-  `holds`, and a path in it (or a symlink into it) refused `BAD_PATH`
+  `holds`, and a path in it (or a symlink into it) refused `BAD_ARGUMENT`
   whether or not it exists.
 - `quint.py` — QUINT JSON: `job_export(rows, atlas, write_markers=)`
   (QuickNII / VisuAlign JSON of the placed sections, each anchoring from

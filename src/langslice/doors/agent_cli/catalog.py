@@ -291,9 +291,9 @@ def ops(args: argparse.Namespace) -> Envelope:
         try:
             declared = Declared(folder)
         except NoJob as exc:
-            return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+            return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
         except (FileNotFoundError, ValueError) as exc:
-            return Envelope.failure(RefusalCode.JOB_UNREADABLE, str(exc), exit=EXIT_REFUSED)
+            return Envelope.failure(RefusalCode.IO_ERROR, str(exc), exit=EXIT_REFUSED)
         table = [
             {**row, "summary": summary(row["name"], declared.variant)}
             for row in verbs_table(declared.spec)
@@ -438,14 +438,16 @@ def schema(args: argparse.Namespace) -> Envelope:
                     " A job's tool plugins add verbs of their own, known with its "
                     "folder: `langslice-job FOLDER schema " + " ".join(names) + "`."
                 )
-            return Envelope.failure(RefusalCode.UNKNOWN_VERB, message)
+            return Envelope.failure(
+                RefusalCode.BAD_ARGUMENT, f"{message} List the verbs with `langslice-job ops`."
+            )
         off = [name for name in names if name in verbs and not declared.has(name)]
         if off:
             return Envelope.failure(
-                RefusalCode.VERB_OFF,
-                f"This job's settings have no {', '.join(off)}.",
-                job=declared.folder or "<folder>",
-                verb=off[0],
+                RefusalCode.TOOL_OFF,
+                f"This job's settings have no {', '.join(off)}. "
+                f"`langslice-job {declared.folder or '<folder>'} status` lists the job's verbs "
+                "under `verbs`.",
             )
         nexts: list[str] = []
         if len(names) == 1:
@@ -471,9 +473,9 @@ def schema(args: argparse.Namespace) -> Envelope:
                 },
             }
     except NoJob as exc:
-        return Envelope.failure(RefusalCode.NO_JOB, str(exc))
+        return Envelope.failure(RefusalCode.NOT_FOUND, str(exc))
     except (FileNotFoundError, ValueError) as exc:
-        return Envelope.failure(RefusalCode.JOB_UNREADABLE, str(exc), exit=EXIT_REFUSED)
+        return Envelope.failure(RefusalCode.IO_ERROR, str(exc), exit=EXIT_REFUSED)
     except Exception as exc:
         logger.exception("langslice-job schema failed")
         return Envelope.failure(

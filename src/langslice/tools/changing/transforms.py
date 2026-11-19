@@ -274,9 +274,9 @@ def interactive_transform(
     Per entry, refused (nothing written for it): ``FROZEN`` (the entry would
     change a frozen orientation, change the knobs of a frozen affine, or, under
     a frozen orientation, turn the section over: a transform whose determinant
-    changes sign), ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (not a mapping, a knob
-    that is not a finite number, a flip that is not true/false),
-    ``BAD_ROTATION``,
+    changes sign), ``NOT_FOUND``, ``BAD_ARGUMENT`` (not a mapping, a knob
+    that is not a finite number, a flip that is not true/false, a rotation that is
+    not a quarter turn),
     the stager's codes (:func:`langslice.core.pictures.placement.stage`). All
     the changed sections are written together, under the job's lock; the tool
     door draws the picture of what was written
@@ -287,7 +287,7 @@ def interactive_transform(
     pending: dict[str, tuple[bool, int, StoredAffine | None]] = {}
     for entry in sections:
         if not isinstance(entry, Mapping):
-            not_entry = Refused(RefusalCode.BAD_ARGS, _ENTRY)
+            not_entry = Refused(RefusalCode.BAD_ARGUMENT, _ENTRY)
             done.append(Adjustment(refusal=not_entry))
             continue
         record = state.resolve(entry.get("id", ""))
@@ -300,7 +300,7 @@ def interactive_transform(
         flip = record.flip
         if entry.get("flip") is not None:
             if not isinstance(entry["flip"], bool):
-                done.append(_refused(name, RefusalCode.BAD_ARGS, "flip is true or false."))
+                done.append(_refused(name, RefusalCode.BAD_ARGUMENT, "flip is true or false."))
                 continue
             flip = entry["flip"]
         rotation = record.rotation_deg
@@ -312,7 +312,7 @@ def interactive_transform(
                 rotation = -1
             if rotation not in ROTATIONS:
                 bad_rotation = Refused(
-                    RefusalCode.BAD_ROTATION,
+                    RefusalCode.BAD_ARGUMENT,
                     _ROTATIONS,
                     id=name,
                     allowed=list(ROTATIONS),
@@ -327,7 +327,7 @@ def interactive_transform(
             done.append(
                 _refused(
                     name,
-                    RefusalCode.BAD_ARGS,
+                    RefusalCode.BAD_ARGUMENT,
                     "every transform number is a number.",
                 )
             )
@@ -336,7 +336,7 @@ def interactive_transform(
             done.append(
                 _refused(
                     name,
-                    RefusalCode.BAD_ARGS,
+                    RefusalCode.BAD_ARGUMENT,
                     "every transform number is finite.",
                 )
             )
@@ -465,7 +465,7 @@ def interactive_transform_tool(
     job = run.job
     entries = as_list(sections)
     if not entries:
-        raise Refused(RefusalCode.BAD_ARGS, "sections must name one or more sections")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "sections must name one or more sections")
     check_section_count(job, "interactive_transform", len(entries))
     _check_named_once(job, entries)
     done = interactive_transform(job, run.workspace, entries)
@@ -475,7 +475,10 @@ def interactive_transform_tool(
     status = "ok" if in_picture else "error"
     result: dict[str, Any] = {"status": status}
     if not in_picture:
-        result["error"] = RefusalCode.NOTHING_WRITTEN
+        result["error"] = RefusalCode.BAD_ARGUMENT
+        result["message"] = (
+            "Nothing was written: each section's row under results names its problem."
+        )
     result["results"] = rows
     if done.written:
         result["changed"] = run.changed(done.written)["changed"]
@@ -490,7 +493,7 @@ def interactive_transform_tool(
 
 
 def _check_named_once(job: Job, entries: Sequence[object]) -> None:
-    """Refuse a call that names a section twice (``DUPLICATE_SLICE_IDS``); an
+    """Refuse a call that names a section twice (``BAD_ARGUMENT``); an
     entry that is not an object is the operation's to refuse.
     """
     objects = [cast("Mapping[str, object]", entry) for entry in entries if isinstance(entry, dict)]
@@ -499,7 +502,7 @@ def _check_named_once(job: Job, entries: Sequence[object]) -> None:
     duplicates = sorted({name for name in ids if ids.count(name) > 1})
     if duplicates:
         raise Refused(
-            RefusalCode.DUPLICATE_SLICE_IDS,
+            RefusalCode.BAD_ARGUMENT,
             duplicate_ids=duplicates,
             message="A call sets each section once; look at the first "
             "result before a dependent correction.",

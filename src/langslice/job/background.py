@@ -15,7 +15,7 @@ and keeps a notice per finished work until it is asked for:
   (a door puts their notices at the head of its next reply);
 - :meth:`BackgroundWork.running` lists the work still running (status);
 - :meth:`BackgroundWork.busy` names the running work on sections: a write to
-  such a section is refused, ``SECTION_BUSY`` (:meth:`langslice.job.job.Job.busy_refusal`);
+  such a section is refused, ``BUSY`` (:meth:`langslice.job.job.Job.busy_refusal`);
 - :meth:`BackgroundWork.wait_all` waits for every piece (submit).
 
 The callable is the caller's (an operation's fit), so this module imports

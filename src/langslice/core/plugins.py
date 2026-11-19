@@ -196,34 +196,34 @@ class Layer:
         return layer
 
     def check(self) -> None:
-        """``ToolError`` ``BAD_LAYER`` naming what is wrong."""
+        """``ToolError`` ``BAD_ARGUMENT`` naming what is wrong."""
         if self.kind not in LAYER_KINDS:
             raise ToolError(
-                RefusalCode.BAD_LAYER,
+                RefusalCode.BAD_ARGUMENT,
                 f"a layer's kind is one of {', '.join(LAYER_KINDS)}; got {self.kind!r}",
             )
         if self.frame not in KIND_FRAMES[self.kind]:
             raise ToolError(
-                RefusalCode.BAD_LAYER,
+                RefusalCode.BAD_ARGUMENT,
                 f"a {self.kind} layer's frame is "
                 f"{' or '.join(KIND_FRAMES[self.kind])}; got {self.frame!r}",
             )
         if len(self.name) > MAX_LAYER_NAME:
             raise ToolError(
-                RefusalCode.BAD_LAYER, f"a layer's name is at most {MAX_LAYER_NAME} characters"
+                RefusalCode.BAD_ARGUMENT, f"a layer's name is at most {MAX_LAYER_NAME} characters"
             )
         width = 2 if self.frame == "section_px" else 3
         if self.kind == "points":
             if self.xy is None or self.xy.ndim != 2 or self.xy.shape[1] != width:
                 raise ToolError(
-                    RefusalCode.BAD_LAYER, f"points in {self.frame} are an (N, {width}) array"
+                    RefusalCode.BAD_ARGUMENT, f"points in {self.frame} are an (N, {width}) array"
                 )
             if not np.isfinite(self.xy).all():
-                raise ToolError(RefusalCode.BAD_LAYER, "points must be finite")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, "points must be finite")
             if self.tags and len(self.tags) != len(self.xy):
-                raise ToolError(RefusalCode.BAD_LAYER, "points take one label each, or none")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, "points take one label each, or none")
             if self.values and len(self.values) != len(self.xy):
-                raise ToolError(RefusalCode.BAD_LAYER, "points take one value each, or none")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, "points take one value each, or none")
         elif self.kind == "lines":
             for coordinates, _closed in self.paths:
                 if (
@@ -233,19 +233,19 @@ class Layer:
                     or not np.isfinite(coordinates).all()
                 ):
                     raise ToolError(
-                        RefusalCode.BAD_LAYER,
+                        RefusalCode.BAD_ARGUMENT,
                         f"each line in {self.frame} is a finite "
                         f"(M, {width}) array with at least two points",
                     )
             if self.tags and len(self.tags) != len(self.paths):
-                raise ToolError(RefusalCode.BAD_LAYER, "lines take one label each, or none")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, "lines take one label each, or none")
         elif self.kind in ("labels", "scalar"):
             raster = self.raster
             if raster is None or raster.ndim != 2 or raster.size == 0:
-                raise ToolError(RefusalCode.BAD_LAYER, f"a {self.kind} layer is a 2-D raster")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, f"a {self.kind} layer is a 2-D raster")
             if self.kind == "labels" and not np.issubdtype(raster.dtype, np.integer):
-                raise ToolError(RefusalCode.BAD_LAYER, "a labels raster holds integers")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, "a labels raster holds integers")
             if self.kind == "labels" and raster.size and int(raster.min()) < 0:
-                raise ToolError(RefusalCode.BAD_LAYER, "label ids are not negative")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, "label ids are not negative")
         elif self.image is None:
-            raise ToolError(RefusalCode.BAD_LAYER, "a picture layer holds an image")
+            raise ToolError(RefusalCode.BAD_ARGUMENT, "a picture layer holds an image")

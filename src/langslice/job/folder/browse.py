@@ -8,11 +8,11 @@ inside the job folder:
 * a path is taken relative to the folder (an absolute path is accepted only
   when it already lies inside), and is resolved before it is used, so ``..``
   and a symlink pointing out of the folder are both refused
-  (``BAD_PATH``);
+  (``BAD_ARGUMENT``);
 * a walk never follows a symlink out of the folder, and skips its target;
 * a binary file is described (its kind and size), never dumped;
 * ``trace/`` (:data:`HIDDEN`, the agent transcripts) is left out of every
-  listing and search, and a path under it is refused (``BAD_PATH``): it
+  listing and search, and a path under it is refused (``BAD_ARGUMENT``): it
   would only show the agent its own transcript;
 * a path that does not exist is refused (``NOT_FOUND``) with the nearest
   folder above it that does.
@@ -32,6 +32,7 @@ from pathlib import Path
 
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.folder.layout import TRACE_DIR
+from langslice.job.settings.tools_on import ToolsOn
 
 LIST_ENTRIES = 200
 SEARCH_MATCHES = 60
@@ -49,7 +50,7 @@ PICTURE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp",
 NEAREST_NAMES = 20
 
 
-def _missing(root: Path, text: str, candidate: Path) -> Refused:
+def _missing(root: Path, text: str, candidate: Path, on: ToolsOn) -> Refused:
     """Refuse *candidate*, a path under *root* that does not exist.
 
     The refusal is ``NOT_FOUND`` with ``nearest``, the nearest folder above
@@ -74,9 +75,11 @@ def _missing(root: Path, text: str, candidate: Path) -> Refused:
     shown = nearest.relative_to(root).as_posix() or "."
     listed = (", ".join(holds) + (f" and {more} more" if more else "")) if holds else "nothing"
     return Refused(
-        RefusalCode.NO_SUCH_PATH,
+        RefusalCode.NOT_FOUND,
         f"'{text}' does not exist in the job folder; the nearest folder above "
-        f"it that does, '{shown}', holds: {listed}.",
+        f"it that does, '{shown}', holds: {listed}. Give a path from there"
+        + on.say("list_files", " (list_files lists it)")
+        + ".",
         nearest=shown,
         holds=holds,
     )
@@ -104,29 +107,31 @@ def is_hidden(root: Path, path: Path) -> bool:
     return bool(parts) and parts[0] in HIDDEN
 
 
-def resolve(folder: Path, path: str = ".") -> Path:
-    """*path* resolved inside *folder*; :class:`Refused` ``BAD_PATH`` when it
+def resolve(folder: Path, path: str, on: ToolsOn) -> Path:
+    """*path* resolved inside *folder*; :class:`Refused` ``BAD_ARGUMENT`` when it
     leaves it (``..``, an absolute path elsewhere, a symlink pointing out),
     ``NOT_FOUND`` when it does not exist."""
     root = root_of(folder)
     text = str(path or ".")
     if "\x00" in text:
-        raise Refused(RefusalCode.BAD_PATH, "The path holds a null character.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, "The path holds a null character.")
     given = Path(text)
     candidate = given if given.is_absolute() else root / given
     resolved = Path(os.path.realpath(candidate))
     if resolved != root and root not in resolved.parents:
         raise Refused(
-            RefusalCode.BAD_PATH,
-            f"'{text}' is outside the job folder; only files inside it can be read.",
+            RefusalCode.BAD_ARGUMENT,
+            f"'{text}' is outside the job folder; only files inside it can be read: give a path "
+            "inside the job folder, relative to it.",
         )
     if is_hidden(root, resolved):
         raise Refused(
-            RefusalCode.BAD_PATH,
-            f"'{text}' is in {TRACE_DIR}/, the agent transcripts, which these tools do not open.",
+            RefusalCode.BAD_ARGUMENT,
+            f"'{text}' is in {TRACE_DIR}/, the agent transcripts, which these tools do not "
+            "open: give a path inside the job folder, relative to it.",
         )
     if not resolved.exists():
-        raise _missing(root, text, resolved)
+        raise _missing(root, text, resolved, on)
     return resolved
 
 

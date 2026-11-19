@@ -36,27 +36,27 @@ logger = logging.getLogger(__name__)
 
 def region_entries(workspace: Workspace, state: Stack, entries: Any) -> tuple[str, ...]:
     """*entries* (region acronyms, names or ids, ``"CTX:left"`` for one side)
-    checked against the atlas and normalized. Refused: ``BAD_ARGS`` (not a
-    list of names, or a side that does not exist), ``UNKNOWN_REGIONS``,
-    ``NO_SIDES`` (a side on a sagittal stack)."""
+    checked against the atlas and normalized. Refused: ``BAD_ARGUMENT`` (not a
+    list of names, or a side that does not exist), ``NOT_FOUND``,
+    ``PRECONDITION`` (a side on a sagittal stack)."""
     if isinstance(entries, str) or not isinstance(entries, (list, tuple)):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message="restrict_to is a list of atlas regions.",
         )
     try:
         items = cast("Sequence[object]", entries)
         names = normalized_entries(str(entry) for entry in items)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     if names:
         try:
             resolve_entries(workspace.atlas, names)
         except ValueError as exc:
-            raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from exc
+            raise Refused(RefusalCode.NOT_FOUND, message=str(exc)) from exc
         if state.plane == "sagittal" and has_sides(names):
             raise Refused(
-                RefusalCode.NO_SIDES,
+                RefusalCode.PRECONDITION,
                 message="A sagittal section lies within one "
                 "hemisphere, so a region cannot be limited to one side.",
             )

@@ -244,7 +244,8 @@ make it for; empty is every section.""",
 "em": sort each section's pixels now, at its current
 registration, against atlas_image. "fit": the sorting the
 section's applied deformation saved with it, copied as it was
-(NO_DEFORMATION or NO_SORTING when it has none).""",
+(refused when the section holds no deformation or its deformation saved
+no sorting).""",
         ),
         "section_image": Argument(
             str,

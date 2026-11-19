@@ -11,7 +11,7 @@ and ``cache_folder`` (where its weights are kept; empty is
 ``~/.cache/langslice/deepslice``). DeepSlice 1.2.8 is vendored beside this
 module and runs in this process (``engine.py``) on TensorFlow, imported
 only when the tool runs; without the ``langslice[engines]`` extra, or when
-its weights cannot be fetched, a call is refused ``ENGINE_MISSING``.
+its weights cannot be fetched, a call is refused ``ENGINE_UNAVAILABLE``.
 
 Offered on the Allen mouse atlases and ``ccfv3augmented_mouse_25um``,
 coronal jobs only; absent (and unnamed in any other tool's text) elsewhere.
@@ -350,7 +350,7 @@ def place(context: ToolContext, options: Options, arguments: Arguments) -> ToolR
     Raises
     ------
     ToolError
-        ``ENGINE_MISSING`` without the extra or its weights; ``BAD_ARGS``
+        ``ENGINE_UNAVAILABLE`` without the extra or its weights; ``BAD_ARGUMENT``
         for arguments that cannot run; ``FIT_FAILED`` when DeepSlice fails.
     """
     engine.require_engine()
@@ -419,17 +419,17 @@ def _run_and_order(context: ToolContext, arguments: Arguments) -> tuple[list[str
     if arguments.sections:
         run = [context.section(name).id for name in arguments.sections]
     if len(set(run)) != len(run):
-        raise ToolError(RefusalCode.BAD_ARGS, "a section is named twice in sections")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "a section is named twice in sections")
 
     ordered = [context.section(name).id for name in arguments.order]
     repeated = len(set(ordered)) != len(ordered)
     if ordered and (repeated or set(ordered) != set(run)):
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "order must list every section run exactly once, anterior to posterior",
         )
     if ordered and len(run) < 2:
-        raise ToolError(RefusalCode.BAD_ARGS, "order needs at least two sections")
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "order needs at least two sections")
 
     return run, ordered
 
@@ -442,7 +442,7 @@ def _bad_sections(context: ToolContext, run: list[str], names: list[str] | None)
         bad = _named_bad(context, run, names)
     if len(bad) >= len(run):
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "every section is a bad section; DeepSlice needs at least one section to vote",
         )
     return bad
@@ -454,7 +454,7 @@ def _named_bad(context: ToolContext, run: list[str], names: list[str]) -> dict[s
     outside = [section for section in named if section not in run]
     if outside:
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"bad_sections names sections that are not run: {outside}",
         )
     return dict.fromkeys(named, NAMED)
@@ -478,7 +478,7 @@ def _asked(
     if unknown:
         takes = " and ".join(repr(str(part)) for part in available)
         raise ToolError(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"write takes {takes} (a list; empty writes nothing); got {unknown}",
         )
     parts = [part for part in available if part in write]

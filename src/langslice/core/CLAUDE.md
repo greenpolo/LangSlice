@@ -151,11 +151,11 @@ the angles in a caption (empty for the flat plane).
   among the facts is the reply's status word, `error` by default,
   `refused` for a gate), `payload()` the `{"status", "error": code,
   **facts}` every door answers with (a per-section row is `{"id": ...,
-  **payload}`), `RefusalCode` (every code once, each member a `#:` line
-  saying what it means; the name is the value, `NO_SUCH_PATH` =
-  `"NOT_FOUND"` excepted), `ReplyStatus` (`ok`, `error`, `refused`) and
+  **payload}`), `RefusalCode` (the twelve codes, the class
+  docstring saying what each means; the name is the value; the specific
+  reason and what to do next are the `message` at the raising site), `ReplyStatus` (`ok`, `error`, `refused`) and
   `FAILED_STATUSES`. The members are `TextEnum`s: `repr` is the plain
-  string's, so a reply prints, compares and serializes as before. Core,
+  string's, so a reply prints, compares and serializes as a plain string. Core,
   job and tools raise it; each door converts it once (`doors/CLAUDE.md`).
   `plugins.ToolError` is its subclass for plugins.
 - `hardware.py` — the machine and how many sections run at once:
@@ -196,7 +196,7 @@ the angles in a caption (empty for the flat plane).
   complete registration, in the options' mode; returns `Placed`: images,
   row facts, the canvas), and the interactive transform's `stage` (the
   working frame, calibration, canvas and resolved pivot; `Refused`
-  `ATLAS_RENDER_FAILED` / `BAD_PIVOT`) and `Staged`.
+  `IO_ERROR` / `BAD_ARGUMENT`) and `Staged`.
 - `sections/renders.py` — the section renders and their cache: `render_slice`
   (a look drawn unoriented at the render size, then ROTATE, then FLIP;
   `_look_image`): None is the section's `preprocessed` image, `{"image": name}`
@@ -397,15 +397,15 @@ the angles in a caption (empty for the flat plane).
   the marked regions added to *exclude* except an entry *restrict_to* names
   exactly; `normalized_entries`, `entry_key`; `checked_entries(atlas,
   regions, plane)` (the one check of marks, the agent's or a host's:
-  `BAD_ARGS`, `UNKNOWN_REGIONS`, `NO_SIDES`) and `side_pair_refusal(state,
-  workspace, section, names)` (`WRONG_SIDE_PAIR` for a side the current
+  `BAD_ARGUMENT`, `NOT_FOUND`, `PRECONDITION`) and `side_pair_refusal(state,
+  workspace, section, names)` (`PRECONDITION` for a side the current
   placement lacks). `damage_picture(ws, state,
   record, store=)`: the marked regions hatched (`HATCH_COLOR`, the
   deformable pictures' excluded-region ink) on the section under its
   current registration (`pictures.placement.draw_canvas`, mode `overlay`, the warp
   from *store*) and on the atlas template (mode `template`), on one canvas
   and crop, side by side (`beside`), their outlines strong over the
-  faint borders; `Refused` `NO_REGIONS`.
+  faint borders; `Refused` `PRECONDITION`.
 - `pictures/look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, images=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
@@ -415,10 +415,10 @@ the angles in a caption (empty for the flat plane).
   `overlay`, the applied deformation unless `warp` is `none`), per position
   (`atlas`: `pictures.panels.framed_atlas` at the stack's view angles), per named
   section in `atlas` mode (at that section's own position and angles;
-  `positions_mm` other than theirs `BAD_ARGS`) or per run
+  `positions_mm` other than theirs `BAD_ARGUMENT`) or per run
   of positions (`positioning`: one picture for up to `PER_PICTURE`
   sections, several for a longer stack; `part` (0-based) draws only that
-  one, `UNKNOWN_PART` past the last); a picture without a section says
+  one, `BAD_ARGUMENT` past the last); a picture without a section says
   when its angles are the median of differing sections'
   (`atlas_caption(median=)`). Defaults never read the job's state: every section,
   the `preprocessed` image (`images` names one section image alone, drawn in
@@ -443,11 +443,9 @@ the angles in a caption (empty for the flat plane).
   so a zoom of the picture is not stale for drawing a registration the
   section does not hold. `redraw(recipe, window, ws, state)` draws a recipe at a window,
   from `restored(state, snapshot)` and `stale` when `changed_since`; a recipe
-  another version of LangSlice saved is `UNREADABLE_RECIPE`, one showing a
-  section the stack no longer holds `SECTION_GONE` (the zoom crops the saved
-  picture for either). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_IMAGE`,
-  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `BAD_ARGS`,
-  `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
+  another version of LangSlice saved is `STALE_INPUT`, one showing a
+  section the stack no longer holds `NOT_FOUND` (the zoom crops the saved
+  picture for either). Its refusals (`Refused`): `BAD_ARGUMENT`, `NOT_FOUND`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
   `atlas.borders.HIGHLIGHT_WIDTH` times as thick, the other borders faint,
   and its caption says so; `region_only` omits the context borders for a
@@ -492,9 +490,9 @@ the angles in a caption (empty for the flat plane).
   picture without a recipe, or whose sections are gone, is cropped from
   *picture* (the saved image) and enlarged towards the picture size,
   `redrawn` False, with a `crop` recipe (the box on that source). Returns
-  `Zoomed`; `Refused` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
+  `Zoomed`; `Refused` `BAD_ARGUMENT` / `NOT_FOUND`.
   With `region`, exactly one region replaces the box, on an overlay only
-  (`BAD_REGION_PICTURE` otherwise); absent anatomy is `REGION_NOT_IN_PLANE`.
+  (`BAD_ARGUMENT` otherwise); absent anatomy is `NOT_FOUND`.
   The bounds and borders come from the saved overlay, never today's state.
 - `pictures/sheet.py` — `look`'s sheet: `tile(tiles, long_edge, title=)` lays saved
   pictures (`Tile`: image, number, label) in a grid (`grid`: the columns

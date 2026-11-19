@@ -157,7 +157,7 @@ def _strings(value: Any, name: str) -> list[Any]:
     if value is None:
         return []
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise Refused(RefusalCode.BAD_ARGS, message=f"{name} must be a list.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=f"{name} must be a list.")
     return list(value)
 
 
@@ -266,14 +266,14 @@ def requested_edge(run: Run, resolution: float | None) -> tuple[int | None, str]
     Raises
     ------
     Refused
-        ``BAD_ARGS`` when ``resolution`` is not a number.
+        ``BAD_ARGUMENT`` when ``resolution`` is not a number.
     """
     if not resolution or run.level != AUTO_RESOLUTION:
         return None, ""
     try:
         return clamp_resolution(resolution, run.box.max_view_edge)
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, "resolution is a whole number of pixels.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, "resolution is a whole number of pixels.") from None
 
 
 def look_pictures(
@@ -298,31 +298,28 @@ def look_pictures(
     edge (clamped up to :data:`~langslice.core.pictures.sizes.MIN_RESOLUTION`);
     a door passes one only where its caller sizes the pictures. At most
     ``Job.picture_cap`` pictures (None: all) are saved and returned; the rest
-    are ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
-    ``UNKNOWN_MODE``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
-    ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``,
-    ``BAD_WARP``.
+    are ``not_shown``. Refused: ``BAD_ARGUMENT``, ``NOT_FOUND``.
 
     ``layers`` names the layers tool plugins and scripts left on the sections
     (``"all"``: every one) to draw on the pictures of mode ``section`` or
     ``overlay`` (:mod:`langslice.core.pictures.plugin_layers`); the reply's
-    ``layers`` says which were drawn. Refused: ``BAD_ARGS`` in another mode,
-    ``UNKNOWN_PLUGIN_LAYER`` for a name no drawn section has.
+    ``layers`` says which were drawn. Refused: ``BAD_ARGUMENT`` in another mode,
+    ``NOT_FOUND`` for a name no drawn section has.
 
     ``masks`` names masks of the drawn sections, outlined where their weight
     is 0.5 on pictures of mode ``section`` or ``overlay`` (as a scalar layer);
-    the reply's ``masks`` says which were drawn. Refused: ``BAD_ARGS`` in
-    another mode, ``UNKNOWN_MASK`` for a name no drawn section holds.
+    the reply's ``masks`` says which were drawn. Refused: ``BAD_ARGUMENT`` in
+    another mode, ``NOT_FOUND`` for a name no drawn section holds.
 
     *registrations* (``{filename: number}``, mode ``section`` or ``overlay``)
     draws each section it names under that registration of its own
     (:func:`langslice.tools.changing.registrations.entry_for`), writing
     nothing: the
     caption says which, and whether the section holds it; with no
-    ``sections`` only those sections are drawn. Refused: ``BAD_ARGS``
+    ``sections`` only those sections are drawn. Refused: ``BAD_ARGUMENT``
     (another mode, a section not among ``sections``),
-    ``UNKNOWN_REGISTRATION``, ``REGISTRATION_ELSEWHERE``,
-    ``DEFORMATION_UNREADABLE``.
+    ``NOT_FOUND``, ``STALE_INPUT``,
+    ``IO_ERROR``.
 
     *sheet_edge* (None: no sheet) shows the pictures tiled into sheets of at
     most that long edge, :data:`langslice.core.pictures.sheet.MAX_TILES` each:
@@ -352,14 +349,14 @@ def look_pictures(
     try:
         positions = tuple(float(v) for v in _strings(positions_mm, "positions_mm"))
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, message="positions_mm must be numbers.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="positions_mm must be numbers.") from None
     layers = (
         None
         if atlas_layers is None
         else tuple(str(v) for v in _strings(atlas_layers, "atlas_layers"))
     )
     if atlas_opacity is not None and not 0.0 <= float(atlas_opacity) <= 1.0:
-        raise Refused(RefusalCode.BAD_ARGS, message="atlas_opacity is between 0 and 1.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="atlas_opacity is between 0 and 1.")
     edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
     named = tuple(str(v) for v in _strings(plugin_layers, "layers"))
     if named:
@@ -368,7 +365,7 @@ def look_pictures(
     if mask_names:
         _check_masks(job, str(mode), ids, mask_names)
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
-        raise Refused(RefusalCode.BAD_ARGS, message="depth is a whole number, 0 or more.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="depth is a whole number, 0 or more.")
     request = looks.LookRequest(
         mode=str(mode),
         sections=tuple(ids),
@@ -412,10 +409,10 @@ def _under_registrations(
 
     if mode not in ("section", "overlay"):
         raise Refused(
-            RefusalCode.BAD_ARGS, message="registrations are drawn in mode section or overlay."
+            RefusalCode.BAD_ARGUMENT, message="registrations are drawn in mode section or overlay."
         )
     if not isinstance(registrations, Mapping):
-        raise Refused(RefusalCode.BAD_ARGS, message="registrations is {filename: number}.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="registrations is {filename: number}.")
     trial = copy.deepcopy(job.state)
     shown: list[tuple[str, int, bool]] = []
     for ref, number in registrations.items():
@@ -423,7 +420,7 @@ def _under_registrations(
         record, entry, held = ops_registrations.entry_for(job, ref, given)
         if ids and record.id not in ids:
             raise Refused(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 message=f"registrations names {record.id}, which is not "
                 "among the sections to draw; add it to sections, or leave sections "
                 "empty.",
@@ -445,13 +442,14 @@ def _check_plugin_layers(job: Job, mode: str, ids: Sequence[str], names: Sequenc
 
     if mode not in ("section", "overlay"):
         raise Refused(
-            RefusalCode.BAD_ARGS, message="layers are drawn on pictures of mode section or overlay."
+            RefusalCode.BAD_ARGUMENT,
+            message="layers are drawn on pictures of mode section or overlay.",
         )
     held = known_names(job.state, ids)
     unknown = [name for name in names if name != "all" and name not in held]
     if unknown:
         raise Refused(
-            RefusalCode.UNKNOWN_PLUGIN_LAYER,
+            RefusalCode.NOT_FOUND,
             unknown=unknown,
             layers=held,
             message=f"No drawn section has a layer named {', '.join(unknown)}; "
@@ -462,7 +460,7 @@ def _check_plugin_layers(job: Job, mode: str, ids: Sequence[str], names: Sequenc
 def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) -> None:
     if mode not in ("section", "overlay"):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message="masks are outlined on pictures of mode section or overlay.",
         )
     state = job.state
@@ -473,7 +471,7 @@ def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) 
     unknown = [name for name in names if name not in held]
     if unknown:
         raise Refused(
-            RefusalCode.UNKNOWN_MASK,
+            RefusalCode.NOT_FOUND,
             unknown=unknown,
             masks=held,
             message=f"No drawn section has a mask named "
@@ -677,7 +675,12 @@ def show_result(
             except Refused as refusal:
                 failed.append({"error": refusal.code, "message": str(refusal)})
             except IMAGE_FAILURES as exc:
-                failed.append({"error": RefusalCode.RENDER_FAILED, "message": str(exc)})
+                failed.append(
+                    {
+                        "error": RefusalCode.IO_ERROR,
+                        "message": f"{exc}; check the section file opens, then try again.",
+                    }
+                )
         else:
             for section in sections:
                 window = tuple(float(v) for v in windows.get(section) or ())
@@ -696,7 +699,11 @@ def show_result(
                     failed.append({"id": section, "error": refusal.code, "message": str(refusal)})
                 except IMAGE_FAILURES as exc:
                     failed.append(
-                        {"id": section, "error": RefusalCode.RENDER_FAILED, "message": str(exc)}
+                        {
+                            "id": section,
+                            "error": RefusalCode.IO_ERROR,
+                            "message": f"{exc}; check the section file opens, then try again.",
+                        }
                     )
     shown, rest = split_shown(job, drawn)
     entries = save_pictures(

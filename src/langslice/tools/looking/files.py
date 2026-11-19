@@ -7,7 +7,7 @@ Three tools modelled on a coding agent's file tools:
 Every picture shown so far is written and indexed before each runs. Every
 path is relative to the job folder and kept inside it
 (:mod:`langslice.job.folder.browse`); a path that leaves it is refused
-(``BAD_PATH``), and one that does not exist is ``NOT_FOUND``, whose message
+(``BAD_ARGUMENT``), and one that does not exist is ``NOT_FOUND``, whose message
 names the nearest folder above it that exists and what it holds. Each
 operation answers a small record whose ``text`` is the model-facing reply, capped
 (``browse.LIST_ENTRIES``, ``SEARCH_MATCHES``, ``READ_LINES``, ``TEXT_BYTES``)
@@ -145,7 +145,7 @@ def read_file_tool(run: Run, path: str, offset: int, limit: int) -> dict[str, ob
     try:
         first, count = int(offset or 0), int(limit or 400)
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, "offset and limit are whole numbers.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, "offset and limit are whole numbers.") from None
     done = read_folder_file(run.job, str(path or ""), first, count)
     reply: dict[str, object] = {"status": "ok", "text": done.text}
     if done.picture is not None:
@@ -172,7 +172,7 @@ def list_folder(job: Job, path: str = ".", glob: str = "") -> Listing:
     below *path* whose name or path matches. At most ``browse.LIST_ENTRIES``
     are shown; the reply ends with ``N more`` for the rest.
     """
-    start = browse.resolve(_folder(job), path)
+    start = browse.resolve(_folder(job), path, job.spec.tools_on)
     entries, hidden = browse.list_entries(_folder(job), start, str(glob or ""))
     shown = browse.relative(_folder(job), start)
     rows = [
@@ -195,8 +195,8 @@ def search_folder(job: Job, query: str, path: str = ".", glob: str = "") -> Foun
     not searched. *glob* keeps files whose name or path matches it.
     """
     if not str(query or ""):
-        raise Refused(RefusalCode.BAD_ARGS, message="query is empty.")
-    start = browse.resolve(_folder(job), path)
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="query is empty.")
+    start = browse.resolve(_folder(job), path, job.spec.tools_on)
     lines, hidden, files = browse.search(_folder(job), start, str(query), str(glob or ""))
     rows = list(lines) or [f"No match in {files} file(s)."]
     if hidden:
@@ -316,11 +316,11 @@ def read_folder_file(
     ``look`` picture's view again (on the stack as it is now). A binary file is
     described by its size.
     """
-    real = browse.resolve(_folder(job), path)
+    real = browse.resolve(_folder(job), path, job.spec.tools_on)
     shown = browse.relative(_folder(job), real)
     if real.is_dir():
         raise Refused(
-            RefusalCode.BAD_PATH,
+            RefusalCode.BAD_ARGUMENT,
             message=f"'{shown}' is a folder"
             + ("." if job.spec.off("list_files") else "; list it with list_files."),
         )
@@ -352,7 +352,9 @@ def read_folder_file(
     try:
         numbered, total, more = browse.read_lines(real, offset, limit)
     except OSError as error:
-        raise Refused(RefusalCode.BAD_PATH, message=f"'{shown}' cannot be read: {error}") from error
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, message=f"'{shown}' cannot be read: {error}"
+        ) from error
     start = max(0, int(offset))
     if not numbered:
         text = (

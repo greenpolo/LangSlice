@@ -24,7 +24,7 @@ below 2, TensorFlow below 2.20) do not reach LangSlice.
   head and the binary search (`brainways.model.siamese.siamese_model.SiameseModel.predict`).
 
 Needs torch (a core dependency of LangSlice), numpy and OpenCV; neither timm, albumentations nor
-huggingface_hub. A call where torch does not import is refused with `ENGINE_MISSING`, naming
+huggingface_hub. A call where torch does not import is refused with `ENGINE_UNAVAILABLE`, naming
 `pip install "langslice[engines]"`.
 
 ## Use
@@ -68,8 +68,8 @@ of the SliceBench plugin it was moved from (`comparators/plugins/brainways/`).
   revision and SHA-256, torch version, timings) and `rows.json` (the table and each section's
   plane index `ap`, `position_mm`, `seconds`).
 
-A refused call: `BAD_ARGS` (a section named twice, an unknown `write` part or channel, `device`
-`cuda` without a GPU), `ENGINE_MISSING` (torch does not import; the weights cannot be fetched),
+A refused call: `BAD_ARGUMENT` (a section named twice, an unknown `write` part or channel, `device`
+`cuda` without a GPU), `ENGINE_UNAVAILABLE` (torch does not import; the weights cannot be fetched),
 `FIT_FAILED` (the atlas is not `whs_sd_rat_39um` at 1024 x 512 x 512, 39 um).
 
 ## What the vendored path does

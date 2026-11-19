@@ -62,7 +62,7 @@ class ContextPictures(ContextProposals):
         if proposal and proposal.get("deformation") is not None:
             if set(proposal) - {"deformation"}:
                 raise ToolError(
-                    RefusalCode.BAD_ARGS,
+                    RefusalCode.BAD_ARGUMENT,
                     "a deformation proposal is drawn on the "
                     "section's current placement: give it alone",
                 )
@@ -71,7 +71,7 @@ class ContextPictures(ContextProposals):
                 warped = self.deformation_from_map(record.id, warped)
             elif warped.id != record.id:
                 raise ToolError(
-                    RefusalCode.BAD_ARGS, f"the proposal is {warped.id}'s, not {record.id}'s"
+                    RefusalCode.BAD_ARGUMENT, f"the proposal is {warped.id}'s, not {record.id}'s"
                 )
             store = self._proposal_store(warped)
             state = copy.deepcopy(state)
@@ -141,7 +141,7 @@ class ContextPictures(ContextProposals):
                 unknown = set(change) - {"position_mm", "angles"}
                 if unknown:
                     raise ToolError(
-                        RefusalCode.BAD_ARGS,
+                        RefusalCode.BAD_ARGUMENT,
                         "a positioning proposal gives position_mm and/or "
                         f"angles per section; got {sorted(unknown)}",
                     )

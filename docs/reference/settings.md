@@ -29,8 +29,8 @@ The flags of earlier versions (such as `--thickness`, `--image-provider`,
 `create_job` refuses `fresh=` together with `resume=`.
 
 A job already in the folder is continued with its saved settings. `init` with
-other settings is refused with `SETTINGS_CHANGED`, and other supplied
-`inputs` or `frozen` with `INPUTS_CHANGED`; `--no-resume` starts the job over
+other settings is refused with `STALE_INPUT`, and other supplied
+`inputs` or `frozen` with `STALE_INPUT`; `--no-resume` starts the job over
 and discards its work.
 
 ## Summary

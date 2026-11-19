@@ -14,12 +14,12 @@ if TYPE_CHECKING:
 def add_note(job: Job, text: str) -> list[str]:
     """Append one stripped line to the run notes; the notes as they now stand.
 
-    One undo step. An empty note is refused (``BAD_ARGS``).
+    One undo step. An empty note is refused (``BAD_ARGUMENT``).
     """
     cleaned = str(text or "").strip()
     if not cleaned:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "A note is a line of text; this one is empty, so nothing was written.",
         )
     before = job.snapshot()

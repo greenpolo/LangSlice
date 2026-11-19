@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from langslice.tools.run import Run
 
 ZOOM_TOOL = "zoom"
-BOX_CODES = (RefusalCode.EMPTY_BOX, RefusalCode.BAD_BOX)
 
 
 @dataclass(frozen=True)
@@ -70,7 +69,7 @@ def zoom_tool(
     try:
         number = int(picture or 0) or None
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, "picture is a picture number.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, "picture is a picture number.") from None
     done = zoom_picture(run.job, run.workspace, as_list(box), picture=number, region=region)
     reply: dict[str, object] = {
         "status": "ok",
@@ -110,24 +109,26 @@ def _target(job: Job, picture: int | None) -> PictureRecord:
         found = job.views.latest(exclude_tool=ZOOM_TOOL)
         if found is None:
             raise Refused(
-                RefusalCode.NO_PICTURE, message="No picture has been shown yet; look first."
+                RefusalCode.NOT_FOUND, message="No picture has been shown yet; look first."
             )
         return found
     try:
         number = int(picture)
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS, message="picture is a picture number.") from None
+        raise Refused(RefusalCode.BAD_ARGUMENT, message="picture is a picture number.") from None
     found = job.views.lookup(number)
     if found is None:
         if not job.persist:
             raise Refused(
-                RefusalCode.PICTURE_NOT_SAVED,
+                RefusalCode.PRECONDITION,
                 picture=number,
                 message=f"Picture {number} is not saved: this job keeps no pictures "
-                "beyond this process.",
+                "beyond this process; draw it again with look"
+                + job.spec.tools_on.say("zoom", " and zoom")
+                + " in the same process.",
             )
         raise Refused(
-            RefusalCode.UNKNOWN_PICTURE,
+            RefusalCode.NOT_FOUND,
             picture=number,
             message=f"There is no picture {number}; use a number a reply gave.",
         )
@@ -176,7 +177,7 @@ def zoom_picture(
 
     *region* replaces *box* with one atlas region on an overlay: its whole
     bounds with a small margin and only that region's border. Other modes
-    are ``BAD_REGION_PICTURE``, absent anatomy ``REGION_NOT_IN_PLANE``.
+    are ``BAD_ARGUMENT``, absent anatomy ``NOT_FOUND``.
     *picture* defaults to the newest picture that is not itself a zoom. The
     box is redrawn from the picture's recipe, from the stack as it was then
     (``stale`` when it has changed since). A box on a zoom is read in the
@@ -185,9 +186,9 @@ def zoom_picture(
     that cannot be redrawn (no recipe, or its sections are gone) is cropped
     from its saved image and enlarged (``redrawn`` False); a crop's recipe
     names its ``source`` picture, so a crop of a crop is cut from the
-    original. Refused: ``NO_PICTURE``, ``UNKNOWN_PICTURE``, ``BAD_ARGS``,
-    ``BAD_BOX``, ``EMPTY_BOX``, ``PICTURE_NOT_SAVED`` (nothing to redraw
-    from and no saved image), ``UNKNOWN_MODE`` and the other look refusals.
+    original. Refused: ``NOT_FOUND``, ``BAD_ARGUMENT``,
+    ``PRECONDITION`` (nothing to redraw
+    from and no saved image) and the other look refusals.
     """
     importlib.import_module("langslice.tools.looking.atlas")
 
@@ -205,20 +206,21 @@ def zoom_picture(
         saved = _saved_image(job, original) if original is not None else None
         if saved is None:
             raise Refused(
-                RefusalCode.PICTURE_NOT_SAVED,
+                RefusalCode.PRECONDITION,
                 picture=target.seq,
                 message=(
                     f"Picture {target.seq} was cropped from picture {source_number or '?'}, "
-                    "which is not saved."
+                    "which is not saved; draw it again with look."
                 ),
             )
     else:
         saved = _saved_image(job, target)
         if saved is None and renderer not in zooms.RENDERERS:
             raise Refused(
-                RefusalCode.PICTURE_NOT_SAVED,
+                RefusalCode.PRECONDITION,
                 picture=target.seq,
-                message=f"Picture {target.seq} is not saved and cannot be redrawn.",
+                message=f"Picture {target.seq} is not saved and cannot be redrawn; "
+                "draw it again with look.",
             )
     frame = source_frame(recipe)
     asked = list(box)
@@ -239,7 +241,7 @@ def zoom_picture(
                 region=region,
             )
     except Refused as refusal:
-        if frame is None or refusal.code not in BOX_CODES:
+        if frame is None or region or refusal.code != RefusalCode.BAD_ARGUMENT:
             raise
         text = (
             f"{refusal.code}: the box {[float(v) for v in box]} is outside this zoom or "
@@ -288,7 +290,7 @@ def _zoom_sheet(
     listed = ", ".join(str(n) for n in numbers)
     if region:
         raise Refused(
-            RefusalCode.BAD_REGION_PICTURE,
+            RefusalCode.BAD_ARGUMENT,
             picture=target.seq,
             message=(
                 f"Picture {target.seq} is a sheet; a region is found on one of its tiles' "
@@ -298,17 +300,19 @@ def _zoom_sheet(
     try:
         asked = [float(v) for v in box]
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_BOX, message="box is [x0, y0, x1, y1] in pixels.") from None
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, message="box is [x0, y0, x1, y1] in pixels."
+        ) from None
     if len(asked) != 4 or asked[2] <= asked[0] or asked[3] <= asked[1]:
         raise Refused(
-            RefusalCode.BAD_BOX,
+            RefusalCode.BAD_ARGUMENT,
             message=f"Picture {target.seq} is a sheet: give a box "
             "[x0, y0, x1, y1] in its pixels over one tile.",
         )
     held = sheets.tile_under(recipe, asked)
     if held is None:
         raise Refused(
-            RefusalCode.EMPTY_BOX,
+            RefusalCode.BAD_ARGUMENT,
             message=f"The box {asked} covers no tile of sheet "
             f"{target.seq}; its tiles are pictures {listed}, each at its box: "
             + "; ".join(f"{t['picture']} at {t['box']}" for t in recipe.get("tiles") or [])

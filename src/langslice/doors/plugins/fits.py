@@ -59,7 +59,8 @@ class ContextFits(ContextProposals):
 
         if format not in IMAGE_FORMATS:
             raise ToolError(
-                RefusalCode.BAD_ARGS, f"format is one of {', '.join(IMAGE_FORMATS)}; got {format!r}"
+                RefusalCode.BAD_ARGUMENT,
+                f"format is one of {', '.join(IMAGE_FORMATS)}; got {format!r}",
             )
         record = self._record(section)
         f = self.fit_frame(record.id, stain=True)
@@ -150,11 +151,12 @@ class ContextFits(ContextProposals):
 
         if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
             raise ToolError(
-                RefusalCode.BAD_ARGS, "fixed is 'section' or 'atlas'; atlas is 'placed' or 'native'"
+                RefusalCode.BAD_ARGUMENT,
+                "fixed is 'section' or 'atlas'; atlas is 'placed' or 'native'",
             )
         if fixed == "atlas" and atlas == "native":
             raise ToolError(
-                RefusalCode.BAD_ARGS,
+                RefusalCode.BAD_ARGUMENT,
                 "a field with the atlas fixed is read on the fit grid: "
                 "register against placed_template (atlas='placed')",
             )
@@ -165,7 +167,7 @@ class ContextFits(ContextProposals):
             if fixed == "atlas":
                 points = inverted(points)
         except (ValueError, RuntimeError) as exc:
-            raise ToolError(RefusalCode.BAD_FIELD, f"{record.id}: {exc}") from exc
+            raise ToolError(RefusalCode.BAD_ARGUMENT, f"{record.id}: {exc}") from exc
         if atlas == "native":
             return points
         to_native = np.linalg.inv(self._placed(record))
@@ -195,22 +197,23 @@ class ContextFits(ContextProposals):
         ``0GenericAffine.mat``, or a ``SimpleITK`` transform; *fixed*,
         *atlas* and *spacing* as :meth:`map_from_itk`, either way round) as
         a :class:`TransformProposal`, like :meth:`transform_from_matrix`.
-        ``BAD_MATRIX`` for a transform that is not affine."""
+        ``BAD_ARGUMENT`` for a transform that is not affine."""
         from langslice.core.maps.itk import linear_matrix
 
         if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
             raise ToolError(
-                RefusalCode.BAD_ARGS, "fixed is 'section' or 'atlas'; atlas is 'placed' or 'native'"
+                RefusalCode.BAD_ARGUMENT,
+                "fixed is 'section' or 'atlas'; atlas is 'placed' or 'native'",
             )
         record = self._record(section)
         size = self._grid(record).image.size
         try:
             matrix = linear_matrix(source, (int(size[0]), int(size[1])), spacing=float(spacing))
         except (ValueError, RuntimeError) as exc:
-            raise ToolError(RefusalCode.BAD_MATRIX, f"{record.id}: {exc}") from exc
+            raise ToolError(RefusalCode.BAD_ARGUMENT, f"{record.id}: {exc}") from exc
         if fixed == "atlas":
             if abs(np.linalg.det(matrix[:2, :2])) < 1e-12:
-                raise ToolError(RefusalCode.BAD_MATRIX, f"{record.id}: the map is degenerate")
+                raise ToolError(RefusalCode.BAD_ARGUMENT, f"{record.id}: the map is degenerate")
             matrix = np.linalg.inv(matrix)
         if atlas == "placed":
             matrix = np.linalg.inv(self._placed(record)) @ matrix
@@ -230,9 +233,7 @@ class ContextFits(ContextProposals):
                     dtype=np.float64,
                 )
             except ValueError as exc:
-                raise ToolError(
-                    RefusalCode.INVALID_LINEAR_PLACEMENT, f"{record.id}: {exc}"
-                ) from exc
+                raise ToolError(RefusalCode.PRECONDITION, f"{record.id}: {exc}") from exc
         return np.asarray(self._grid(record).placement.atlas_to_section, dtype=np.float64)
 
     def fit_fireants(
@@ -268,7 +269,7 @@ class ContextFits(ContextProposals):
         leave out. *mask*: ``"none"`` or the NAME of a mask of the section
         (``make_mask`` made it; :meth:`mask` reads one): its weights at or above
         0.5 are compared, the others left out. An array is refused
-        (``BAD_ARGS``): make the mask with ``make_mask`` so the job holds it.
+        (``BAD_ARGUMENT``): make the mask with ``make_mask`` so the job holds it.
         *start* ``linear`` fits from the linear placement, ``current`` on
         top of the applied deformation; *marked* False leaves the section's
         marked damage regions in the fit."""
@@ -281,11 +282,13 @@ class ContextFits(ContextProposals):
         label = _mask_name(mask)
         if str(metric) not in deformable.METRICS:
             raise ToolError(
-                RefusalCode.BAD_ARGS, f"metric is one of {list(deformable.METRICS)}; got {metric!r}"
+                RefusalCode.BAD_ARGUMENT,
+                f"metric is one of {list(deformable.METRICS)}; got {metric!r}",
             )
         if str(detail) not in deformable.DETAILS:
             raise ToolError(
-                RefusalCode.BAD_ARGS, f"detail is one of {list(deformable.DETAILS)}; got {detail!r}"
+                RefusalCode.BAD_ARGUMENT,
+                f"detail is one of {list(deformable.DETAILS)}; got {detail!r}",
             )
         try:
             regions = fit_regions.region_entries(workspace, self._run.job.state, list(restrict_to))
@@ -302,7 +305,7 @@ class ContextFits(ContextProposals):
             )
             resolve_image(workspace.atlas, str(chosen.atlas_image))
         except (TypeError, ValueError) as exc:
-            raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
+            raise ToolError(RefusalCode.BAD_ARGUMENT, str(exc)) from exc
         fitted = warps.fit_record(
             self._run.job,
             workspace,
@@ -366,7 +369,7 @@ class ContextFits(ContextProposals):
         defaults: *restrict_to* (region entries, ``"CTX:left"`` for one side),
         *section_image*, *atlas_image* (as for :meth:`fit_fireants`), *mask*
         (``"none"`` or the NAME of a mask of the section, as for
-        :meth:`fit_fireants`; an array is refused ``BAD_ARGS``), *edges*;
+        :meth:`fit_fireants`; an array is refused ``BAD_ARGUMENT``), *edges*;
         *exclude* adds regions to leave out; *marked* False keeps the section's
         marked damage regions in the fit."""
         from langslice.tools.fitting.affine_fit import elastix_fit
@@ -416,7 +419,7 @@ def _mask_name(mask: Any) -> str:
     if isinstance(mask, str):
         return mask.strip() or "none"
     raise ToolError(
-        RefusalCode.BAD_ARGS,
+        RefusalCode.BAD_ARGUMENT,
         "mask is 'none' or the NAME of one of the section's "
         "masks; an array is not taken (a fit reads only a mask "
         "the job holds).",

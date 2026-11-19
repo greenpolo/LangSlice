@@ -151,7 +151,9 @@ BORROWED = (
     "Nissl, registered to the CCFv3 annotation), resampled onto this atlas's "
     "grid."
 )
-ENGINE_MISSING = "- FireANTs (or torch) is not installed on this host, so {tools} cannot run."
+FIREANTS_NOT_INSTALLED = (
+    "- FireANTs (or torch) is not installed on this host, so {tools} cannot run."
+)
 
 
 def run_facts(
@@ -369,7 +371,7 @@ def engine_fact(tool_names: Collection[str]) -> str | None:
     needing = [name for name in ("fireants_syn", "trace_borders") if name in tool_names]
     if not needing or engine_available():
         return None
-    return ENGINE_MISSING.format(tools=" and ".join(needing))
+    return FIREANTS_NOT_INSTALLED.format(tools=" and ".join(needing))
 
 
 def section_channels(workspace: Workspace, state: Stack) -> Channels | None:

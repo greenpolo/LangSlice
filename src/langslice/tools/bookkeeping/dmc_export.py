@@ -134,12 +134,12 @@ def export_dmc_brainmap(
     Raises
     ------
     Refused
-        ``BAD_ARGS`` for a channel DMC-BrainMap does not offer, or an atlas
+        ``BAD_ARGUMENT`` for a channel DMC-BrainMap does not offer, or an atlas
         whose axes it cannot read.
     """
     if channel not in DMC_CHANNELS:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             f"channel {channel!r} is not a DMC-BrainMap channel; "
             f"use one of {', '.join(DMC_CHANNELS)}",
         )
@@ -213,7 +213,7 @@ def _warped(state: Stack) -> list[str]:
 def _frame(state: Stack, workspace: Workspace) -> DmcFrame:
     """Give DMC's frame of the job's atlas and plane.
 
-    ``BAD_ARGS`` when DMC cannot read the atlas.
+    ``BAD_ARGUMENT`` when DMC cannot read the atlas.
     """
     context = atlas_space_context(cast("object", workspace.atlas))
     try:
@@ -225,7 +225,7 @@ def _frame(state: Stack, workspace: Workspace) -> DmcFrame:
             state.plane,
         )
     except ValueError as error:
-        raise Refused(RefusalCode.BAD_ARGS, str(error)) from error
+        raise Refused(RefusalCode.BAD_ARGUMENT, str(error)) from error
 
 
 def _row(

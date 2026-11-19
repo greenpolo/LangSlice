@@ -20,7 +20,7 @@ beyond LangSlice's own dependencies (numpy, torch, matplotlib); `pandas`, `reque
 are imported only by STalign's atlas download and analysis helpers, which LangSlice does not call.
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work for
-plugins, `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
+plugins, `BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
 `ToolContext.angles_from_plane`, the `angles` task).
 
 ## Use
@@ -44,7 +44,7 @@ caller of STalign in the process still gets its figures.
 
 - **`stalign_lddmm`** (write, Nonlinear, background; arguments `sections, section_image, atlas_image, mask, kernel_um, fit, displacement_um, sorting, iterations, view`): STalign's 2-D `LDDMM` per section, one
   piece of background work each; a write to a section whose fit runs is refused
-  (`SECTION_BUSY`). `kernel_um` is STalign's `a` (500), the width of the kernel that smooths
+  (`BUSY`). `kernel_um` is STalign's `a` (500), the width of the kernel that smooths
   the velocity, not a Gaussian sigma on the displacement as `smoothness_um` is elsewhere.
   `fit="warp"` (default) holds the transform and bends only; on a section
   that holds a deformation (a landmark warp, an earlier fit) the atlas is first carried through
@@ -52,7 +52,7 @@ caller of STalign in the process still gets its figures.
   sections, while STalign's own landmark term failed on one), and the bend is written with
   `start="current"`: the section keeps that deformation's steps before its own and the record
   names it as its parent. `fit="both"` is refused on a
-  section with a deformation (`HAS_DEFORMATION`). Each landing is its own undo step; the
+  section with a deformation (`PRECONDITION`). Each landing is its own undo step; the
   deformation keeps the call's `settings` as its step's and `engine_settings` (the target
   and atlas grids, 10 and 50 um, and the settings STalign chose) as the record's
   `engine.native_parameters`, which the notice also carries. The notice
@@ -80,7 +80,7 @@ plane search (sigmas 2, muA 3, muB 0). Sorting defaults are STalign's own (`clas
 
 - Rat sagittal s139 with a noisy landmark warp: `stalign_lddmm` bend landed in 33 s (GPU),
   started from the landmark warp; a `mark_damage` on the section while it ran was refused
-  `SECTION_BUSY`.
+  `BUSY`.
 - Carey 04-0180 with the cutting angles set to 0: `stalign_plane_search` on 4 sections, middle
   pitch 11.0 deg and yaw magnitude 5.2 deg against the raters' 10.8 and 5.5 (LangSlice's own
   convention, end to end); one posterior brainstem section read +1.9 deg yaw (the wrong sign).
@@ -89,4 +89,4 @@ plane search (sigmas 2, muA 3, muB 0). Sorting defaults are STalign's own (`clas
 
 ## Limits (the engine's own)
 
-Takes no section mask (it sorts the section's pixels itself; a named mask is refused `MASK_UNSUPPORTED`). One image pair (channels are fitted jointly by STalign but the tool gives one). Its final sorting is saved with the deformation. Brightness: slide 0, tissue 1.
+Takes no section mask (it sorts the section's pixels itself; a named mask is refused `BAD_ARGUMENT`). One image pair (channels are fitted jointly by STalign but the tool gives one). Its final sorting is saved with the deformation. Brightness: slide 0, tissue 1.

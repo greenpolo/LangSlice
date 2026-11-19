@@ -12,7 +12,7 @@ every door is generated from them and from the registry (`tools/catalog.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `langslice.tools.descriptions.render.declare`d | LangSlice's agent (`doors/agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `agent_cli/launch.py`) | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `agent_cli/calls.py`: the commands of the session that sets a job up and checks it (`init`, `launch`, `runs`, `wait`, `env`, `python SCRIPT`) and, over the same toolbox, the verbs `status`, `export_maps` and `review_comments` alone (`catalog.CLI_VERBS`, `on_command_line`; any other verb answers `VERB_OFF` with where it is: an MCP tool, a library method); gates off, `level="auto"`; each call a process of its own | the main session of Claude Code, Antigravity, Codex |
+| agent CLI (`langslice-job`) | `agent_cli/calls.py`: the commands of the session that sets a job up and checks it (`init`, `launch`, `runs`, `wait`, `env`, `python SCRIPT`) and, over the same toolbox, the verbs `status`, `export_maps` and `review_comments` alone (`catalog.CLI_VERBS`, `on_command_line`; any other verb answers `TOOL_OFF` with where it is: an MCP tool, a library method); gates off, `level="auto"`; each call a process of its own | the main session of Claude Code, Antigravity, Codex |
 | library | `library/handle.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 The in-tree engines' tools a run has (`ToolDef.engine`; `deepslice_place`
@@ -69,18 +69,20 @@ bodies, and turned into an answer once per door:
   reply does; a per-section answer carries a refused section as its
   row (`tools.refusal.refused_row`, converted once in the tool's body); a plugin tool's `ToolError` is a `Refused` and is answered
   the same way (`plugins/runtime.py` re-raises it; any other exception of a
-  handler is `PLUGIN_FAILED`);
+  handler is `INTERNAL`);
 - the agent CLI: a verb's reply whose `status` is in
   `core.refusal.FAILED_STATUSES` becomes `Envelope.failure(code, message,
   ...)` (`agent_cli/calls.call`), its exit code from the code
-  (`envelope.exit_code`) and its fix from `tools/descriptions/fixes.FIXES`;
-  the CLI's own refusals (arguments, flags, an unknown verb, a missing job)
-  are made as envelopes where they arise and carried out by
-  `calls._Refusal`, so the fix is read while the job's disabled list applies;
+  (`envelope.exit_code`); the message at the raising site says what to do
+  next, and the envelope adds nothing of its own to it; the CLI's own
+  refusals (arguments, flags, an unknown verb, a missing job) are made as
+  envelopes where they arise, their messages worded the same way, and carried
+  out by `calls._Refusal`;
 - MCP: the reply as the first text block (`mcp/pages.result_blocks`);
-  `start_job` without a job answers `NO_FOLDER`; an exception a tool raises
+  `start_job` without a job answers `BAD_ARGUMENT`; an exception a tool raises
   is answered by the pipeline's `_answer_crashes` step (the toolbox's
-  `answers_crashes`), its type's name as the code (`Refused.from_exception`);
+  `answers_crashes`), `INTERNAL` with the exception's type and text as the
+  message (`Refused.from_exception`);
 - the built-in agent: the reply is the function response;
   `agent/adk_plugins.StrictArgumentsPlugin` answers an argument refusal with
   its payload before the tool runs;
@@ -105,7 +107,7 @@ bodies, and turned into an answer once per door:
   `caller.py`: `Caller` (who a context works for: `Caller.of_tool(spec)` a
   plugin tool, labels `plugin:<tool>`; `Caller.script()` a script's
   `job.context`, label `script`, every property writable the job leaves free,
-  no `work_dir` / `start_work` (`NOT_FOR_SCRIPTS`), `in_tool_call` False: its
+  no `work_dir` / `start_work` (`TOOL_OFF`), `in_tool_call` False: its
   reads sync the job first and its placement writes drop the deformations
   they made stale, `merge_calls` False: each outermost write one undo step;
   `provenance`: a deformation record's `plugin` or `script` entry, the latter
@@ -154,7 +156,7 @@ bodies, and turned into an answer once per door:
   takes `sections=` for a picture of the handler's own, so the saved
   picture records each section's registration)). `runtime.py`: the body of a plugin tool (limits, the context, a
   write tool's call as one undo step, a `ToolError` / `Refused` left to the
-  tool door, any other exception `PLUGIN_FAILED`, the reply and pictures from
+  tool door, any other exception `INTERNAL`, the reply and pictures from
   the `ToolResult`). `provenance.py`:
   `job.json`'s `plugins` and the declarations as the model sees them (also
   `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
@@ -304,7 +306,7 @@ bodies, and turned into an answer once per door:
   `note`, `undo`, `redo` (`steps`, default 1: that many in one call),
   `restore_registration` (`section` lists, `tools.registrations.listing`;
   `sections` `[{id, registration}]` puts them back, per-section `results`,
-  one undo step, and shows their overlays; both or neither `BAD_ARGS`),
+  one undo step, and shows their overlays; both or neither `BAD_ARGUMENT`),
   `submit`) and the fit tools (`tools.affine_fit.elastix_affine_tool`, its
   `turn_deg` and plausibility `flags` worded in the row's `warning`,
   `affine_flag_text`, the knobs under `transform`;
@@ -347,7 +349,7 @@ bodies, and turned into an answer once per door:
   `start_job` sends when it installs a job's tools; the protocol writes a
   duplicate of stdout, the process's own stdout going to stderr, and reads
   through `stdio.protocol_input`). `start_job` takes one
-  argument, `image_folder`; without a job open and without it, `NO_FOLDER`.
+  argument, `image_folder`; without a job open and without it, `BAD_ARGUMENT`.
 - `stdio.py` — `protocol_input()`: the host's input as a duplicate the
   protocol alone reads, the process's stdin (fd 0) on the null device
   meanwhile. On Windows a thread waiting on a synchronous pipe read blocks
@@ -403,25 +405,22 @@ bodies, and turned into an answer once per door:
     process's own command line without *argv*): `ops` and `schema` first
     (run inside `stdout_to_stderr`, their envelope printed after), anything
     else `FOLDER VERB`; returns the exit code.
-  - `envelope.py` — a `FIXES` text that names a tool is a function of
-    `ToolsOn`, called with the job's (`DISABLED`, set by
-    `job.call` once the job is open);
-    `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
-    `next`, `error` {code, message, fix}; printed with `picture_files`, the
+  - `envelope.py` — `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
+    `next`, `error` {code, message}, plus `fix` only where the CLI computed a
+    corrected call itself (an unknown flag); printed with `picture_files`, the
     paths of the artifacts of `PICTURE_KINDS`, second when there are any),
     `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
-    `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`BAD_*`,
-    `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other refusal
-    3; `ARGUMENT_CODES` are `RefusalCode` members); `FIXES` per code;
+    `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`ARGUMENT_CODES`,
+    `BAD_ARGUMENT` and `NOT_FOUND`, are 2, every other refusal 3);
     `stdout_to_stderr()` (stdout holds the envelope only).
   - `launch.py` — `launch --role register|register-scripting`: the exact
     prompt that launches a registration subagent, `result.prompt`, saved by
     `save` in `logs/launches/<six-digit number>_<role>.md` (artifact
     `launch`). `mcp_prompt`: line + `mcp.server.mcp_statement` of the job
-    opened as the MCP server opens it (`ImportError` -> `MCP_MISSING`);
+    opened as the MCP server opens it (`ImportError` -> `ENGINE_UNAVAILABLE`);
     `scripting_prompt`: the same with the paragraph on scripts after the
     opening's (`door_text.scripting_lines`: the interpreter of the job's own
-    environment, made first by `environment.ensure`, `ENV_FAILED` when it
+    environment, made first by `environment.ensure`, `IO_ERROR` when it
     cannot be; `environment.install_command`; `langslice.open_job`; where
     the agent's files go); `facts` (`viewer`, `resolution`, `image_model`, also
     `init`'s); `write_tools`: `TOOLS.md` (artifact `tools`), every verb of the
@@ -437,10 +436,10 @@ bodies, and turned into an answer once per door:
     `arguments`; one verb's entry as the result, several (or every) verbs'
     under `verbs`; declared for the
     job given or of the current folder, only its verbs (`Opened.listed_verbs`;
-    another answers `VERB_OFF`), else `FULL` with a `hint`; a name that is no
-    verb answers `UNKNOWN_VERB`, which without a job says how to name one (its
+    another answers `TOOL_OFF`), else `FULL` with a `hint`; a name that is no
+    verb answers `BAD_ARGUMENT`, which without a job says how to name one (its
     plugin verbs are known only with it); a job
-    that cannot be read answers `JOB_UNREADABLE`; a job command,
+    that cannot be read answers `IO_ERROR`; a job command,
     `command_names()`, answers `command_entry`: summary, usage and `flags`,
     `init`'s from the flags table by `calls.init_flags`, `launch`'s `--role`). Both return the
     envelope. `describe(name, folder)`: what `FOLDER NAME --help` answers,
@@ -461,8 +460,8 @@ bodies, and turned into an answer once per door:
     the declaration's `arguments`, and its default, then the
     call without the unknown ones, a short signature's others at their
     defaults), `FOLDER schema [VERB ...]` (catalog's `schema` for that job),
-    `call` (a verb outside `CLI_VERBS` refused, `VERB_OFF`; open; a verb the
-    job disables refused, `VERB_OFF`; `--dry-run` with `--background` refused, background
+    `call` (a verb outside `CLI_VERBS` refused, `TOOL_OFF`; open; a verb the
+    job disables refused, `TOOL_OFF`; `--dry-run` with `--background` refused, background
     start; a long verb without `--background` where `background.detaching()`
     runs as a background run the call waits for, `_detached`: at most
     `background.WAIT_S`, then answered as `wait` answers, Ctrl-C ending the run
@@ -475,11 +474,11 @@ bodies, and turned into an answer once per door:
     parser `init_parser`: the job flags of `linear run`, `--no-resume`,
     `--notes`, `--viewer` (`add_flags`, the viewers from
     `core.pictures.opening.VIEWER_LIMITS`); `--registration`'s report under `result.registration`,
-    `BAD_REGISTRATION` when the file cannot be read or places nothing),
+    `BAD_ARGUMENT` when the file cannot be read or places nothing),
     `launch` (`launch --role ...`, parsed before the verb flags), `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
     `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or
     while it runs `ok` with its state, `waited_s`, a message and the command
-    that waits again (exit 0), or `RUN_LOST`), and `env` (`environment.command`).
+    that waits again (exit 0), or `INTERNAL`), and `env` (`environment.command`).
   - `environment.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
     the job's own Python environment `env/` (uv's or `venv`'s), a `.pth`
     (`PARENT_PTH`) adding the site-packages of the environment LangSlice runs
@@ -488,7 +487,7 @@ bodies, and turned into an answer once per door:
     packages, pinned, read from its `*.dist-info`); `remove` keeps that list,
     from which `ensure` rebuilds; `ensure` makes it once under
     `logs/env.lock` (`ENV_LOCK`), however many calls ask together, and marks
-    it made (`env/.langslice-ready`, `READY`). `ENV_FAILED` when a step fails.
+    it made (`env/.langslice-ready`, `READY`). `IO_ERROR` when a step fails.
     `python(folder, rest)` — `langslice-job FOLDER python SCRIPT [ARGS ...]`
     (handled by `job.run` before any parsing, the script's arguments
     verbatim; `FOLDER python --help` answers as a job command;
@@ -496,8 +495,8 @@ bodies, and turned into an answer once per door:
     job folder's, made absolute): the
     environment made when missing, the call logged, then this process replaced by the
     environment's python (`os.execv`; `subprocess.call` on Windows); a call
-    that cannot start prints its refusal's envelope (`NO_JOB`,
-    `BAD_ARGS`, `ENV_FAILED`).
+    that cannot start prints its refusal's envelope (`NOT_FOUND`,
+    `BAD_ARGUMENT`, `IO_ERROR`).
   - `transcripts.py` — `langslice session-end --harness claude-code|antigravity`,
     the hook of the Claude Code (`SubagentStop`) and Antigravity (`Stop`)
     plugins: the hook's JSON on stdin, the transcript (`transcript_path`), the
@@ -542,7 +541,7 @@ tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
 section whose inputs changed (`tools.stale`, `STALE_INPUT`), and the reads
 (`kind` "read"), which never wait for another process's writer
 (`Job.reading`: the state as last saved); the lock timing
-out is `JOB_BUSY` (exit 3). Every call runs as its verb (`Job.acting`), so the
+out is `BUSY` (exit 3). Every call runs as its verb (`Job.acting`), so the
 registrations its writes leave are listed as made by it. `tests/test_job_concurrency.py`: an agent write
 during a fit survives, a moved section is refused, concurrent CLI processes
 all land.
@@ -556,10 +555,10 @@ keys are checked recursively. `set_landmarks` defaults to one contextual
 side-by-side template/preprocessed crop for each edited pair (at most four
 with `view=True`; larger batches can set `view=False`); application shows the
 resulting overlay, at `look`'s size (`landmark_triangulation` takes `resolution`
-where `look` does: both are `Offered.SIZE_CHOSEN`; `TOO_MANY_LANDMARK_VIEWS`
-says how many pairs were sent and what to resend; the landmark codes' `FIXES`
-are specific, built for the job's tools; `ATLAS_ENDPOINT_OUTSIDE`, an argument
-code (exit 2), resends the pairs at the inside point its message gives). `grep_atlas`'s `points` (`PicturePoint`) is
+where `look` does: both are `Offered.SIZE_CHOSEN`; `BAD_ARGUMENT`
+says how many pairs were sent and what to resend; the landmark messages
+are specific, built for the job's tools; an endpoint outside the atlas
+(`BAD_ARGUMENT`, exit 2) says to resend the pairs at the inside point its message gives). `grep_atlas`'s `points` (`PicturePoint`) is
 an argument of `grep_atlas`. `status`' `can_change` names the
 landmark tools when they are on. Both honor forced
 views and undo/checkpoint normally. `undo` / `redo` answer with `undone` /

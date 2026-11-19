@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.tools.refusal import unknown_sections
+from langslice.tools.refusal import put_back_words, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -62,13 +62,16 @@ def _placed(job: Job, workspace: Workspace, section: Any) -> tuple[Any, Any, Any
         raise unknown_sections(job.state, [str(section)])
     problem = placement_problem(job.state, record)
     if problem is not None:
-        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {problem}")
+        raise Refused(RefusalCode.PRECONDITION, message=f"{record.id}: {problem}")
     frame = section_frame(job.state, workspace, record)
     try:
         warp = applied_record(job, job.state, record)
     except ValueError as exc:
         name = record.id
-        raise Refused(RefusalCode.DEFORMATION_UNREADABLE, message=f"{name}: {exc}") from exc
+        raise Refused(
+            RefusalCode.IO_ERROR,
+            message=f"{name}: {exc} {put_back_words(job.spec.tools_on)}",
+        ) from exc
     return record, frame, warp
 
 
@@ -96,13 +99,13 @@ def _points(value: Any, width: int, name: str) -> np.ndarray:
     if array.ndim == 1:
         array = array[None, :]
     if array.ndim != 2 or array.shape[1] != width or not np.isfinite(array).all():
-        raise Refused(RefusalCode.BAD_ARGS, message=f"{name} is N x {width} finite numbers.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=f"{name} is N x {width} finite numbers.")
     return array
 
 
 def _frame_of(frame_name: str) -> str:
     if frame_name not in FRAMES:
-        raise Refused(RefusalCode.BAD_ARGS, message=f"frame is one of {list(FRAMES)}.")
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=f"frame is one of {list(FRAMES)}.")
     return frame_name
 
 
@@ -112,8 +115,8 @@ def atlas_points(
     """Section points *xy* (``(N, 2)`` ``[x, y]`` pixels of *frame*: ``file``,
     the image file's own, or ``fit``, the fit grid's) in the atlas, through the
     section's current registration (deformation included). Refused:
-    ``UNKNOWN_SLICE_IDS``, ``INVALID_LINEAR_PLACEMENT``,
-    ``DEFORMATION_UNREADABLE``, ``BAD_ARGS``."""
+    ``NOT_FOUND``, ``PRECONDITION``,
+    ``IO_ERROR``, ``BAD_ARGUMENT``."""
     from langslice.core.fits.deformable.geometry import sample_native
     from langslice.core.maps.section_maps import (
         apply,
@@ -147,7 +150,7 @@ def section_points(
     order) on the section: each projected onto the section's atlas plane,
     then carried back through the section's current registration (its
     deformation's inverse included) to ``[x, y]`` pixels of *frame*. Refused
-    as :func:`atlas_points`; ``DEFORMATION_UNREADABLE`` too for a
+    as :func:`atlas_points`; ``IO_ERROR`` too for a
     deformation without an inverse."""
     from langslice.core.maps.section_maps import apply, file_points
 
@@ -161,7 +164,10 @@ def section_points(
         x, y = file_points(held, warp, cols, rows)
     except ValueError as exc:
         name = record.id
-        raise Refused(RefusalCode.DEFORMATION_UNREADABLE, message=f"{name}: {exc}") from exc
+        raise Refused(
+            RefusalCode.IO_ERROR,
+            message=f"{name}: {exc} {put_back_words(job.spec.tools_on)}",
+        ) from exc
     if _frame_of(frame) == "fit":
         x, y = apply(_fit_matrix(job, workspace, record, held, warp), x, y)
     return SectionPoints(

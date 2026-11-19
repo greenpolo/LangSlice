@@ -96,17 +96,17 @@ def mark_damage(
     (:func:`langslice.core.sections.damage.damage_picture`); a picture that
     fails is ``render_failed``, the write standing.
 
-    Refused (nothing written): ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY``;
-    ``FROZEN`` (other regions on a section whose ``damage`` the job froze); ``BAD_ARGS`` (regions
-    not a list, or a side that does not exist); ``UNKNOWN_REGIONS``;
-    ``NO_SIDES`` (a side on a sagittal stack); ``WRONG_SIDE_PAIR`` (a side the
+    Refused (nothing written): ``NOT_FOUND`` (a section, a region); ``BUSY``;
+    ``FROZEN`` (other regions on a section whose ``damage`` the job froze);
+    ``BAD_ARGUMENT`` (regions not a list, or a side that does not exist);
+    ``PRECONDITION`` (a side on a sagittal stack, or a side the
     section's placement does not have: ``left``/``right`` where its midline runs
     horizontally, ``top``/``bottom`` where it runs vertically), and the other
     side refusals of :func:`langslice.core.atlas.sides.native_left`.
     """
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             message="regions must be a list of acronyms or ids",
         )
     atlas = cast("object", workspace.atlas)
@@ -163,7 +163,10 @@ def mark_damage(
         except Refused as refusal:
             failed = {"error": refusal.code, "message": str(refusal)}
         except IMAGE_FAILURES as exc:
-            failed = {"error": RefusalCode.RENDER_FAILED, "message": str(exc)}
+            failed = {
+                "error": RefusalCode.IO_ERROR,
+                "message": f"{exc}; check the section file opens, then try again.",
+            }
     return DamageRegions(**result, pictures=drawn, render_failed=failed)
 
 

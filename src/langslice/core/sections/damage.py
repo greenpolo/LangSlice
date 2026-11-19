@@ -96,23 +96,23 @@ def checked_entries(atlas: object, regions: Sequence[str | int], plane: Plane) -
     Raises
     ------
     Refused
-        ``BAD_ARGS`` (a side that does not exist, an entry naming no
-        region), ``UNKNOWN_REGIONS``, ``NO_SIDES`` (a side on a sagittal
+        ``BAD_ARGUMENT`` (a side that does not exist, an entry naming no
+        region), ``NOT_FOUND``, ``PRECONDITION`` (a side on a sagittal
         stack).
     """
     try:
         names = normalized_entries(regions)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     if not names:
         return names
     try:
         resolve_entries(atlas, names)
     except ValueError as exc:
-        raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from exc
+        raise Refused(RefusalCode.NOT_FOUND, message=str(exc)) from exc
     if plane == UNSIDED_PLANE and has_sides(names):
         raise Refused(
-            RefusalCode.NO_SIDES,
+            RefusalCode.PRECONDITION,
             message="A sagittal section lies within one hemisphere, so a "
             "region cannot be limited to one side.",
         )
@@ -142,7 +142,7 @@ def side_pair_refusal(
     Returns
     -------
     Refused or None
-        ``WRONG_SIDE_PAIR`` naming the pair to use; None when every side
+        ``PRECONDITION`` naming the pair to use; None when every side
         fits, or the section has no usable placement (not checked).
     """
     try:
@@ -160,7 +160,7 @@ def side_pair_refusal(
         if side in ("top", "bottom"):
             runs = "horizontally"
         return Refused(
-            RefusalCode.WRONG_SIDE_PAIR,
+            RefusalCode.PRECONDITION,
             message=(
                 f"On this section the midline runs {runs}, so its halves "
                 f"are {pair[0]!r} and {pair[1]!r}, not {side!r}: name one "
@@ -292,7 +292,7 @@ def damage_picture(
     is *long_edge* on its long side (``display.default_options``'s size
     when None). Captioned with the marked regions and the note.
 
-    :class:`Refused` ``NO_REGIONS`` for one without marked regions;
+    :class:`Refused` ``PRECONDITION`` for one without marked regions;
     ``ValueError`` (unknown regions) and the side refusals (a side the
     placement cannot define) pass through.
     """
@@ -314,7 +314,7 @@ def damage_picture(
 
     entries = list(record.damaged_regions)
     if not entries:
-        raise Refused(RefusalCode.NO_REGIONS, "The section has no marked regions.")
+        raise Refused(RefusalCode.PRECONDITION, "The section has no marked regions.")
     resolved = resolve_entries(ws.atlas, entries)
     regions = tuple(
         (name, ids) for name, (_region, _side, ids) in zip(entries, resolved, strict=True)

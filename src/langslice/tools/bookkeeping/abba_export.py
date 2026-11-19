@@ -16,7 +16,7 @@ project reopens and edits in ABBA without LangSlice. Beside it,
 out and why, and each warp's distance from the deformation.
 
 ABBA slices a whole stack at one pair of angles, so a stack whose sections'
-angles differ is refused (``BAD_ARGS``); so is an atlas other than the Allen
+angles differ is refused (``BAD_ARGUMENT``); so is an atlas other than the Allen
 mouse CCFv3 or a plane other than coronal. A section without a placement,
 or that cannot be carried, is left out with its reason. Nothing in the
 state changes; a job that persists nothing writes nothing. A script that
@@ -209,10 +209,10 @@ def _check_stack(workspace: Workspace, state: Stack) -> None:
     try:
         check_atlas(workspace.settings.atlas, "asr", state.plane)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, str(exc)) from exc
     if state.mixed_angles:
         raise Refused(
-            RefusalCode.BAD_ARGS,
+            RefusalCode.BAD_ARGUMENT,
             "ABBA slices a stack at one pair of cutting angles; set every "
             "section to the same angles first",
         )
@@ -342,14 +342,14 @@ def export_abba(
     Raises
     ------
     Refused
-        ``BAD_ARGS`` when the sections' cutting angles differ, or for an
-        atlas or plane ABBA cannot open; ``NOTHING_EXPORTED`` when no
+        ``BAD_ARGUMENT`` when the sections' cutting angles differ, or for an
+        atlas or plane ABBA cannot open; ``PRECONDITION`` when no
         section could be written.
     """
     try:
         budget(max_points=landmarks)
     except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGUMENT, str(exc)) from exc
     started = time.perf_counter()
     with job.writing():
         state = copy.deepcopy(job.state)
@@ -357,8 +357,9 @@ def export_abba(
     framed, skipped = _frames(workspace, state)
     if not framed:
         raise Refused(
-            RefusalCode.NOTHING_EXPORTED,
-            "no section has a placement to write",
+            RefusalCode.PRECONDITION,
+            "no section has a placement to write; each skipped section's reason is under "
+            "skipped: place the section first",
             skipped=skipped,
         )
     first = framed[0][1]
@@ -375,8 +376,9 @@ def export_abba(
     errors, slices = warped.errors, warped.slices
     if not slices:
         raise Refused(
-            RefusalCode.NOTHING_EXPORTED,
-            "no section could be written for ABBA",
+            RefusalCode.PRECONDITION,
+            "no section could be written for ABBA; each skipped section's reason is under "
+            "skipped: place the section first",
             skipped=skipped,
         )
     target = job.layout.exports_dir / project_name(state)
