@@ -1,6 +1,6 @@
 """One scale for a section and its atlas, wherever the two are drawn apart.
 
-The physical canvas (:func:`langslice.core.pictures.canvas.physical_views`)
+The physical canvas (:func:`langslice.core.pictures.canvas.physical_layers`)
 puts the atlas on the section's frame at true scale. The pictures that show the
 two as separate panels (the positioning picture, the opening strips) draw the
 whole section image and the atlas framed to its anatomy; this module sizes both

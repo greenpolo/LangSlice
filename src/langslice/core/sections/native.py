@@ -38,8 +38,10 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.failures import IMAGE_FAILURES
+from langslice.core.geometry.pixel_frames import Rendered
 from langslice.core.sections.images import Look
 from langslice.core.sections.reading import IntensityRange, read_pages
+from langslice.core.sections.renders import file_fraction_map
 from langslice.core.stack.section import Section
 from langslice.core.workspace import Workspace
 
@@ -447,7 +449,7 @@ def framed_window(
     look: Look,
     window: tuple[float, ...],
     long_edge: int,
-) -> tuple[Image.Image, float]:
+) -> tuple[Rendered, float]:
     """``(picture, enlarged)``: *window* (``[x0, y0, x1, y1]`` fractions of
     the section's whole picture, turned and flipped as it is shown)
     read from the image file, its long side *long_edge* pixels, in *look*
@@ -471,14 +473,10 @@ def framed_window(
     grid_x, grid_y = np.meshgrid(fx, fy)
     ux, uy = unoriented_fractions(grid_x, grid_y, record.rotation_deg, record.flip)
     found = section_pixels(ws, record, look, ux * width - 0.5, uy * height - 0.5)
-    from langslice.core.fits.landmarks import orientation
-
-    image = Image.fromarray(found.rgb)
-    from langslice.core.geometry.affine import pixel_fraction_map
-
-    image.info["pixel_to_file_fraction"] = (
-        orientation(record) @ pixel_fraction_map((cols, rows), (x0, y0, x1, y1))
-    ).tolist()
+    image = Rendered(
+        Image.fromarray(found.rgb),
+        pixel_to_file_fraction=file_fraction_map(record, (cols, rows), (x0, y0, x1, y1)),
+    )
     return image, found.enlarged
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import replace
 from typing import cast
 
 import numpy as np
@@ -17,20 +18,22 @@ from langslice.core.atlas.borders import (
 from langslice.core.atlas.images import TEMPLATE
 from langslice.core.atlas.load import get_reference_slice
 from langslice.core.failures import IMAGE_FAILURES
+from langslice.core.geometry.pixel_frames import Rendered
 from langslice.core.pictures.canvas import (
     REGION_CONTEXT_ALPHA,
-    _draw_polys,
     border_words,
+    draw_polys,
     line_coverage,
     region_polys,
     regions_left,
     resolve_border_color,
+    zoom_box,
 )
 from langslice.core.pictures.options import BORDERS, DisplayOptions
 from langslice.core.sections.channels import channel_colors
 from langslice.core.sections.images import Look
 from langslice.core.sections.reading import mask_box
-from langslice.core.sections.renders import render_slice
+from langslice.core.sections.renders import file_fraction_map, render_slice
 from langslice.core.stack.section import Angles, Section
 from langslice.core.stack.stack import Stack, plane_angles
 from langslice.core.workspace import Workspace
@@ -164,12 +167,9 @@ def regions_in_plane(
     ]
 
 
-def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
-    from langslice.core.geometry.pixel_frames import cropped_geometry
-    from langslice.core.pictures.canvas import zoom_box
-
-    box = zoom_box(list(zoom), image.size)
-    return cropped_geometry(image.crop(box), image, box)
+def _crop_fraction(whole: Rendered, zoom: tuple[float, ...]) -> Rendered:
+    box = zoom_box(list(zoom), whole.image.size)
+    return whole.cropped(whole.image.crop(box), box)
 
 
 def framed_section(
@@ -180,8 +180,9 @@ def framed_section(
     *,
     long_edge: int | None = None,
     look: Look | str = "options",
-) -> Image.Image:
-    """One section as corrected, the whole image, in the call's look and zoom.
+) -> Rendered:
+    """One section as corrected, the whole image, in the call's look and zoom,
+    with the map from its pixels to the section's image file.
 
     *long_edge* None is the call's picture size (``options.long_edge``);
     *look* overrides the options'. A zoom renders the section
@@ -192,7 +193,7 @@ def framed_section(
     drawn: Look = options.look(state, record) if look == "options" else cast(Look, look)
     whole = render_slice(ctx, record, long_edge=long_edge, look=drawn)
     if options.full_view:
-        return whole
+        return Rendered(whole, pixel_to_file_fraction=file_fraction_map(record, whole.size))
     window = options.window(whole.size)
     x0, y0, x1, y1 = window
     extent = max(abs(x1 - x0), abs(y1 - y0), 1e-3)
@@ -202,7 +203,10 @@ def framed_section(
         long_edge=int(math.ceil(long_edge / min(1.0, extent))),
         look=drawn,
     )
-    return _crop_fraction(larger, tuple(window))
+    return _crop_fraction(
+        Rendered(larger, pixel_to_file_fraction=file_fraction_map(record, larger.size)),
+        tuple(window),
+    )
 
 
 def framed_atlas(
@@ -214,8 +218,10 @@ def framed_atlas(
     long_edge: int | None = None,
     um_per_px: float | None = None,
     angles: Angles | None = None,
-) -> Image.Image:
-    """The atlas at *position_mm*, framed to its anatomy, with the call's lines.
+) -> Rendered:
+    """The atlas at *position_mm*, framed to its anatomy, with the call's lines,
+    and the map from its pixels to the native plane's; its ``border_word`` says
+    the lines drawn.
 
     At *angles*: a section's own for a picture beside that section, the
     stack's view angles for a picture without a section; None, the stack's
@@ -230,7 +236,7 @@ def framed_atlas(
     from langslice.core.atlas.borders import atlas_um_per_px
     from langslice.core.atlas.planes import (
         atlas_mask,
-        atlas_section,
+        atlas_plane,
         atlas_sized,
     )
     from langslice.core.pictures.scale import resized
@@ -244,10 +250,8 @@ def framed_atlas(
 
     pitch, yaw = plane_angles(state, angles)
     if options.atlas_images == ("template",) and not options.lines and options.full_view:
-        from langslice.core.geometry.pixel_frames import cropped_geometry
-
-        whole = atlas_section(ctx, state, position_mm, frame=True, angles=(pitch, yaw))
-        return cropped_geometry(sized(whole), whole)
+        whole = atlas_plane(ctx, state, position_mm, frame=True, angles=(pitch, yaw))
+        return whole.cropped(sized(whole.image))
     plane = state.plane
     labels = np.asarray(
         annotation_slice(
@@ -281,21 +285,15 @@ def framed_atlas(
         mask = labels > 0
     box = mask_box(picture.size, mask) or (0, 0, picture.width, picture.height)
     if not options.full_view:
-        from langslice.core.pictures.canvas import zoom_box
-
         whole = sized(picture.crop(box)).size
         inner = zoom_box(options.window(whole), (box[2] - box[0], box[3] - box[1]))
         box = (box[0] + inner[0], box[1] + inner[1], box[0] + inner[2], box[1] + inner[3])
     cropped = picture.crop(box)
-    shown = sized(cropped).convert("RGB")
-    from langslice.core.geometry.pixel_frames import cropped_geometry
-
-    picture.info["pixel_to_native"] = np.eye(3).tolist()
-    cropped_geometry(shown, picture, box)
+    shown = Rendered(picture, pixel_to_native=np.eye(3)).cropped(sized(cropped).convert("RGB"), box)
     if not options.lines:
         return shown
-    factor = shown.width / float(cropped.width)
-    canvas = np.asarray(shown, dtype=np.uint8).copy()
+    factor = shown.image.width / float(cropped.width)
+    canvas = np.asarray(shown.image, dtype=np.uint8).copy()
     context: list[np.ndarray] = []
     if options.borders:
         context = region_outlines(
@@ -325,7 +323,7 @@ def framed_atlas(
         coverage=coverage,
     )
     if context:
-        _draw_polys(
+        draw_polys(
             canvas,
             context,
             core,
@@ -335,7 +333,7 @@ def framed_atlas(
             alpha=REGION_CONTEXT_ALPHA if options.regions else 1.0,
         )
     if region_lines:
-        _draw_polys(
+        draw_polys(
             canvas,
             region_lines,
             core,
@@ -343,11 +341,11 @@ def framed_atlas(
             origin=origin,
             factor=factor,
         )
-    result = Image.fromarray(canvas, mode="RGB")
-    result.info["pixel_to_native"] = shown.info["pixel_to_native"]
-    if drawn_polys:
-        result.info["border_word"] = border_words(core)
-    return result
+    return replace(
+        shown,
+        image=Image.fromarray(canvas, mode="RGB"),
+        border_word=border_words(core) if drawn_polys else "",
+    )
 
 
 def atlas_caption(

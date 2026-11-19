@@ -6,7 +6,6 @@ sheet's box on the tile under it) and saves it as a picture of its own.
 
 from __future__ import annotations
 
-import importlib
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -22,6 +21,7 @@ from langslice.core.pictures.drawn import collecting
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.pictures import PICTURE_FILE, PictureRecord
+from langslice.tools.looking.atlas import REGIONS_RENDERER, redraw_regions
 from langslice.tools.looking.look import save_pictures
 from langslice.tools.run import as_list
 
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from langslice.tools.run import Run
 
 ZOOM_TOOL = "zoom"
+EXTRA_REDRAWERS = {REGIONS_RENDERER: redraw_regions}
 
 
 @dataclass(frozen=True)
@@ -190,8 +191,6 @@ def zoom_picture(
     ``PRECONDITION`` (nothing to redraw
     from and no saved image) and the other look refusals.
     """
-    importlib.import_module("langslice.tools.looking.atlas")
-
     target = _target(job, picture)
     if (target.recipe or {}).get("renderer") == sheets.RENDERER:
         return _zoom_sheet(job, workspace, target, box, region)
@@ -215,7 +214,7 @@ def zoom_picture(
             )
     else:
         saved = _saved_image(job, target)
-        if saved is None and renderer not in zooms.RENDERERS:
+        if saved is None and renderer not in zooms.redrawers(EXTRA_REDRAWERS):
             raise Refused(
                 RefusalCode.PRECONDITION,
                 picture=target.seq,
@@ -239,6 +238,7 @@ def zoom_picture(
                 store=job.deformations,
                 picture=saved,
                 region=region,
+                extra=EXTRA_REDRAWERS,
             )
     except Refused as refusal:
         if frame is None or region or refusal.code != RefusalCode.BAD_ARGUMENT:

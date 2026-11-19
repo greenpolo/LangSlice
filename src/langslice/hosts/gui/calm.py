@@ -15,7 +15,7 @@ pictures sit on, ``TINT`` the tissue's cool off-white at full brightness,
 ``LINE`` the atlas borders' colour and ``LINE_STRENGTH`` how strongly they
 are laid over the tissue. ``BAR_FROM_BOTTOM``, ``BAR_LEFT``, ``BAR_GREY``,
 ``MIN_BAR`` and ``BAR_LABEL`` say where ``look`` draws its scale bar
-(``captions._draw_scale_bar``): its row from the bottom, its left end, its
+(``captions.draw_scale_bar``): its row from the bottom, its left end, its
 grey, the shortest bar it draws and the label's height above it. The tissue
 mask is found on a copy at most ``MASK_EDGE`` pixels long. What lies on the
 slide beside the tissue is left out of it (``without_debris``): a piece

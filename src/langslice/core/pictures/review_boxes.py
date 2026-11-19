@@ -11,6 +11,8 @@ from collections.abc import Sequence
 
 from PIL import Image, ImageDraw, ImageFont
 
+from langslice.core.pictures.captions import font
+
 __all__ = ["BOX_COLOUR", "Box", "draw_boxes"]
 
 BOX_COLOUR = (255, 214, 10)
@@ -46,7 +48,7 @@ def draw_boxes(
     width, height = content
     draw = ImageDraw.Draw(image)
     line = max(2, round(min(width, height) / 250))
-    font = _font(max(12, min(22, round(min(width, height) / 35))))
+    face = font(max(12, min(22, round(min(width, height) / 35))))
     pixel_boxes: list[list[int]] = []
     for label, (x0, y0, x1, y1) in boxes:
         corners = [
@@ -56,30 +58,23 @@ def draw_boxes(
             round(y1 * (height - 1)),
         ]
         draw.rectangle(corners, outline=BOX_COLOUR, width=line)
-        _label(draw, font, label, corners, content)
+        _label(draw, face, label, corners, content)
         pixel_boxes.append(corners)
     return pixel_boxes
 
 
 def _label(
     draw: ImageDraw.ImageDraw,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    face: ImageFont.FreeTypeFont | ImageFont.ImageFont,
     text: str,
     corners: list[int],
     content: tuple[int, int],
 ) -> None:
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=face)
     w, h = right - left + 8, bottom - top + 6
     x = min(max(corners[0], 0), content[0] - w)
     y = corners[1] - h
     if y < 0:
         y = corners[1]
     draw.rectangle((x, y, x + w - 1, y + h - 1), fill=BOX_COLOUR)
-    draw.text((x + 4 - left, y + 3 - top), text, fill=LABEL_COLOUR, font=font)
-
-
-def _font(px: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    try:
-        return ImageFont.load_default(size=px)
-    except TypeError:
-        return ImageFont.load_default()
+    draw.text((x + 4 - left, y + 3 - top), text, fill=LABEL_COLOUR, font=face)

@@ -183,18 +183,23 @@ the angles in a caption (empty for the flat plane).
   `DISPLACEMENT_OUTSIZED`, `REGION_FOLDED`, `REGION_VANISHED`, `SCALE_CHANGED`, `SHEAR`): not
   refusals, the fit is written; `SECTION_FLAGS`, the whole-section ones.
 - `pictures/placement.py` — a section on its physical canvas at a placement.
-  `draw_canvas` is the one renderer of every placement picture (`look`'s
+  `canvas_layers` is the one builder of every placement picture (`look`'s
   `overlay` and so every change tool's picture of what it wrote, and
   `mark_damage`'s): it draws from the render the options ask for at the
   call's size, the matrix and pivot carried onto it, an applied deformation
-  resampling it first, through `core.pictures.canvas.physical_views`, and returns a
-  `Canvas`: the panels and the `CanvasFrame` they were drawn in.
+  resampling it first, through `core.pictures.canvas.physical_layers`, and
+  returns `CanvasLayers`: the `PlacementLayers` and the `CanvasFrame` they were
+  drawn in; `compose_canvas` finishes them into a `Canvas` (the captioned
+  `image`, the frame, the `PanelFrame` as `panel`) and `draw_canvas` does
+  both. `placement_layers` is the same for one section-position pair under its
+  complete registration (`PlacedLayers`: the `CanvasLayers` and the row
+  facts), the public way to get a picture's layers without its finish.
   `stored_placement` (the six stored numbers as a drawable matrix, identity
   without), `current_warp` (the applied record from a
   `fits.deformation.RecordStore`, None when stale or unreadable),
   `placement_pictures` (one section-position pair on the canvas under the
-  complete registration, in the options' mode; returns `Placed`: images,
-  row facts, the canvas), and the interactive transform's `stage` (the
+  complete registration, in the options' mode, `placement_layers` composed;
+  returns `Placed`: the image, the row facts, the `Canvas`), and the interactive transform's `stage` (the
   working frame, calibration, canvas and resolved pivot; `Refused`
   `IO_ERROR` / `BAD_ARGUMENT`) and `Staged`.
 - `sections/renders.py` — the section renders and their cache: `render_slice`
@@ -254,19 +259,23 @@ the angles in a caption (empty for the flat plane).
 - `pictures/captions.py` — `caption` (a COPY with the text in a band below the
   picture, so a picture pixel is the content's own, the coordinates a zoom
   is given in; `min_width` lays the band out at least that wide; never
-  caption an image a fit measures), `wrap_caption`, the
-  fonts, `scale_bar_px` and the 1 mm bar `_draw_scale_bar`; `angles_label`
+  caption an image a fit measures), `wrap_caption`, the one cached font
+  loader `font(px)` (`caption_font()` the caption's), `scale_bar_px`, the 1 mm
+  bar's place `scale_bar(shape, um_per_px, dark)` (`ScaleBar`: the bar's box,
+  its label's box, its length in micrometres, its colour; `BAR_STYLE` its
+  position and ink) and `draw_scale_bar`, which draws exactly that box; `angles_label`
   and `view_angles_label` (the angles of a picture without a section, said
   to be the median when the sections' differ).
 - Zoom: a renderer takes its options' `zoom` as `[x0, y0, x1, y1]` pixels of
   the picture unzoomed (top-left origin, the convention of Claude's and
   OpenAI's computer-use tools). Each renderer converts it with
   `pictures.options.zoom_fractions` against its own unzoomed content size
-  (`framed_section`, `framed_atlas`, `pictures.placement.draw_canvas`, which draws
-  the unzoomed canvas first for its size, `pictures.deformation.picture` and
+  (`framed_section`, `framed_atlas`, `pictures.placement.canvas_layers`, which
+  computes the unzoomed canvas's content size from its geometry and the long
+  edge (`pictures.canvas.unzoomed_content_size`), `pictures.deformation.picture` and
   `trace_picture` through `pictures.deformation.unzoomed_size`); below that the
   renderers crop by fractions (`pictures.canvas.zoom_box`). A zoomed placement
-  picture (`pictures.views.physical_views` with a crop: `look`'s overlay zoomed, a
+  picture (`pictures.canvas.physical_layers` with a crop: `look`'s overlay zoomed, a
   change tool's picture zoomed to its `restrict_to` regions) is drawn at the
   call's long edge whatever the crop's size, enlarged past the canvas's
   pixels when the crop has fewer (its caption says `canvas pixels enlarged
@@ -274,8 +283,8 @@ the angles in a caption (empty for the flat plane).
   (`pictures.captions.caption(min_width=)`; the picture at the top left, its pixels
   the content's own). A zoomed `section` or `overlay` picture reads its
   section from the image file (`sections/native.py`, below): `pictures.look._section_picture`
-  through `sections.native.framed_window`, `pictures.placement.draw_canvas` by handing
-  `physical_views` a `detail` (`pictures.views.SectionDetail`) whose pixels replace
+  through `sections.native.framed_window`, `pictures.placement.canvas_layers` by handing
+  `physical_layers` a `detail` (`pictures.canvas.SectionDetail`) whose pixels replace
   the render's inside the section, the atlas image blended and the lines
   drawn over them as usual; the captions say `from the image file` (and
   `file pixels enlarged xN` where the file has fewer pixels than the
@@ -288,8 +297,12 @@ the angles in a caption (empty for the flat plane).
   picks a black or white core from the lightness under the lines,
   `CASING_PX` of the other colour on each side, `border_words` for the
   caption; `composite_cased`), `line_coverage` (the one border rasteriser), `regions_left` / `region_polys`, `zoom_box`,
-  `pivot_on_canvas`, `placement_matrices`, `PanelFrame`, `physical_views`
-  (the alignment picture in a view mode).
+  `pivot_on_canvas`, `placement_matrices`, `PanelFrame`, `physical_layers`
+  (the alignment picture in a view mode as `PlacementLayers`: the section
+  alone, the border coverage and its casing, the highlighted regions'
+  coverage, the frame, the scale bar's place and the caption) and
+  `compose_view` (the one way those become the finished picture, a
+  `PhysicalView`: image and `PanelFrame`).
 - `pictures/scale.py` — one micrometres per pixel for a section and its atlas drawn
   as separate panels (the positioning picture, the opening strips): the
   section at the scale its overlay draws it
@@ -484,7 +497,8 @@ the angles in a caption (empty for the flat plane).
   enlarged at most `ATLAS_UPSAMPLE` times, said in the caption.
 - `pictures/zoom.py` — `redraw(recipe, box, ws, state=, store=, picture=,
   long_edge=, region="")`: a box (`[x0, y0, x1, y1]` pixels of the picture's content)
-  drawn again from the source through the recipe's renderer (`RENDERERS`),
+  drawn again from the source through the recipe's renderer (`redrawers`:
+  `look`'s, plus the `extra` ones a caller passes to `redraw`),
   its window composed onto the unzoomed picture's (`box_fractions`,
   `compose`), so a zoom of a zoom maps back; a section or overlay zoom
   reads its section from the image file (`sections/native.py`), a positioning zoom
@@ -658,16 +672,28 @@ the angles in a caption (empty for the flat plane).
 shown section render (before any warp), its micrometres per pixel, the
 position, plane and cutting angles, the placement (`params`: the knobs about
 `pivot`/`pivot_in_section`, or a 2x3 on the shown render's frame;
-`warp`), the zoom window (fractions of the canvas) and the panel size. `physical_views`
+`warp`, the applied record's folder `deformation`), the zoom window (fractions of
+the canvas) and the panel size. `physical_layers`
 builds the placement with `core.pictures.canvas.placement_matrices` (the section
 matrix on the section's frame, and the same map on the canvas,
 `shift(offset) @ section_matrix @ shift(-offset)`) and rasterises every
-atlas border through `core.pictures.canvas.line_coverage`; with `panel_frames` it
-hands back one `core.pictures.canvas.PanelFrame` per picture: the picture size,
-the `content_box` below the caption, the canvas `crop_box` and `factor`
-(canvas px -> picture px), the `CanvasGeometry`, the `section_matrix`
-(section render -> canvas, 3x3) and the lines it drew. `draw_canvas` keeps
-them on `Canvas.panels` and notes each picture (below).
+atlas border through `core.pictures.canvas.line_coverage`, and hands back
+`core.pictures.canvas.PlacementLayers`: the section on the canvas with no
+border, caption or scale bar (RGB), the border and highlighted coverage on
+the same grid (float32; with their casings, which `compose_view` lays in
+`frame.border_color`), the scale bar's `ScaleBar`, and the
+`core.pictures.canvas.PanelFrame` (the content size, the `content_box`, the
+canvas `crop_box` and `factor` (canvas px -> picture px), the
+`CanvasGeometry`, the `section_matrix` (section render -> canvas, 3x3), the
+lines it drew and `border_word`). `compose_view` makes the finished picture
+from them and its `PanelFrame` carries the captioned size. `compose_canvas`
+keeps it on `Canvas.panel` and notes the picture (below). A picture's
+geometry and caption words are never carried in `PIL.Image.info`: a renderer
+that has them returns `core.geometry.pixel_frames.Rendered` (the image, its
+`pixel_to_file_fraction` and `pixel_to_native` maps, its `border_word`):
+`framed_section`, `framed_atlas`, `sections.native.framed_window` and
+`atlas.planes.atlas_plane`; `Rendered.cropped` carries the maps through a
+crop or resize.
 
 `pictures/layers.py` turns a `PanelFrame` into the picture's layers, on the
 picture's own pixel grid (caption band included, empty there):

@@ -18,7 +18,7 @@ import math
 from PIL import Image, ImageDraw
 
 from langslice.core.geometry.pixel_frames import SourceFrame, grid_step
-from langslice.core.pictures.captions import _font
+from langslice.core.pictures.captions import font
 
 GRID_COLOUR = "#7dff3a"
 CHIP_COLOUR = "#101010"
@@ -56,7 +56,7 @@ def draw_grid(image: Image.Image, frame: SourceFrame) -> dict[str, int]:
     low, high = frame.to_source([-0.5, -0.5]), frame.to_source([width - 0.5, height - 0.5])
     step = grid_step(float(max(high - low)))
     draw = ImageDraw.Draw(image)
-    font = _font(max(11, min(16, round(min(width, height) / 45))))
+    face = font(max(11, min(16, round(min(width, height) / 45))))
     xs = [step * k for k in range(math.ceil(low[0] / step), math.floor(high[0] / step) + 1)]
     ys = [step * k for k in range(math.ceil(low[1] / step), math.floor(high[1] / step) + 1)]
     for g in xs:
@@ -67,10 +67,10 @@ def draw_grid(image: Image.Image, frame: SourceFrame) -> dict[str, int]:
         _dashed(draw, (0, py), (width, py), vertical=False)
     for g in xs:
         px = float(frame.to_picture([g, low[1]])[0])
-        _label(draw, font, f"{g}", px + 2, 0, width, height)
-        _label(draw, font, f"{g}", px + 2, height, width, height)
+        _label(draw, face, f"{g}", px + 2, 0, width, height)
+        _label(draw, face, f"{g}", px + 2, height, width, height)
     for g in ys:
         py = float(frame.to_picture([low[0], g])[1])
-        _label(draw, font, f"{g}", 0, py + 2, width, height)
-        _label(draw, font, f"{g}", width, py + 2, width, height)
+        _label(draw, face, f"{g}", 0, py + 2, width, height)
+        _label(draw, face, f"{g}", width, py + 2, width, height)
     return {"step": step}

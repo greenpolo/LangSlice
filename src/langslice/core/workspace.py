@@ -24,6 +24,7 @@ from typing import Any
 from PIL import Image
 
 from langslice.core.atlas.load import get_position_range_mm, load_atlas
+from langslice.core.geometry.pixel_frames import Rendered
 from langslice.core.sections.reading import (
     channel_planes,
     host_preprocess,
@@ -85,7 +86,7 @@ class Workspace:
     frame_cache: OrderedDict[str, tuple[tuple[Any, ...], Any]] = field(
         default_factory=OrderedDict, repr=False
     )
-    plane_cache: OrderedDict[tuple[float, str, float, float, bool], Image.Image] = field(
+    plane_cache: OrderedDict[tuple[float, str, float, float, bool], Rendered] = field(
         default_factory=OrderedDict, repr=False
     )
     image_cache: OrderedDict[tuple[str, str], Any] = field(default_factory=OrderedDict, repr=False)

@@ -1,16 +1,18 @@
 """The physical canvas: a section and its atlas section at true scale, drawn.
 
 :func:`canvas_geometry` places an atlas section on a section's frame at true
-physical scale; :func:`physical_views` draws the alignment picture on it in one
-of :data:`VIEW_MODES` and hands back, per picture, the :class:`PanelFrame` its
-layers are computed from (:mod:`langslice.core.pictures.layers`).
+physical scale; :func:`physical_layers` draws the alignment picture's layers on
+it in one of :data:`VIEW_MODES` (:class:`PlacementLayers`: the section alone,
+the atlas borders' coverage, the :class:`PanelFrame` the picture's layers
+are computed from in :mod:`langslice.core.pictures.layers`, the scale bar),
+and :func:`physical_view` composes the finished, captioned picture from them.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import cv2
@@ -31,7 +33,7 @@ from langslice.core.geometry.affine import (
     physical_affine_matrix,
     resize_long_edge,
 )
-from langslice.core.pictures.captions import _draw_scale_bar, caption
+from langslice.core.pictures.captions import ScaleBar, caption, draw_scale_bar, scale_bar
 from langslice.core.space import Plane
 
 WORKING_MARGIN = 0.12
@@ -231,7 +233,45 @@ def composite_cased(
     return base
 
 
-def _draw_polys(
+def cased_coverage(
+    shape: tuple[int, ...],
+    polys: list[np.ndarray] | tuple[np.ndarray, ...],
+    *,
+    thickness: float,
+    scale: float = 1.0,
+    offset: tuple[float, float] = (0.0, 0.0),
+    origin: tuple[int, int] = (0, 0),
+    factor: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(line, casing)`` coverage of *polys*: the core line of *thickness*
+    and the casing :data:`CASING_PX` wider on each side, both float32 in
+    [0, 1] from :func:`line_coverage` (zeros without polylines)."""
+    if not len(polys):
+        empty = np.zeros(tuple(shape[:2]), dtype=np.float32)
+        return empty, empty.copy()
+    kwargs = {"scale": scale, "offset": offset, "origin": origin, "factor": factor}
+    line = line_coverage(shape, list(polys), thickness=thickness, **kwargs)
+    casing = line_coverage(shape, list(polys), thickness=thickness + 2 * CASING_PX, **kwargs)
+    return line, casing
+
+
+def lay_cased(
+    canvas: np.ndarray,
+    core: str,
+    *,
+    line: np.ndarray,
+    casing: np.ndarray,
+    alpha: float = 1.0,
+) -> None:
+    """The cased line (:func:`composite_cased`) laid on *canvas* (uint8, in
+    place) from its coverage, *alpha* below 1 faint."""
+    blended = composite_cased(
+        canvas.astype(np.float32), core, casing=casing, line=line, alpha=alpha
+    )
+    canvas[:] = np.rint(blended).astype(np.uint8)
+
+
+def draw_polys(
     canvas: np.ndarray,
     polys: list[np.ndarray],
     core: str,
@@ -250,16 +290,19 @@ def _draw_polys(
     the canvas-px -> output-px ratio. Sub-pixel via OpenCV's 4-bit shift.
     The line is the *core* colour (``black`` or ``white``) of *thickness*, over
     a casing of the other colour :data:`CASING_PX` wider on each side, both
-    from :func:`line_coverage`. *alpha* below 1 draws core and casing faint
+    from :func:`cased_coverage`. *alpha* below 1 draws core and casing faint
     (context under highlighted regions).
     """
-    kwargs = {"scale": scale, "offset": offset, "origin": origin, "factor": factor}
-    line = line_coverage(canvas.shape[:2], polys, thickness=thickness, **kwargs)
-    casing = line_coverage(canvas.shape[:2], polys, thickness=thickness + 2 * CASING_PX, **kwargs)
-    blended = composite_cased(
-        canvas.astype(np.float32), core, casing=casing, line=line, alpha=alpha
+    line, casing = cased_coverage(
+        canvas.shape[:2],
+        polys,
+        thickness=thickness,
+        scale=scale,
+        offset=offset,
+        origin=origin,
+        factor=factor,
     )
-    canvas[:] = np.rint(blended).astype(np.uint8)
+    lay_cased(canvas, core, line=line, casing=casing, alpha=alpha)
 
 
 def line_coverage(
@@ -275,9 +318,9 @@ def line_coverage(
     """How much of each output pixel the polylines cover, float32 in [0, 1].
 
     The one rasteriser of every atlas border a picture draws
-    (:func:`_draw_polys` blends it in) and of the picture's border layer
+    (:func:`draw_polys` blends it in) and of the picture's border layer
     (:func:`langslice.core.pictures.layers.picture_layers`), so the two cannot
-    disagree. *shape* is ``(rows, cols)``; the chain is :func:`_draw_polys`'s.
+    disagree. *shape* is ``(rows, cols)``; the chain is :func:`draw_polys`'s.
     """
     ox, oy = float(origin[0]), float(origin[1])
     rows, cols = int(shape[0]), int(shape[1])
@@ -415,7 +458,7 @@ def _blend_template(
     pitch_deg: float,
     yaw_deg: float,
     geometry: CanvasGeometry,
-    opacity: float = 0.35,
+    opacity: float,
     picture: Image.Image | None = None,
 ) -> None:
     """Blend the atlas image under the outlines, at the same placement."""
@@ -503,7 +546,7 @@ def placement_matrices(
     2x3; the canvas matrix (2x3) is the same map with the section pasted at
     *section_offset* on the canvas. *pivot* is on the canvas,
     *pivot_in_section* on the section's frame (it wins). The one place the
-    placement is built: :func:`physical_views` draws with it and the
+    placement is built: draw with it and the
     picture's frame (:class:`PanelFrame`) carries what it returned.
     """
     ox, oy = (float(v) for v in section_offset)
@@ -529,14 +572,16 @@ class PanelFrame:
     """Where one drawn placement panel's pixels sit, kept as it was drawn.
 
     What the picture's layers (:mod:`langslice.core.pictures.layers`) are
-    computed from: the captioned picture's *size* ``(width, height)``, the
-    *content_box* holding the canvas crop above the caption, the *crop_box* on
-    the canvas and *factor* (canvas px -> picture px, one for both axes, as the
-    borders are drawn), the canvas *geometry*, the placement's *section_matrix*
-    (3x3, the section render's frame -> canvas, :func:`placement_matrices`),
-    and the atlas *lines* and *highlighted* region outlines drawn on it (native
-    plane pixels, x/y; empty when none were drawn) at *line_width*, in
-    *border_color* (resolved from "auto" if that is what was asked for).
+    computed from: the picture's *size* ``(width, height)`` (the captioned
+    picture's; the content's in :class:`PlacementLayers`, which has no
+    caption), the *content_box* holding the canvas crop above the caption, the
+    *crop_box* on the canvas and *factor* (canvas px -> picture px, one for
+    both axes, as the borders are drawn), the canvas *geometry*, the
+    placement's *section_matrix* (3x3, the section render's frame -> canvas,
+    :func:`placement_matrices`), and the atlas *lines* and *highlighted*
+    region outlines drawn on it (native plane pixels, x/y; empty when none
+    were drawn) at *line_width*, in *border_color* (resolved from "auto" if
+    that is what was asked for; None when no line is drawn).
     *from_file*: a zoom whose section pixels were read from the image file, how
     many picture pixels one file pixel spans (None: drawn from the render).
     """
@@ -554,8 +599,85 @@ class PanelFrame:
     from_file: float | None = None
     border_color: str | None = None
 
+    @property
+    def border_word(self) -> str:
+        """How the drawn lines are worded in a caption (``black,
+        white-edged``); empty when none are drawn."""
+        return border_words(self.border_color) if self.border_color else ""
 
-def physical_views(
+
+@dataclass(frozen=True)
+class PlacementLayers:
+    """A placement picture as layers, before anything is burned into it.
+
+    *section* is the section on the canvas (the atlas image under it at the
+    asked opacity, an applied warp in it), cropped and sized to the picture's
+    content: RGB, no atlas border, no scale bar, no caption. The atlas
+    borders are coverage arrays on that same pixel grid, float32 in [0, 1]:
+    *borders* the context lines and *highlighted* the highlighted regions'
+    outlines (zeros without any), each at *frame*'s ``line_width`` (the
+    highlighted ones :data:`~langslice.core.atlas.borders.HIGHLIGHT_WIDTH`
+    times as thick), before colour; *borders_casing* and *highlighted_casing*
+    the same lines :data:`CASING_PX` wider on each side. :func:`compose_view`
+    lays them cased in ``frame.border_color`` (the core colour; the casing is
+    the other of black and white, :func:`casing_of`), the context ones at
+    *context_alpha*. *frame* is where the pixels sit on the canvas and in the
+    atlas (its ``size`` is the content's); *scale_bar* where the bar is drawn
+    (None when it does not fit) and *caption* the words under the picture, laid
+    out at least *caption_width* wide.
+    """
+
+    section: Image.Image
+    borders: np.ndarray
+    borders_casing: np.ndarray
+    highlighted: np.ndarray
+    highlighted_casing: np.ndarray
+    context_alpha: float
+    frame: PanelFrame
+    scale_bar: ScaleBar | None
+    caption: str
+    caption_width: int
+
+
+@dataclass(frozen=True)
+class PhysicalView:
+    """One finished placement picture: the captioned *image* and the
+    :class:`PanelFrame` its layers are computed from."""
+
+    image: Image.Image
+    frame: PanelFrame
+
+
+def content_edge(long_edge: int | None, box: tuple[int, int, int, int], zoomed: bool) -> int | None:
+    """The long edge a crop of the canvas at *box* is sized to: *long_edge*,
+    or the crop's own when that is smaller (never upsampled) unless the crop is
+    a zoom, which is enlarged to *long_edge*; None keeps canvas pixels."""
+    if long_edge is None:
+        return None
+    if zoomed:
+        return max(1, int(long_edge))
+    return max(1, min(int(long_edge), max(box[2] - box[0], box[3] - box[1])))
+
+
+def content_size(box: tuple[int, int, int, int], edge: int | None) -> tuple[int, int]:
+    """The ``(width, height)`` a crop of the canvas at *box* has when sized to
+    *edge* (:func:`content_edge`), the size
+    :func:`langslice.core.geometry.affine.resize_long_edge` gives it."""
+    width, height = box[2] - box[0], box[3] - box[1]
+    if edge is None or max(width, height) == edge:
+        return (width, height)
+    scale = edge / float(max(width, height))
+    return (max(1, round(width * scale)), max(1, round(height * scale)))
+
+
+def unzoomed_content_size(canvas_size: tuple[int, int], long_edge: int) -> tuple[int, int]:
+    """The content size of the whole canvas of *canvas_size* at *long_edge*,
+    which a zoom's window is given against: computed, not drawn."""
+    whole = (0, 0, canvas_size[0], canvas_size[1])
+    return content_size(whole, content_edge(long_edge, whole, False))
+
+
+def physical_layers(
     section: Image.Image,
     section_um_per_px: float,
     atlas: Any,
@@ -570,13 +692,12 @@ def physical_views(
     zoom_pixels: Sequence[float] = (),
     atlas_opacity: float = 0.0,
     border_color: str = AUTO_BORDER_COLOR,
-    border_thickness: float = 0.5,
+    border_thickness: float,
     outlines: str = "all",
     depth: int = OVERLAY_DEPTH,
     pivot: tuple[float, float] | None = None,
     label: str = "",
     long_edge: int | None = None,
-    panel_frames: list[PanelFrame] | None = None,
     pivot_in_section: tuple[float, float] | None = None,
     atlas_picture: Image.Image | None = None,
     atlas_name: str = "template",
@@ -584,8 +705,8 @@ def physical_views(
     matrix_label: str = "fitted matrix",
     template_lines: bool = False,
     detail: SectionDetail | None = None,
-) -> list[Image.Image]:
-    """The alignment screen in one of :data:`VIEW_MODES`.
+) -> PlacementLayers:
+    """The alignment screen in one of :data:`VIEW_MODES`, as layers.
 
     Every view is built on the SAME millimetre-true canvas
     (:func:`canvas_geometry`) and the same crop, so a number read off one is
@@ -601,10 +722,10 @@ def physical_views(
     pixels and convert,
     :func:`langslice.core.pictures.options.zoom_fractions`); the crop happens
     before the screen is sized, so it is real magnification up to the canvas's
-    own pixels: each panel's long edge is *long_edge*, or the crop's when that
+    own pixels: the panel's long edge is *long_edge*, or the crop's when that
     is smaller (never upsampled; ``None`` is canvas pixels one to one). A
     caller wanting a magnified zoom draws the canvas from a larger render. The
-    scale bar is redrawn for the magnified micrometres per pixel. *zoom_pixels*
+    scale bar is for the magnified micrometres per pixel. *zoom_pixels*
     is the zoom as the caller gave it (pixels of the unzoomed picture), for the
     caption.
 
@@ -613,9 +734,9 @@ def physical_views(
     or none (``none``). *border_color*
     is the core colour of the cased line: "black" (white casing), "white"
     (black casing) or :data:`AUTO_BORDER_COLOR` ("auto", the default), resolved
-    per picture from the lightness of the picture's own pixels under the lines
+    from the lightness of the picture's own pixels under the lines
     (:func:`resolve_border_color`). *border_thickness* (the core) is 0.25..8
-    output-image pixels (default 0.5), unchanged by zoom or canvas resolution.
+    output-image pixels, unchanged by zoom or canvas resolution.
 
     *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
     canvas centre). *pivot_in_section* gives the pivot on the SECTION's frame
@@ -632,14 +753,10 @@ def physical_views(
     *detail*, for a zoom of the ``overlay`` or ``section`` view, gives the
     section's pixels at points of *section* (pixels, centres at integers): the
     zoom shows them in place of *section*'s own, the atlas image and the lines
-    over them as usual (:func:`langslice.core.pictures.placement.draw_canvas`
+    over them as usual (:func:`langslice.core.pictures.placement.canvas_layers`
     passes the image file's own pixels, :mod:`langslice.core.sections.native`).
     It answers ``(rgb, inside, enlarged)`` or None (the section's own pixels
     then).
-
-    *panel_frames*, when given, receives one :class:`PanelFrame` per image:
-    where its pixels sit, for the picture's layers. Returns the images, each
-    captioned.
     """
     geometry = canvas_geometry(
         section.size,
@@ -721,10 +838,12 @@ def physical_views(
     bare = warped.copy() if detail is not None and zoomed and mode != "template" else None
     opacity = float(np.clip(atlas_opacity, 0.0, 1.0))
     if mode == "section":
-        panels = [(warped, label or "section")]
+        drawn = warped
+        head = label or "section"
         lines = False
     elif mode == "template":
-        panels = [(_template_canvas(), atlas_head)]
+        drawn = _template_canvas()
+        head = atlas_head
         lines = template_lines
     else:
         if atlas_opacity > 0.0:
@@ -739,12 +858,13 @@ def physical_views(
                 opacity=opacity,
                 picture=atlas_picture,
             )
-        panels = [(warped, label or "section")]
+        drawn = warped
+        head = label or "section"
 
     drawn_polys = (list(atlas_lines) if lines else []) + list(highlighted)
     coverage = (
         line_coverage(
-            panels[0][0].shape[:2],
+            drawn.shape[:2],
             drawn_polys,
             thickness=max(float(border_thickness), 1.0),
             scale=geometry.atlas_scale,
@@ -756,94 +876,95 @@ def physical_views(
     line_color, line_width = resolve_border_color(
         border_color,
         border_thickness,
-        rgb=np.asarray(panels[0][0]),
+        rgb=np.asarray(drawn),
         coverage=coverage,
     )
 
     knobs = matrix_label if isinstance(params, np.ndarray) else knob_words(params)
 
-    edge = None
-    if long_edge is not None:
-        edge = (
-            max(1, int(long_edge))
-            if zoomed
-            else max(1, min(int(long_edge), max(box[2] - box[0], box[3] - box[1])))
-        )
-    images: list[Image.Image] = []
-    for panel, head in panels:
-        screen, factor = _to_screen(panel, box, edge)
-        from_file: float | None = None
-        if bare is not None and detail is not None:
-            found = _detailed_screen(bare, box, edge, matrix, geometry.section_offset, detail)
-            if found is not None:
-                screen, from_file = found
-                if mode == "overlay" and opacity > 0.0:
-                    _blend_screen(screen, _template_canvas(), box, edge, opacity)
-        if lines:
-            _draw_polys(
-                screen,
-                atlas_lines,
-                line_color,
-                thickness=line_width,
-                scale=geometry.atlas_scale,
-                offset=geometry.atlas_offset,
-                origin=box[:2],
-                factor=factor,
-                alpha=REGION_CONTEXT_ALPHA if regions else 1.0,
+    edge = content_edge(long_edge, box, zoomed)
+    screen, factor = _to_screen(drawn, box, edge)
+    from_file: float | None = None
+    if bare is not None and detail is not None:
+        found = _detailed_screen(bare, box, edge, matrix, geometry.section_offset, detail)
+        if found is not None:
+            screen, from_file = found
+            if mode == "overlay" and opacity > 0.0:
+                _blend_screen(screen, _template_canvas(), box, edge, opacity)
+    shape = screen.shape[:2]
+    reach = {
+        "scale": geometry.atlas_scale,
+        "offset": geometry.atlas_offset,
+        "origin": box[:2],
+        "factor": factor,
+    }
+    borders, borders_casing = cased_coverage(
+        shape, atlas_lines if lines else [], thickness=line_width, **reach
+    )
+    emphasised, emphasised_casing = cased_coverage(
+        shape, highlighted, thickness=line_width * HIGHLIGHT_WIDTH, **reach
+    )
+    text = (
+        f"{head} @ {position_mm:.3f} mm  pitch {pitch_deg:.2f} yaw {yaw_deg:.2f}\n"
+        f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
+    ).strip()
+    if mode != "overlay" or zoomed or abs(float(factor) - 1.0) > 0.02:
+        where = f"  zoom {[round(float(v)) for v in zoom_pixels]} px" if zoom_pixels else ""
+        text += f"\n{mode}{where}  view {geometry.um_per_px / factor:.2f} um/px"
+        if from_file is not None:
+            text += "  section from its image file" + (
+                f" (file pixels enlarged x{from_file:.1f})" if from_file > 1.05 else ""
             )
-        if highlighted:
-            _draw_polys(
-                screen,
-                highlighted,
-                line_color,
-                thickness=line_width * HIGHLIGHT_WIDTH,
-                scale=geometry.atlas_scale,
-                offset=geometry.atlas_offset,
-                origin=box[:2],
-                factor=factor,
-            )
-        _draw_scale_bar(screen, geometry.um_per_px / factor, dark)
-        text = (
-            f"{head} @ {position_mm:.3f} mm  pitch {pitch_deg:.2f} yaw {yaw_deg:.2f}\n"
-            f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
-        ).strip()
-        if mode != "overlay" or zoomed or abs(float(factor) - 1.0) > 0.02:
-            where = f"  zoom {[round(float(v)) for v in zoom_pixels]} px" if zoom_pixels else ""
-            text += f"\n{mode}{where}  view {geometry.um_per_px / factor:.2f} um/px"
-            if from_file is not None:
-                text += "  section from its image file" + (
-                    f" (file pixels enlarged x{from_file:.1f})" if from_file > 1.05 else ""
-                )
-            elif factor > 1.05:
-                text += f" (canvas pixels enlarged x{factor:.1f})"
-        if regions:
-            text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
-        labelled = caption(
-            Image.fromarray(screen, mode="RGB"),
-            text,
-            min_width=edge if zoomed and edge is not None else 0,
-        )
-        if drawn_polys:
-            labelled.info["border_word"] = border_words(line_color)
-        if panel_frames is not None:
-            panel_frames.append(
-                PanelFrame(
-                    size=labelled.size,
-                    content_box=(0, 0, screen.shape[1], screen.shape[0]),
-                    crop_box=box,
-                    factor=float(factor),
-                    geometry=geometry,
-                    section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
-                    lines=tuple(atlas_lines) if lines else (),
-                    highlighted=tuple(highlighted),
-                    line_width=float(line_width),
-                    mode=mode,
-                    from_file=from_file,
-                    border_color=line_color if drawn_polys else None,
-                )
-            )
-        images.append(labelled)
-    return images
+        elif factor > 1.05:
+            text += f" (canvas pixels enlarged x{factor:.1f})"
+    if regions:
+        text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
+    frame = PanelFrame(
+        size=(shape[1], shape[0]),
+        content_box=(0, 0, shape[1], shape[0]),
+        crop_box=box,
+        factor=float(factor),
+        geometry=geometry,
+        section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
+        lines=tuple(atlas_lines) if lines else (),
+        highlighted=tuple(highlighted),
+        line_width=float(line_width),
+        mode=mode,
+        from_file=from_file,
+        border_color=line_color if drawn_polys else None,
+    )
+    return PlacementLayers(
+        section=Image.fromarray(screen, mode="RGB"),
+        borders=borders,
+        borders_casing=borders_casing,
+        highlighted=emphasised,
+        highlighted_casing=emphasised_casing,
+        context_alpha=REGION_CONTEXT_ALPHA if regions else 1.0,
+        frame=frame,
+        scale_bar=scale_bar(shape, geometry.um_per_px / factor, dark),
+        caption=text,
+        caption_width=edge if zoomed and edge is not None else 0,
+    )
+
+
+def compose_view(layers: PlacementLayers) -> PhysicalView:
+    """The finished picture of *layers*: the section with the cased atlas
+    borders laid on it, then the scale bar, then the caption band. The one
+    way a placement picture is drawn from its layers."""
+    screen = np.asarray(layers.section, dtype=np.uint8).copy()
+    core = layers.frame.border_color
+    if core is not None:
+        for line, casing, alpha in (
+            (layers.borders, layers.borders_casing, layers.context_alpha),
+            (layers.highlighted, layers.highlighted_casing, 1.0),
+        ):
+            if line.any():
+                lay_cased(screen, core, line=line, casing=casing, alpha=alpha)
+    draw_scale_bar(screen, layers.scale_bar)
+    labelled = caption(
+        Image.fromarray(screen, mode="RGB"), layers.caption, min_width=layers.caption_width
+    )
+    return PhysicalView(image=labelled, frame=replace(layers.frame, size=labelled.size))
 
 
 def knob_words(params: Any, sep: str = "  ") -> str:

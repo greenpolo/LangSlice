@@ -23,8 +23,8 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 from langslice.core.pictures.captions import (
-    _caption_font,
     caption,
+    caption_font,
     wrap_caption,
 )
 
@@ -87,7 +87,7 @@ def tile(tiles: Sequence[Tile], long_edge: int, *, title: str) -> Sheet:
     height = int(round(rows * cell_h * scale)) + rows * HEADER_PX + (rows + 1) * GAP_PX
     sheet = Image.new("RGB", (width, height), BACKGROUND)
     draw = ImageDraw.Draw(sheet)
-    font = _caption_font()
+    face = caption_font()
     boxes: list[dict[str, Any]] = []
     for index, picture in enumerate(tiles):
         column, row = index % columns, index // columns
@@ -99,9 +99,9 @@ def tile(tiles: Sequence[Tile], long_edge: int, *, title: str) -> Sheet:
         )
         shrunk = picture.image.convert("RGB").resize(size, Image.Resampling.LANCZOS)
         header = wrap_caption(
-            f"picture {picture.number}  {picture.label}", font, int(round(cell_w * scale)) - 4
+            f"picture {picture.number}  {picture.label}", face, int(round(cell_w * scale)) - 4
         ).split("\n")[0]
-        draw.text((x0 + 2, y0 + 3), header, fill=(255, 255, 255), font=font)
+        draw.text((x0 + 2, y0 + 3), header, fill=(255, 255, 255), font=face)
         top = y0 + HEADER_PX
         sheet.paste(shrunk, (x0, top))
         boxes.append(

@@ -238,7 +238,7 @@ def _native_marks(
     yaw_deg: float,
 ) -> np.ndarray:
     """The marked regions on the panel's native atlas plane, sides resolved
-    through its placement exactly as ``canvas.physical_views`` resolves them
+    through its placement exactly as ``canvas.physical_layers`` resolves them
     for the highlighted outlines."""
     from langslice.core.atlas.sides import restrict
     from langslice.core.pictures.canvas import regions_left
@@ -349,7 +349,7 @@ def damage_picture(
         warp_record=warp,
         matrix_label=transform_words(record, kind, warp=warp is not None),
     )
-    resolved = shown.panels[0].border_color if shown.panels else None
+    resolved = shown.panel.border_color
     atlas_options = replace(options, atlas_channels=("template", "borders"))
     if resolved is not None:
         atlas_options = replace(atlas_options, border_color=resolved)
@@ -368,12 +368,11 @@ def damage_picture(
     )
     panels = []
     for canvas in (shown, atlas):
-        image, panel = canvas.images[0], canvas.panels[0]
         marks = _native_marks(
-            ws, panel, regions, position, state.plane, record.pitch_deg, record.yaw_deg
+            ws, canvas.panel, regions, position, state.plane, record.pitch_deg, record.yaw_deg
         )
-        panels.append(_hatched(image, _picture_mask(panel, marks)))
-    border_word = shown.images[0].info.get("border_word")
+        panels.append(_hatched(canvas.image, _picture_mask(canvas.panel, marks)))
+    border_word = shown.panel.border_word
     text = (
         "marked damaged (hatched): "
         + ", ".join(entries)

@@ -104,14 +104,22 @@ def render_slice(
         prepped = prepped.transpose(rotate)
     if record.flip:
         prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    ctx.render_cache[key] = prepped
+    return prepped
+
+
+def file_fraction_map(
+    record: Section,
+    size: tuple[int, int],
+    box: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0),
+) -> np.ndarray:
+    """3x3 from the pixel centres of a *size* picture of *record*'s section
+    (turned and flipped as the renders are) showing the *box* of the whole
+    picture, to fractions of the section's image file."""
     from langslice.core.fits.landmarks import orientation
     from langslice.core.geometry.affine import pixel_fraction_map
 
-    prepped.info["pixel_to_file_fraction"] = (
-        orientation(record) @ pixel_fraction_map(prepped.size)
-    ).tolist()
-    ctx.render_cache[key] = prepped
-    return prepped
+    return orientation(record) @ pixel_fraction_map(size, box)
 
 
 def _gray(plane: Any) -> Image.Image:
