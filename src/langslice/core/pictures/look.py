@@ -153,6 +153,7 @@ class LookRequest:
     masks: tuple[str, ...] = ()
     depth: int = OVERLAY_DEPTH
     registrations: tuple[tuple[str, int, bool], ...] = ()
+    cutting_angles: tuple[float, float] | None = None
 
     def registration_of(self, section: str) -> tuple[int, bool] | None:
         """``(number, held)`` of the registration *section* is drawn under,
@@ -189,6 +190,11 @@ class LookRequest:
                 if self.registrations
                 else {}
             ),
+            **(
+                {"cutting_angles": [float(v) for v in self.cutting_angles]}
+                if self.cutting_angles is not None
+                else {}
+            ),
         }
 
     @classmethod
@@ -220,7 +226,15 @@ class LookRequest:
                 (str(name), int(number), bool(held))
                 for name, number, held in args.get("registrations") or ()
             ),
+            cutting_angles=_angle_pair(args.get("cutting_angles")),
         )
+
+
+def _angle_pair(value: Any) -> tuple[float, float] | None:
+    """A recipe's ``cutting_angles`` as ``(pitch_deg, yaw_deg)``; None when it has none."""
+    if not value:
+        return None
+    return float(value[0]), float(value[1])
 
 
 @dataclass(frozen=True)
@@ -1023,7 +1037,11 @@ def _atlas_picture(
                 picture = framed_atlas(ws, state, position_mm, options, angles=angles, um_per_px=um)
                 base = picture.size
     section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
-    median = state.drawn_at_median(angles) if section is None else False
+    median = (
+        state.drawn_at_median(angles)
+        if section is None and request.cutting_angles is None
+        else False
+    )
     label = _zoom_tag(request.zoom, base, picture.size) + atlas_caption(
         state, position_mm, options, angles=angles, median=median
     )
@@ -1031,6 +1049,8 @@ def _atlas_picture(
     plane = (
         view_angles_label(angles, median=True)
         if median
+        else f"{angles_label(angles)} (the cutting angles asked for, not written)"
+        if request.cutting_angles is not None
         else f"{angles_label(angles)} (the stack's cutting angles)"
     )
     if section:
@@ -1194,7 +1214,19 @@ def look(
     if request.warp not in WARP_CHOICES:
         raise Refused(RefusalCode.BAD_ARGUMENT, f"warp must be one of {', '.join(WARP_CHOICES)}")
     long_edge = int(request.long_edge or picture_edge(ws))
-    plane = angles if angles is not None else state.view_angles
+    if request.cutting_angles is not None and (request.mode != "atlas" or request.sections):
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT,
+            "cutting_angles draws atlas mode at positions_mm; a section's picture "
+            "is at its own plane. Nothing was drawn.",
+        )
+    plane = (
+        request.cutting_angles
+        if request.cutting_angles is not None
+        else angles
+        if angles is not None
+        else state.view_angles
+    )
     if request.mode == "positioning":
         return _positioning(ws, state, request, long_edge, plane, zoom_edge)
     if request.mode == "atlas":

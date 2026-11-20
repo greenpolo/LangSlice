@@ -27,12 +27,15 @@ import inspect
 import types
 import typing
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ConfigDict, with_config
 from typing_extensions import TypedDict, is_typeddict
 
 from langslice.core.refusal import RefusalCode, Refused
+
+if TYPE_CHECKING:
+    from langslice.core.stack.stack import Stack
 
 
 @with_config(ConfigDict(extra="forbid"))
@@ -285,3 +288,18 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> Refus
         problems=problems,
         message=f"{name}: {message} Nothing was done.",
     )
+
+
+def asked_angles(state: Stack, given: Mapping[str, Any] | None) -> tuple[float, float] | None:
+    """The plane a picture is asked for at: ``cutting_angles``
+    (``pitch_deg``, ``yaw_deg``, either left out keeping the stack's own) as
+    ``(pitch_deg, yaw_deg)``; None when none is given."""
+    if not given:
+        return None
+    pitch, yaw = state.view_angles
+    try:
+        return float(given.get("pitch_deg", pitch)), float(given.get("yaw_deg", yaw))
+    except (TypeError, ValueError):
+        raise Refused(
+            RefusalCode.BAD_ARGUMENT, "cutting_angles takes numbers pitch_deg and yaw_deg."
+        ) from None

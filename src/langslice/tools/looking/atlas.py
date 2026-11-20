@@ -44,7 +44,7 @@ from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.section import Angles
 from langslice.core.stack.stack import Stack
-from langslice.tools.arguments import PicturePoint
+from langslice.tools.arguments import PicturePoint, asked_angles
 from langslice.tools.looking.look import not_shown, save_pictures, split_shown
 from langslice.tools.refusal import named_section
 from langslice.tools.run import as_list
@@ -513,7 +513,10 @@ def redraw_regions(
 
 
 def grep_atlas_view_tool(
-    run: Run, regions: list[str], positions_mm: list[float]
+    run: Run,
+    regions: list[str],
+    positions_mm: list[float],
+    cutting_angles: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """Draw the atlas with only named regions' borders; return the reply.
 
@@ -521,7 +524,7 @@ def grep_atlas_view_tool(
     ----------
     run
         The run the tool is called in.
-    regions, positions_mm
+    regions, positions_mm, cutting_angles
         The declared arguments as the model sent them
         (``tools/descriptions/looking.py``).
 
@@ -531,7 +534,13 @@ def grep_atlas_view_tool(
         The regions drawn, the ones absent from each plane, the positions
         moved into the atlas range, and the pictures with their numbers.
     """
-    done = draw_regions(run.job, run.workspace, as_list(regions), as_list(positions_mm))
+    done = draw_regions(
+        run.job,
+        run.workspace,
+        as_list(regions),
+        as_list(positions_mm),
+        asked_angles(run.job.state, cutting_angles),
+    )
     reply: dict[str, object] = {"status": "ok", "regions": done.regions}
     if done.regions_not_in_plane:
         reply["regions_not_in_plane"] = done.regions_not_in_plane
@@ -551,10 +560,11 @@ def draw_regions(
     workspace: Workspace,
     regions: Sequence[str],
     positions_mm: Sequence[float],
+    angles: tuple[float, float] | None = None,
 ) -> RegionsView:
     """The atlas template at each of *positions_mm* (clamped into the atlas
-    range), at the stack's cutting angles (``Stack.view_angles``), with
-    only the borders of *regions* drawn.
+    range), at *angles* ``(pitch_deg, yaw_deg)`` (None: the stack's cutting
+    angles, ``Stack.view_angles``), with only the borders of *regions* drawn.
     A region may name a side (``"CTX:left"``, as the section is displayed).
 
     Each picture is saved like a ``look`` picture (recipe, caption, number),
@@ -576,7 +586,7 @@ def draw_regions(
         raise Refused(RefusalCode.BAD_ARGUMENT, message="Give at least one position.")
     low, high = workspace.position_range
     used = [min(max(v, low), high) for v in asked]
-    angles = state.view_angles
+    angles = angles if angles is not None else state.view_angles
     edge = picture_edge(workspace)
     with collecting() as notes:
         drawn = [_region_picture(workspace, state, resolved, mm, edge, angles) for mm in used]

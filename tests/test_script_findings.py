@@ -141,3 +141,33 @@ def test_writing_only_cutting_angles_says_so(images: Path) -> None:
         reply = job.position_sections(cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.0}, view=False)
     assert reply["status"] == "ok", reply
     assert reply["cutting_angles_written"]["pitch_deg"] == 1.0, reply
+
+
+def test_atlas_pictures_take_cutting_angles_and_write_none(images: Path) -> None:
+    with langslice.create_job(
+        images, positions=POSITIONS, pixel_size_um=PIXEL_SIZE_UM, preprocess="none"
+    ) as job:
+        before = job.status()["cutting_angles_deg"]
+        tilted = {"pitch_deg": 4.0, "yaw_deg": -3.0}
+        looked = job.look(mode="atlas", positions_mm=[0.15], cutting_angles=tilted)
+        regions = job.grep_atlas_view(regions=["root"], positions_mm=[0.15], cutting_angles=tilted)
+        refused = job.look(mode="overlay", cutting_angles=tilted)
+        after = job.status()["cutting_angles_deg"]
+    assert looked["status"] == "ok", looked
+    assert "yaw -3" in looked["pictures"][0]["caption"], looked["pictures"][0]["caption"]
+    assert regions["status"] == "ok", regions
+    assert refused["status"] == "error", refused
+    assert before == after
+
+
+def test_a_collapsed_affine_fit_is_flagged() -> None:
+    from types import SimpleNamespace
+
+    from langslice.core.fits.flags import FitFlag
+    from langslice.tools.fitting.affine_fit import plausibility_flags
+
+    squashed = SimpleNamespace(
+        physical=SimpleNamespace(scale_x=1.068, scale_y=1.375, shear=0.0, rotation_deg=0.0)
+    )
+    codes = {flag["code"] for flag in plausibility_flags(None, squashed)}
+    assert FitFlag.ANISOTROPIC in codes
