@@ -120,7 +120,13 @@ class JobHandle:
     and arguments as the agent's tool (listed below, ``help(job.look)`` for one).
     Each returns a :class:`~langslice.doors.library.replies.Reply`: the tool's
     reply as a JSON-safe dict, ``reply["artifacts"]`` the picture files (open them
-    to see them), ``reply.images`` the pictures as PIL images. A refusal is a
+    to see them), ``reply.images`` the pictures as PIL images. An artifact is
+    ``{path, kind, index}``; its ``kind`` is ``view`` (the JPEG to open),
+    ``tile`` (a sheet's tile), ``view_json`` (the picture's frame), ``labels``
+    or ``borders`` (its atlas layers), ``index`` the picture's place among
+    the call's pictures and ``label`` (on a ``view`` or ``tile``) what it
+    shows; the picture number ``zoom`` takes is ``id`` in
+    ``reply["pictures"]``. A refusal is a
     reply too: check ``reply["status"]`` and ``reply["error"]``.
 
     The handle's own methods: :meth:`wait` (background fits and traces land),

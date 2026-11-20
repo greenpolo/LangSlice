@@ -186,3 +186,36 @@ def test_a_scripting_agent_is_told_it_may_use_any_method() -> None:
     assert "not limited to LangSlice's tools" in SCRIPTING
     assert "only" not in INSTRUCTIONS
     assert all("any software you judge best" in path.read_text(encoding="utf-8") for path in agents)
+
+
+def test_an_affine_fit_at_a_candidate_plane_writes_nothing(images: Path) -> None:
+    with langslice.create_job(
+        images,
+        positions=POSITIONS,
+        pixel_size_um=PIXEL_SIZE_UM,
+        preprocess="none",
+        tasks=["transform"],
+    ) as job:
+        section = next(iter(POSITIONS))
+        before = job.status()["rows"]
+        candidate = POSITIONS[section] + 0.05
+        proposal = job.context.fits.fit_elastix(section, position_mm=candidate)
+        picture = job.context.pictures.overlay_picture(
+            section, proposal={"transform": proposal.record, "position_mm": candidate}
+        )
+        after = job.status()["rows"]
+    assert proposal.record["fit"]["position_mm"] == candidate
+    assert picture.width > 0
+    assert before == after
+
+
+def test_the_tool_texts_say_what_the_agent_had_to_guess() -> None:
+    from langslice.tools.descriptions.render import declaration
+
+    looked = declaration("look")
+    assert "number (`id`)" in looked.doc
+    assert "below 1 brightens" in str(
+        declaration("make_image").doc + str(declaration("make_image").arguments)
+    )
+    assert "deformation_cleared" in declaration("interactive_transform").doc
+    assert "a mark takes effect at the next fit" in declaration("mark_damage").doc

@@ -314,11 +314,11 @@ positions_mm only: a section's own picture is at its own plane.""",
         "pictures": PerCap(
             capped="""\
 Up to 4 pictures, attached in the order `pictures` lists them, each
-with its number and caption. Pictures past 4 are listed under
+with its number (`id`) and caption. Pictures past 4 are listed under
 `not_shown` with the call that draws them.""",
             uncapped="""\
 Every picture drawn, in the order `pictures` lists them, each with its
-number and caption. With sheet, `pictures` lists the sheets (each
+number (`id`) and caption. With sheet, `pictures` lists the sheets (each
 with its number, caption and its tiles' pictures and boxes) and
 `tiled` the pictures they tile.""",
         ),
@@ -446,7 +446,8 @@ stretched to the full range; empty leaves it.""",
         "gamma": Argument(
             float,
             0.0,
-            "0.1 to 10; 1 or 0 is linear.",
+            "0.1 to 10: each value (0 to 1) is raised to this power, so below 1 "
+            "brightens the mid-tones and above 1 darkens them; 1 or 0 is linear.",
         ),
         "invert": Argument(
             bool,

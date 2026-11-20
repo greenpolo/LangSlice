@@ -52,7 +52,8 @@ region is missing, marking the whole region keeps the anatomy around it
 safe. Small tears, bubbles, stains, low contrast and folds within an
 intact outline are not damage and are not marked. A section is damaged
 exactly when it has marked regions. {left_out} move with the registration because they
-are named by atlas region. One undoable write."""
+are named by atlas region. The section's transform and deformation stay
+as they are: a mark takes effect at the next fit. One undoable write."""
 
 
 def _mask_section_image(on: ToolsOn) -> str:
@@ -135,7 +136,9 @@ identity). The quarter turn is applied first\
 , then the flip. \
 A changed
 orientation keeps the other values: the transform is rebuilt on the new
-orientation, and the reply says so. One undoable write; the image files
+orientation, and the reply says so. A changed transform or orientation
+clears the section's deformation (the reply's deformation_cleared), since
+it was fitted on the old placement. One undoable write; the image files
 are never modified.""",
         """\
 \

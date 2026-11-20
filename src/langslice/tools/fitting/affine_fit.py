@@ -75,6 +75,7 @@ from langslice.tools.stale import section_inputs, stale_refusal
 
 if TYPE_CHECKING:
     from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -403,6 +404,28 @@ def _fit_failure(job: Job, section_id: str, exc: Exception) -> Refused:
     return Refused(RefusalCode.FIT_FAILED, message=message)
 
 
+def trial_placement(
+    state: Stack,
+    record: Section,
+    position_mm: float | None,
+    angles: tuple[float, float] | None,
+) -> tuple[Stack, Section]:
+    """*state* and *record* with the section moved to a candidate plane
+    (None keeps its own position or angles) and its deformation dropped,
+    copies the job never sees: what a fit at a candidate plane reads."""
+    moved = record.model_copy(
+        update={
+            "position_mm": record.position_mm if position_mm is None else float(position_mm),
+            "angles": record.angles if angles is None else (float(angles[0]), float(angles[1])),
+            "deformation": None,
+        }
+    )
+    trial = state.model_copy(
+        update={"slices": [moved if item.id == record.id else item for item in state.slices]}
+    )
+    return trial, moved
+
+
 def elastix_fit(
     job: Job,
     workspace: Workspace,
@@ -415,9 +438,13 @@ def elastix_fit(
     marked: bool = True,
     section_image: str = "preprocessed",
     edges: bool = True,
+    position_mm: float | None = None,
+    angles: tuple[float, float] | None = None,
 ) -> core_affine.ElastixFit:
     """One Elastix affine of the section from its current placement, written
-    nowhere (a script's ``job.context.fit_elastix``):
+    nowhere (a script's ``job.context.fit_elastix``), or with *position_mm*
+    and *angles* ``(pitch_deg, yaw_deg)`` (None: the section's own) at a
+    candidate plane, its in-plane start the section's current transform:
     :class:`langslice.core.fits.affine.ElastixFit` (``params``, the six
     normalized numbers; ``report``; ``engine``; ``inputs``, what it read).
     *restrict_to* / *exclude*
@@ -431,9 +458,12 @@ def elastix_fit(
     the atlas does not have, a region too small), ``STALE_INPUT``,
     ``PRECONDITION``, ``FIT_FAILED``.
     """
-    record = named_section(job.state, section)
-    if record.deformation:
+    state = job.state
+    record = named_section(state, section)
+    if record.deformation and position_mm is None and angles is None:
         raise refit_refusal(record)
+    if position_mm is not None or angles is not None:
+        state, record = trial_placement(state, record, position_mm, angles)
     try:
         resolved = resolve_image(workspace.atlas, str(atlas_image))
     except ValueError as exc:
@@ -451,7 +481,7 @@ def elastix_fit(
     try:
         with engine_output(job.engine_log, f"Elastix affine of {record.id}"):
             fit = core_affine.elastix_affine(
-                job.state,
+                state,
                 workspace,
                 record,
                 start,
@@ -476,7 +506,7 @@ def elastix_fit(
             ),
         ) from exc
     block = inputs_block(
-        job.state,
+        state,
         workspace,
         record,
         section_image=section_image,
