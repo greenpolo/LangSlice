@@ -121,13 +121,17 @@ def _turn_deg(previous: StoredAffine | None, fit: FittedAffine) -> float:
 
 SCALE_CHANGE_LIMITS = (0.8, 1.25)
 SHEAR_CHANGE_LIMIT = 0.15
+ANISOTROPY_LIMIT = 1.25
 
 
 def plausibility_flags(previous: StoredAffine | None, fit: FittedAffine) -> list[dict[str, Any]]:
     """An affine fit's implausible changes from the section's *previous*
     transform (none: the identity), as the deformable fits' flags are given:
-    ``SCALE_CHANGED`` (``scale``, ``previous``, ``limits`` per axis ratio) and
-    ``SHEAR`` (``shear``, ``previous``, ``limit`` on the change)."""
+    ``SCALE_CHANGED`` (``scale``, ``previous``, ``limits`` per axis ratio),
+    ``SHEAR`` (``shear``, ``previous``, ``limit`` on the change) and
+    ``ANISOTROPIC`` (``scale``, ``limit``: one axis scaled more than
+    :data:`ANISOTROPY_LIMIT` times the other, a fit that collapsed onto the
+    wrong anatomy more often than a section squashed in cutting)."""
     before = physical_knobs(previous)
     after = fit.physical
     scale = [float(value or 1.0) for value in (after.scale_x, after.scale_y)]
@@ -141,6 +145,14 @@ def plausibility_flags(previous: StoredAffine | None, fit: FittedAffine) -> list
                 "scale": [round(v, 3) for v in scale],
                 "previous": [round(v, 3) for v in held],
                 "limits": [low, high],
+            }
+        )
+    if min(scale) > 0 and max(scale) / min(scale) > ANISOTROPY_LIMIT:
+        flags.append(
+            {
+                "code": FitFlag.ANISOTROPIC,
+                "scale": [round(v, 3) for v in scale],
+                "limit": ANISOTROPY_LIMIT,
             }
         )
     shear, was = float(after.shear or 0.0), float(before.shear or 0.0)
@@ -572,6 +584,13 @@ def affine_flag_text(flag: Mapping[str, Any]) -> str:
             f"{previous}, more than a section shrinks or swells; it may have "
             "stretched the section over atlas it does not hold. Compare its "
             "picture with the previous one."
+        )
+    if flag.get("code") == FitFlag.ANISOTROPIC:
+        return (
+            f"ANISOTROPIC: this fit scales the section by {flag.get('scale')}, one "
+            f"axis more than {flag.get('limit')} times the other; a section is "
+            "rarely squashed that much, so the fit may have collapsed onto the "
+            "wrong anatomy. Look at its picture, and undo it if so."
         )
     if flag.get("code") == FitFlag.SHEAR:
         return (

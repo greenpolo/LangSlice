@@ -36,7 +36,9 @@ class AffineView:
     ``plugin:<tool>``...), the six normalized numbers ``[a, b, tx, c, d, ty]``
     (``docs/reference/file_formats.md``), the knobs they are in (``rotation_deg``,
     ``scale_x``, ``scale_y``, ``shear``, ``translate_x_mm``, ``translate_y_mm``,
-    ``pivot``), and whether it mirrors the section."""
+    ``pivot``), and whether it mirrors the section: ``kind``, ``matrix``
+    (None when it holds no numbers), ``knobs`` (None when it was not made
+    from them) and ``mirrored``."""
 
     kind: str | None
     matrix: tuple[float, ...] | None
@@ -46,7 +48,39 @@ class AffineView:
 
 @dataclass(frozen=True)
 class SectionView:
-    """One section as the job holds it now."""
+    """One section as the job holds it now (``ctx.reads.section``).
+
+    Attributes
+    ----------
+    id
+        The section's filename.
+    index
+        Its place in the stack's order, from 0.
+    file_size
+        The image file's ``(width, height)`` in pixels.
+    pixel_size_um
+        Micrometres per file pixel; None when the job knows none.
+    pixel_size_source
+        Where that size came from: ``host`` (given when the job was made),
+        ``file`` (the image file's own tags) or empty (none).
+    position_mm
+        Atlas millimetres along the slicing axis from the anterior edge.
+    angles
+        The section's cutting angles ``(pitch_deg, yaw_deg)``.
+    flip, rotation_deg
+        Its orientation: mirrored left-right, then turned 0, 90, 180 or 270.
+    affine
+        Its in-plane transform (:class:`AffineView`); None before it has one.
+    deformation
+        The applied deformation's ``key``, ``kind`` and ``steps``; None
+        without one.
+    damaged_regions, damage_note
+        The atlas regions ``mark_damage`` marked as lost, and its note.
+    layers
+        The names of the layers it shows.
+    frozen
+        The properties the job does not let anyone change on it.
+    """
 
     id: str
     index: int
@@ -67,6 +101,25 @@ class SectionView:
 
 @dataclass(frozen=True)
 class AtlasView:
+    """The job's atlas (``ctx.reads.atlas()``).
+
+    Attributes
+    ----------
+    name
+        The BrainGlobe atlas name, such as ``allen_mouse_25um``.
+    resolution_um
+        Micrometres per voxel along each of the atlas's axes.
+    orientation
+        BrainGlobe's three-letter axis order (``asr``: anterior to posterior,
+        superior to inferior, right to left).
+    species
+        The atlas's species.
+    plane
+        The cutting plane of the job's sections.
+    shape
+        The volume's shape in voxels, in the atlas's axis order.
+    """
+
     name: str
     resolution_um: tuple[float, ...]
     orientation: str
@@ -87,7 +140,10 @@ class SectionRaster:
     :meth:`mask_to_section_px` turns a raster computed on ``array`` into one in
     the file's orientation (a raster covers the whole file whatever its size, so
     needs no scaling); ``Layer.labels(mask, frame="oriented")`` does that when
-    the layer is added.
+    the layer is added. ``rotation_deg`` and ``flip`` are the orientation
+    ``array`` was turned by. ``file_size`` is the file's ``(width, height)``,
+    ``pixel_size_um`` the micrometres of one file pixel (None when the job
+    knows none) and :attr:`um_per_px` those of one pixel of ``array``.
     """
 
     id: str
@@ -95,6 +151,14 @@ class SectionRaster:
     file_size: tuple[int, int]
     rotation_deg: int
     flip: bool
+    pixel_size_um: float | None = None
+
+    @property
+    def um_per_px(self) -> float | None:
+        """Micrometres of one pixel of ``array``; None without a pixel size."""
+        if self.pixel_size_um is None:
+            return None
+        return self.pixel_size_um * max(self.file_size) / max(self.array.shape[:2])
 
     def _matrix(self) -> np.ndarray:
         """3x3: oriented edge fractions to file edge fractions."""
@@ -138,7 +202,12 @@ def unorient_raster(raster: np.ndarray, rotation_deg: int, flip: bool) -> np.nda
 
 @dataclass(frozen=True)
 class LayerRef:
-    """A layer registered on a section."""
+    """A layer registered on a section: its ``id``, the ``section``'s
+    filename, its ``name`` (what ``look``'s ``layers`` takes), its ``kind``
+    (``points``, ``lines``, ``labels``, ``scalar`` or ``picture``), the
+    ``frame`` its coordinates are in (``section_px``, ``atlas_um`` or
+    ``oriented``) and the ``file`` that holds it, relative to the job
+    folder."""
 
     id: str
     section: str
@@ -422,12 +491,14 @@ class Reads:
             image = render_slice(workspace, record, long_edge=edge, look=look)
         except ValueError as exc:
             raise ToolError(RefusalCode.BAD_ARGUMENT, str(exc)) from exc
+        pixel_size, _source = workspace.calibration(record.id)
         return SectionRaster(
             id=record.id,
             array=np.asarray(image.convert("RGB")),
             file_size=render_sizes(workspace, record.id).file_size,
             rotation_deg=int(record.rotation_deg),
             flip=bool(record.flip),
+            pixel_size_um=None if pixel_size is None else float(pixel_size),
         )
 
     def layers(self, section: object) -> list[LayerRef]:

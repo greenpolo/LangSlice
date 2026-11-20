@@ -21,7 +21,6 @@ sections put back.
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
@@ -97,11 +96,12 @@ def _elsewhere(state: Stack, section: Section, entry: Row) -> str | None:
     deformation = entry.deformation
     if deformation is None:
         return None
-    trial = dataclasses.replace(
-        section,
-        flip=entry.flip,
-        rotation_deg=entry.rotation_deg,
-        transform=entry.transform,
+    trial = section.model_copy(
+        update={
+            "flip": entry.flip,
+            "rotation_deg": entry.rotation_deg,
+            "transform": entry.transform,
+        }
     )
     if deformation.linear_key == linear_key(state, trial):
         return None

@@ -54,6 +54,14 @@ class FitFrame:
     ``inputs.section_image``); ``stain`` is the section's ``preprocessed``
     image the same way (``stain=True`` is ``image="preprocessed"``), the
     picture the native fits read by default; each None unless asked for.
+    ``position_mm`` and ``angles`` ``(pitch_deg, yaw_deg)`` are the placement
+    the plane was cut at. ``applied_map`` is the applied deformation as a
+    ``(H, W, 2)`` map giving each ``image`` pixel's native atlas ``(x, y)``;
+    None without a deformation. ``damage_margin_mm`` is the margin that
+    widens ``excluded`` into ``damage_zone``. ``atlas_resolved`` maps each
+    atlas image name asked for to the image it was read as (``"nissl"`` to
+    ``template`` on an atlas whose template is a Nissl), and
+    ``atlas_image_note`` says so in words; None otherwise.
     """
 
     id: str

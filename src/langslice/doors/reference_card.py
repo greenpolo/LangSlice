@@ -178,8 +178,9 @@ A registration agent has these as MCP tools; a script has them as methods (Pytho
 
 ## Python
 `import langslice; job = langslice.open_job("{layout.folder}")`; the verbs are methods
-with the same arguments {example}; `help(job)` lists every one and the handle's own
-methods, `help(langslice)` the rest of the library. Each returns, once its pictures are
+with the tools' arguments and some only a script has {example}; `help(job)` lists every
+one and the handle's own methods, `help(job.NAME)` one's arguments, `help(langslice)`
+the rest of the library. Each returns, once its pictures are
 on disk, a JSON-safe dict: the tool's reply in full (status rows with every field, null
 where unset) plus `artifacts`, the files of its pictures; `reply.images` holds the
 pictures as PIL images.

@@ -11,7 +11,7 @@ from typing import Literal
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.sections import images
 from langslice.job.settings.tools_on import ToolsOn
-from langslice.tools.arguments import PicturePoint
+from langslice.tools.arguments import CuttingAngles, PicturePoint
 from langslice.tools.descriptions.description import (
     REQUIRED,
     Argument,
@@ -299,6 +299,15 @@ Empty draws none.""",
             _look_sheet,
             offered=Offered.UNCAPPED,
         ),
+        "cutting_angles": Argument(
+            CuttingAngles,
+            {},
+            """{"pitch_deg": <number>, "yaw_deg": <number>}: draw the
+atlas planes at these cutting angles instead of the stack's, to compare
+a section with planes at other angles before writing any; either left
+out keeps the stack's. Writes nothing. Atlas mode with
+positions_mm only: a section's own picture is at its own plane.""",
+        ),
     },
     returns="${pictures}",
     slots={
@@ -518,7 +527,8 @@ GREP_ATLAS_VIEW = ToolDescription(
     body=(
         """\
 Only the named regions' borders are drawn, at the stack's cutting
-angles. Look highlights no regions; this tool does.""",
+angles or the cutting_angles given. Look highlights no regions; this
+tool does.""",
         _grep_atlas_view_compare,
     ),
     arguments={
@@ -535,6 +545,14 @@ Acronyms, names or ids, descendants included; "CTX:left" or
             """\
 Atlas positions in millimetres along the slicing axis;
 a position outside the atlas is clamped into its range.""",
+        ),
+        "cutting_angles": Argument(
+            CuttingAngles,
+            {},
+            """{"pitch_deg": <number>, "yaw_deg": <number>}: draw the
+atlas planes at these cutting angles instead of the stack's, to compare
+a section with planes at other angles before writing any; either left
+out keeps the stack's. Writes nothing.""",
         ),
     },
     returns="""\

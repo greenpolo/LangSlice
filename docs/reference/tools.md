@@ -233,6 +233,7 @@ Draws pictures of sections and the atlas. Writes nothing.
 | `registrations` | none | `{filename: number}`: draw a section under an earlier [registration](#restore_registration) of its own, writing nothing. |
 | `resolution` | 0 (job's size) | Long edge in pixels. Offered only when the job's [`image_resolution`](settings.md#pictures) is `auto`. |
 | `sheet` | false | Tile the pictures into sheets of up to 16. Agent CLI and library only. |
+| `cutting_angles` | the stack's | `{"pitch_deg": number, "yaw_deg": number}`: draw `atlas` mode at `positions_mm` at these angles instead of the stack's, writing nothing; either left out keeps the stack's. Refused with sections or in another mode. |
 
 Atlas borders are drawn as cased lines: a black core with a white edge on
 light tissue, a white core with a black edge on dark tissue; the caption
@@ -436,6 +437,7 @@ Writes nothing.
 |---|---|---|
 | `regions` | (required) | Regions, descendants included; `"CTX:left"` names one side. |
 | `positions_mm` | (required) | Positions; one outside the atlas is clamped into its range. |
+| `cutting_angles` | the stack's | `{"pitch_deg": number, "yaw_deg": number}`: draw the planes at these angles instead of the stack's, writing nothing; either left out keeps the stack's. |
 
 **Switch off:** `grep_atlas_view`.
 
@@ -690,7 +692,9 @@ agent CLI and in the library only. See
 Sets where sections sit along the slicing axis, and the stack's cutting
 angles. A value outside the atlas range is clamped into it and reported. The
 stack's order follows the positions. A changed position or angle clears the
-deformation of each section it moves.
+deformation of each section it moves. The reply lists the positions
+`written` and, when `cutting_angles` was given, the stack's angles as
+`cutting_angles_written` (`pitch_deg`, `yaw_deg`).
 
 | Argument | Default | What it does |
 |---|---|---|
@@ -766,7 +770,9 @@ core count; below 16 cores they are fitted in turn).
 
 A fit that changes the scale along either axis by more than a factor of 0.8
 to 1.25 is flagged `SCALE_CHANGED`, one that changes the shear by more than
-0.15 `SHEAR`, and one that turns the section more than 45 degrees says so. A
+0.15 `SHEAR`, one that scales one axis more than 1.25 times the other
+`ANISOTROPIC`, and one that turns the section more than 45 degrees says so.
+A flag warns; the fit is written, and `undo` takes it back. A
 region too small for Elastix is refused (`BAD_ARGUMENT`).
 
 **In a run when** Linear is on. **Switch off:** `elastix_affine`.

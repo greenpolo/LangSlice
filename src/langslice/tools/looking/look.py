@@ -40,6 +40,7 @@ from langslice.core.pictures.sizes import (
 )
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.pictures import has_frame, view_number
+from langslice.tools.arguments import asked_angles
 from langslice.tools.refusal import named_sections
 from langslice.tools.run import as_list, pictured
 
@@ -173,6 +174,7 @@ def look_tool(
     masks: list[str] | None = None,
     registrations: dict[str, int] | None = None,
     sheet: bool = False,
+    cutting_angles: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """Draw and save the pictures of one ``look`` call; return its reply.
 
@@ -183,7 +185,7 @@ def look_tool(
     mode, sections, images, positions_mm, atlas_layers, atlas_opacity, warp
         The declared arguments as the model sent them
         (``tools/descriptions/looking.py``).
-    resolution, layers, depth, masks, registrations, sheet
+    resolution, layers, depth, masks, registrations, sheet, cutting_angles
         More of the declared arguments, as sent.
 
     Returns
@@ -206,6 +208,7 @@ def look_tool(
         layers=tuple(as_list(layers)),
         depth=depth,
         masks=tuple(as_list(masks)),
+        cutting_angles=asked_angles(run.job.state, cutting_angles),
     )
     edge, note = requested_edge(run, request.long_edge)
     sheet_edge = int(run.box.max_view_edge) if sheet else None
@@ -366,6 +369,7 @@ def look_pictures(
         masks=mask_names,
         depth=depth,
         registrations=shown_under,
+        cutting_angles=request.cutting_angles,
     )
     with collecting() as notes:
         drawn = looks.look(workspace, state, request, store=job.deformations)

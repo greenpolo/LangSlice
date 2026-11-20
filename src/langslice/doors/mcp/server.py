@@ -81,8 +81,7 @@ READ_ONLY_TOOLS = frozenset(name for name, verb in VERBS.items() if verb.kind ==
 INSTRUCTIONS = (
     "LangSlice places histology sections in a brain atlas. The job comes in the message "
     "that launched you; call `start_job` with its folder first: it opens the job and gives "
-    "you its tools. Read every show_stack page before writing. Work only through the "
-    "LangSlice tools and finish with `submit`."
+    "you its tools. Read every show_stack page before writing, and finish with `submit`."
 )
 
 

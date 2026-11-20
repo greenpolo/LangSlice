@@ -61,6 +61,10 @@ PROTOCOL_UNKNOWN = (
     "are missing."
 )
 STACK_ANGLES = "- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
+STARTING_ANGLES = (
+    "- Stack-wide cutting angles as set now: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg; "
+    "a starting setting, not a measurement of this brain."
+)
 
 
 def mixed_angles(on: ToolsOn) -> str:
@@ -197,7 +201,7 @@ def run_facts(
         RANGE.format(axis=axis, low=low, high=high),
         AXIS_ENDS.format(low=low, low_end=axis_ends[0], high_end=axis_ends[1]),
         _protocol_fact(state),
-        _angles_fact(state, spec.tools_on),
+        _angles_fact(state, spec.tools_on, supplied=bool(spec.inputs.get("angles"))),
         *_section_facts(spec, state),
         *_change_facts(spec),
     ]
@@ -219,11 +223,14 @@ def _protocol_fact(state: Stack) -> str:
     return PROTOCOL.format(interval=interval, thickness=thickness) + tail
 
 
-def _angles_fact(state: Stack, on: ToolsOn) -> str:
+def _angles_fact(state: Stack, on: ToolsOn, *, supplied: bool) -> str:
+    """The statement's line on the cutting angles: supplied ones as a fact,
+    the job's own setting as a starting point."""
     if state.mixed_angles:
         return mixed_angles(on)
     pitch, yaw = state.stack_angles
-    return STACK_ANGLES.format(pitch=pitch, yaw=yaw)
+    words = STACK_ANGLES if supplied else STARTING_ANGLES
+    return words.format(pitch=pitch, yaw=yaw)
 
 
 def _section_facts(spec: JobSpec, state: Stack) -> list[str]:

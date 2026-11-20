@@ -159,7 +159,10 @@ about the pivot, the canvas centre),
 the size), "shear" (a slant applied before the rotation: each
 point moves sideways by shear times its distance below the pivot,
 in units of scale_x), "translate_x_mm" (right) and
-"translate_y_mm" (down). A section appears once per call.""",
+"translate_y_mm" (down). Each value moves the section on the
+atlas, which keeps its place in the picture: a larger scale draws the
+section larger, so the atlas borders sit smaller on it. A section
+appears once per call.""",
         ),
         "view": Argument(
             bool,
