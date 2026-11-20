@@ -1,35 +1,46 @@
 """LangSlice: register histology sections to BrainGlobe atlases.
 
-The library a script uses (one import path, nothing of the agent framework
-loaded)::
+Start here. The library a script uses, one import path, nothing of the agent
+framework loaded::
 
     import langslice
 
     job = langslice.open_job("/data/brain1")   # a job folder, or its images
-    job.status()                                # the verbs, as methods
-    xyz = langslice.coordinate_map(".../view.json")   # atlas µm per pixel
-    atlas = langslice.load_atlas("allen_mouse_25um")  # a BrainGlobe atlas
+    help(job)                                   # every tool of this job
+    job.status()                                # a tool, as a method
+    reply = job.look(mode="overlay", sections=["s01.tif"])
+    reply["artifacts"]                          # the picture files
 
-    model = langslice.image_model("openai-oauth")     # or a profile of your own
-    job = langslice.create_job("/data/brain1", positions=..., image_model=model)
-    job.trace_borders(section="s01.tif")              # any verb, by name
+Where everything is:
 
-- :func:`open_job` (:mod:`langslice.doors.library.handle`), :func:`create_job`
-  (:mod:`langslice.doors.library.handle`): the job's verbs as methods, the same
-  names and arguments as the agent tools and ``langslice job FOLDER VERB``
-  (``langslice job FOLDER ops``, ``langslice job FOLDER schema VERB``); ``create_job`` makes
-  the job of a folder of sections.
-- :func:`image_model`, :func:`default_prompt`
-  (:mod:`langslice.providers.profiles`): the image model profile the border
-  trace calls (a provider's model and LangSlice's prompt, or a model and
-  prompt of your own), and LangSlice's prompt text to start from.
+- ``help(job)``: the job's tools, grouped, each a method with the agent
+  tool's name and arguments (``help(job.look)``), and the handle's own
+  methods: ``wait``, ``close``, ``section_maps``, ``export_stack``,
+  ``export_abba``, ``export_dmc_brainmap``.
+- ``help(job.context)``: a method of your own written into the job (your own
+  affine, warp field or section image, a preview that writes nothing), in six
+  parts, each with its own ``help``: ``reads`` (sections, atlas, images,
+  masks), ``frames`` (fit grid, atlas planes, points to atlas micrometres),
+  ``proposals`` (a transform or deformation as LangSlice stores it),
+  ``fits`` (FireANTs, elastix, an outside engine's ITK files), ``writes``
+  and ``pictures``.
+- :func:`open_job`, :func:`create_job` (:mod:`langslice.doors.library.handle`):
+  open a job, or make one from a folder of sections.
 - :func:`coordinate_map` (:mod:`langslice.core.pictures.layers`): a saved
   picture's pixels in atlas micrometres, ``(rows, cols, 3)`` float32, the
   atlas's own axis order, voxel ``i``'s centre at ``i * resolution``.
 - :func:`load_atlas` (:mod:`langslice.core.atlas.load`): a cached BrainGlobe
   atlas.
+- :func:`image_model`, :func:`default_prompt`
+  (:mod:`langslice.providers.profiles`): the image model ``trace_borders``
+  calls (a provider's model and LangSlice's prompt, or your own), and
+  LangSlice's prompt text to start from.
+- :mod:`langslice.plugin_api`: the types the context parts return, and how to
+  add a tool of your own to a job.
+- The job folder's ``AGENTS.md``: its files (``state.json`` is the truth,
+  the rest is derived) and its coordinates.
 
-Each is loaded on first use, so ``import langslice`` stays light.
+Each name is loaded on first use, so ``import langslice`` stays light.
 ``docs/developers/library.md`` is the scripting guide.
 """
 
