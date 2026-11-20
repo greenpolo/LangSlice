@@ -31,6 +31,7 @@ OPENING_PAGES = (
     "Opening pictures: read every page with show_stack(page=1) through "
     "show_stack(page={pages}) before any write. "
 )
+OPENING_PAGE = "Opening pictures: read show_stack(page=1) before any write. "
 SCRIPTS = "Scripts:"
 SCRIPT_PYTHON = (
     "- You also have a shell and file tools, for what no tool does: write a "
@@ -40,8 +41,9 @@ SCRIPT_PYTHON = (
 )
 SCRIPT_LIBRARY = (
     '- In a script, `langslice.open_job(r"{folder}")` opens this job: every '
-    "tool is a method of it with the same arguments (`help(job)` lists them "
-    "all), without the tools' "
+    "tool is a method of it (`help(job)` lists them all; `help(job.look)` "
+    "gives one's arguments, which can be more than the tool's: look's "
+    "`resolution` and `sheet`), without the tools' "
     "limit on pictures or sections per call, and `job.context` holds the "
     "parts for a method of your own (`help(job.context)`: the section "
     "images and the atlas as arrays, a transform or a deformation of your "
@@ -206,7 +208,8 @@ def opening_for_mcp(pages: int) -> list[str]:
     list of str
         The paragraph, as statement lines.
     """
-    return [OPENING_PAGES.format(pages=pages) + OPENING_SHOWS]
+    first = OPENING_PAGE if pages == 1 else OPENING_PAGES.format(pages=pages)
+    return [first + OPENING_SHOWS]
 
 
 def review_lines(layout: JobLayout, state: Stack, switched_off: Collection[str]) -> list[str]:

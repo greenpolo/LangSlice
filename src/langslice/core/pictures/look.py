@@ -718,9 +718,9 @@ def _overlay_picture(
         if drawn
         else "deformation held but not drawable"
         if drawn is False
-        else "linear placement only"
+        else f"linear placement only: {LINEAR_MOVES}"
         if request.warp == "none" and record.deformation
-        else "no deformation"
+        else f"no deformation: {LINEAR_MOVES}"
     )
     atlas_words = " + ".join(layers) or "none"
     if options.atlas_images and options.atlas_opacity > 0:
@@ -966,6 +966,9 @@ def _mask_words(notes: list[dict[str, Any]], record: Section) -> str:
         "section pixels in the ringed patches are the ones it leaves out of a fit that "
         "uses it, the rest is compared; mask " + ", ".join(parts)
     )
+
+
+LINEAR_MOVES = "the transform moves the section onto the atlas, which keeps its place"
 
 
 def _landmark_context(state: Stack, record: Section) -> dict[str, Any]:

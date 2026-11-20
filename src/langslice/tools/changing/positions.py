@@ -267,12 +267,17 @@ def position_sections_tool(
 
 
 def _positioned_reply(done: SectionsPositioned, unknown: Refused | None) -> dict[str, Any]:
-    """Return the positions written, those clamped into the atlas range (with
-    the range), the unknown names, the order and the sections reordered.
+    """Return the positions written, the cutting angles written, those
+    clamped into the atlas range (with the range), the unknown names, the
+    order and the sections reordered.
     """
     result: dict[str, Any] = {
         "written": [{"id": name, "position_mm": round(value, 3)} for name, value in done.written],
     }
+    if done.cutting_angles is not None:
+        result["cutting_angles_written"] = {
+            f"{name}_deg": round(float(value), 3) for name, value in done.cutting_angles.items()
+        }
     if done.clamped:
         result["clamped"] = [
             {

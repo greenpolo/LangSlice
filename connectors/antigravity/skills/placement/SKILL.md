@@ -12,8 +12,11 @@ correct a wrong plane.
 
 ## Positions
 
-- **Keep the filename order** unless the anatomy clearly says otherwise.
-  Sections are usually named in cutting order.
+- **Keep the order the filenames' section numbers give** unless the
+  anatomy clearly says otherwise. Sections are usually numbered in cutting
+  order; when a name holds several numbers (an image id, then `s0132`),
+  the section number is the one that steps along the stack, and it can run
+  backwards.
 - **Fit the positions to the file numbers.** Once each section has a first
   position (from `deepslice_place` or by eye), list each position beside the
   section number in its filename. Real stacks fall on one line: its slope is

@@ -37,6 +37,7 @@ without an id. Inside::
     env/                 the job's own Python environment, made by
                          `langslice job FOLDER env`
                          (langslice.doors.commands.job.environment)
+    scripts/, scratch/   a coding agent's own scripts and other files
     AGENTS.md, CLAUDE.md the reference card for coding agents
     TOOLS.md             every verb's description and arguments (by `launch`)
 
@@ -74,6 +75,8 @@ VIEWS_DIR = "views"
 VIEWS_INDEX = "views.jsonl"
 EXPORTS_DIR = "exports"
 LOGS_DIR = "logs"
+SCRIPTS_DIR = "scripts"
+SCRATCH_DIR = "scratch"
 EVENTS_FILE = "events.jsonl"
 LAUNCHES_DIR = "launches"
 TRACE_DIR = "trace"
@@ -350,6 +353,16 @@ class JobLayout:
         return self.folder / EXPORTS_DIR
 
     @property
+    def scripts_dir(self) -> Path:
+        """Where a coding agent keeps the scripts it writes for the job."""
+        return self.folder / SCRIPTS_DIR
+
+    @property
+    def scratch_dir(self) -> Path:
+        """Where a coding agent keeps its other files for the job."""
+        return self.folder / SCRATCH_DIR
+
+    @property
     def logs_dir(self) -> Path:
         return self.folder / LOGS_DIR
 
@@ -471,6 +484,8 @@ class JobLayout:
             self.views_dir,
             self.exports_dir,
             self.logs_dir,
+            self.scripts_dir,
+            self.scratch_dir,
         ):
             folder.mkdir(parents=True, exist_ok=True)
 

@@ -690,7 +690,9 @@ agent CLI and in the library only. See
 Sets where sections sit along the slicing axis, and the stack's cutting
 angles. A value outside the atlas range is clamped into it and reported. The
 stack's order follows the positions. A changed position or angle clears the
-deformation of each section it moves.
+deformation of each section it moves. The reply lists the positions
+`written` and, when `cutting_angles` was given, the stack's angles as
+`cutting_angles_written` (`pitch_deg`, `yaw_deg`).
 
 | Argument | Default | What it does |
 |---|---|---|
