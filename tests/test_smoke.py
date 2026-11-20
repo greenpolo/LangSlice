@@ -10,50 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import cv2
-import numpy as np
-import pytest
-from PIL import Image
-
 import langslice
-import langslice.doors.jobs as jobs
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
-
-SECTION_SHRINK = 0.8
-PIXEL_SIZE_UM = 25.0 / SECTION_SHRINK
-POSITIONS = {"s0.png": 0.1, "s1.png": 0.15, "s2.png": 0.2}
-
-
-def write_sections(folder: Path) -> None:
-    """Three grey sections of the synthetic atlas under a smooth known field."""
-    atlas = SyntheticAtlas()
-    folder.mkdir(parents=True)
-    for seed, name in enumerate(POSITIONS):
-        drawn, _ = render_section(atlas, SMOOTH_FIELD(), seed=seed)
-        plane = cv2.GaussianBlur(np.asarray(drawn)[..., 0], (0, 0), 1.2)
-        size = (
-            round(plane.shape[1] * SECTION_SHRINK),
-            round(plane.shape[0] * SECTION_SHRINK),
-        )
-        small = cv2.resize(plane, size, interpolation=cv2.INTER_AREA)
-        Image.fromarray(np.stack([small] * 3, axis=-1)).save(folder / name)
-
-
-@pytest.fixture
-def images(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    atlas = SyntheticAtlas()
-    make_context = jobs.context
-
-    def context_on_synthetic_atlas(*args: object, **kwargs: object) -> object:
-        kwargs["atlas_loader"] = lambda _name: atlas
-        return make_context(*args, **kwargs)
-
-    monkeypatch.setattr(jobs, "context", context_on_synthetic_atlas)
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
-    folder = tmp_path / "stack"
-    write_sections(folder)
-    return folder
+from tests.synthetic_job import PIXEL_SIZE_UM, POSITIONS
 
 
 def test_a_brain_registers_from_start_to_export(images: Path) -> None:

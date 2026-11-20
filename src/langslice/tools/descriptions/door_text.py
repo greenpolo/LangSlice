@@ -40,7 +40,8 @@ SCRIPT_PYTHON = (
 )
 SCRIPT_LIBRARY = (
     '- In a script, `langslice.open_job(r"{folder}")` opens this job: every '
-    "tool is a method of it with the same arguments, without the tools' "
+    "tool is a method of it with the same arguments (`help(job)` lists them "
+    "all), without the tools' "
     "limit on pictures or sections per call, and `job.context` holds the "
     "parts for a method of your own (`help(job.context)`: the section "
     "images and the atlas as arrays, a transform or a deformation of your "

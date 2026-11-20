@@ -51,13 +51,14 @@ Nothing here loads the agent framework or a model client.
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 import math
 import os
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langslice.core.fits.trace.request import ImageModel
 from langslice.doors.jobs import Opened, open_folder
@@ -69,6 +70,12 @@ from langslice.tools.bookkeeping.dmc_export import (
     DmcExported,
     export_dmc_brainmap,
 )
+
+if TYPE_CHECKING:
+    from langslice.core.maps.section_maps import SectionMaps
+    from langslice.core.stack.stack import Stack
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -107,45 +114,48 @@ def _close_open() -> None:
 
 
 class JobHandle:
-    """One open job folder; every verb its settings have is a method."""
+    """One open LangSlice job folder: ``job = langslice.open_job(folder)``.
+
+    Tools: every tool this job's settings have is a method, with the same name
+    and arguments as the agent's tool (listed below, ``help(job.look)`` for one).
+    Each returns a :class:`~langslice.doors.library.replies.Reply`: the tool's
+    reply as a JSON-safe dict, ``reply["artifacts"]`` the picture files (open them
+    to see them), ``reply.images`` the pictures as PIL images. A refusal is a
+    reply too: check ``reply["status"]`` and ``reply["error"]``.
+
+    The handle's own methods: :meth:`wait` (background fits and traces land),
+    :meth:`close`, :meth:`section_maps` (a section's atlas coordinates and labels
+    as arrays), :meth:`export_stack`, :meth:`export_abba`,
+    :meth:`export_dmc_brainmap`; and :attr:`verbs`, :attr:`folder`,
+    :attr:`state` (the stack, read only), :attr:`job`, :attr:`workspace` (atlas
+    and section files), :attr:`image_model`, :attr:`imported`.
+
+    A method of your own (your own affine, warp field, section image, or a
+    preview that writes nothing) goes in through :attr:`context`:
+    ``help(job.context)`` and ``help(job.context.reads)``, ``.frames``,
+    ``.proposals``, ``.fits``, ``.writes``, ``.pictures``.
+
+    The job folder's ``AGENTS.md`` describes its files; ``help(langslice)`` lists
+    the rest of the library.
+    """
 
     def __init__(self, opened: Opened, imported: dict[str, Any] | None = None) -> None:
         self._opened = opened
-        self._tools = {tool.__name__: self._method(tool) for tool in opened.tools().tools}
         self._imported = imported
         self._context: ScriptContext | None = None
         _track(opened)
-
-    def _method(self, tool: Callable[..., Any]) -> Callable[..., Reply]:
-        """The verb *tool* as a method: the tool's call, then its pictures
-        written, then its reply for a script (:func:`library_reply`)."""
-        from langslice.job.pictures import captured
-
-        job = self._opened.job
-        name = tool.__name__
-
-        @functools.wraps(tool)
-        def method(*args: Any, **kwargs: Any) -> Reply:
-            with captured() as saved:
-                reply = tool(*args, **kwargs)
-            job.views.flush()
-            return library_reply(name, reply, saved)
-
-        return method
 
     @property
     def verbs(self) -> list[str]:
         """The verbs this job has (its tasks decide), in registry order."""
         return self._opened.listed_verbs()
 
-    def __getattr__(self, name: str) -> Callable[..., Reply]:
-        tools = self.__dict__.get("_tools") or {}
-        if name in tools:
-            return tools[name]
+    def __getattr__(self, name: str) -> Any:
         from langslice.tools.catalog import verbs_for
 
-        if name in verbs_for(self._opened.spec):
-            spec = self._opened.spec
+        opened = self.__dict__.get("_opened")
+        if opened is not None and name in verbs_for(opened.spec):
+            spec = opened.spec
             raise AttributeError(
                 f"This job's settings have no {name!r} (tasks "
                 f"{spec.tasks}"
@@ -153,9 +163,6 @@ class JobHandle:
                 + "); see .verbs"
             )
         raise AttributeError(name)
-
-    def __dir__(self) -> list[str]:
-        return sorted({*super().__dir__(), *self.verbs})
 
     @property
     def context(self) -> ScriptContext:
@@ -174,7 +181,7 @@ class JobHandle:
         return str(self._opened.job.folder)
 
     @property
-    def image_model(self) -> Any:
+    def image_model(self) -> ImageModel | None:
         """The image model ``trace_borders`` calls when one was handed in
         (:class:`langslice.core.fits.trace.request.ImageModel`), else None."""
         return self._opened.image_model
@@ -189,23 +196,23 @@ class JobHandle:
         return self._imported
 
     @property
-    def job(self) -> Any:
+    def job(self) -> Job:
         """The job itself (:class:`langslice.job.job.Job`: state, undo, gates)."""
         return self._opened.job
 
     @property
-    def state(self) -> Any:
+    def state(self) -> Stack:
         """The stack as it stands
         (:class:`langslice.core.stack.stack.Stack`);
         read it, write through the verbs."""
         return self._opened.job.state
 
     @property
-    def workspace(self) -> Any:
+    def workspace(self) -> Workspace:
         """The atlas and the section files (:class:`langslice.core.workspace.Workspace`)."""
         return self._opened.ctx
 
-    def section_maps(self, section: str, *, full_resolution: bool = False) -> Any:
+    def section_maps(self, section: str, *, full_resolution: bool = False) -> SectionMaps:
         """One section's maps in memory, written nowhere: the arrays
         ``export_maps`` writes to ``sections/<name>/``
         (:class:`langslice.core.maps.section_maps.SectionMaps`). ``coords``
@@ -342,6 +349,62 @@ class JobHandle:
         return f"<langslice job {self.folder} ({len(self.state.slices)} sections)>"
 
 
+def _method(opened: Opened, tool: Callable[..., Any]) -> Callable[..., Reply]:
+    """The tool *tool* as a method of a script's handle: the tool's call, then
+    its pictures written, then its reply for a script (:func:`library_reply`)."""
+    from langslice.job.pictures import captured
+
+    job = opened.job
+    name = tool.__name__
+
+    @functools.wraps(tool)
+    def method(*args: Any, **kwargs: Any) -> Reply:
+        with captured() as saved:
+            reply = tool(*args, **kwargs)
+        job.views.flush()
+        return library_reply(name, reply, saved)
+
+    return method
+
+
+def tool_index(tools: Mapping[str, Callable[..., Any]], groups: Mapping[str, str]) -> str:
+    """The tools of a job, grouped as the hosts list them, each with the first
+    line of its description: the tail of ``help(job)``."""
+    from langslice.core.tool_kinds import GROUPS
+
+    lines = ["This job's tools:"]
+    for group in (*GROUPS, ""):
+        names = [name for name in tools if groups.get(name, "") == group]
+        if not names:
+            continue
+        lines.append(f"\n{group or 'Other'}:")
+        for name in names:
+            first = (inspect.getdoc(tools[name]) or "").split("\n", 1)[0].strip()
+            lines.append(f"- {name}: {first}")
+    return "\n".join(lines)
+
+
+def job_handle(opened: Opened, imported: dict[str, Any] | None = None) -> JobHandle:
+    """A :class:`JobHandle` of a class made for this job, whose tools are its
+    own methods and whose docstring lists them, so ``help(job)``, ``dir(job)``
+    and an editor show every tool with its arguments."""
+    from langslice.tools.catalog import verbs_for
+
+    tools = {tool.__name__: _method(opened, tool) for tool in opened.tools().tools}
+    groups = {name: verb.group for name, verb in verbs_for(opened.spec).items()}
+    guide = inspect.cleandoc(JobHandle.__doc__ or "")
+    own = type(
+        JobHandle.__name__,
+        (JobHandle,),
+        {
+            "__doc__": f"{guide}\n\n{tool_index(tools, groups)}\n",
+            "__module__": JobHandle.__module__,
+            **{name: staticmethod(method) for name, method in tools.items()},
+        },
+    )
+    return own(opened, imported)
+
+
 def as_image_model(value: Any) -> ImageModel | None:
     """*value* as the image model the tools call: None stays None; a provider
     name, an ``ImageModel``, an object with a ``call`` or a function goes
@@ -408,7 +471,7 @@ def open_job(
                 f"[job] made with the untested image-model profile "
                 f"{held.get('profile')!r}: pass image_model= to trace borders"
             )
-        return JobHandle(opened)
+        return job_handle(opened)
     except BaseException:
         opened.close()
         raise
@@ -612,7 +675,7 @@ def create_job(
     try:
         if model is not None:
             write_job_file(opened.job.layout, **{IMAGE_MODEL_KEY: profile_record(model)})
-        return JobHandle(opened, imported)
+        return job_handle(opened, imported)
     except BaseException:
         opened.close()
         raise
