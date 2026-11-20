@@ -3,7 +3,7 @@
 :func:`export_abba` (the library's ``job.export_abba``, the window's Export
 menu; not a model-facing verb, not written at submit) writes, from the stack
 as it stands, ``exports/<image folder>.abba``: ABBA 0.25's state file
-(:mod:`langslice.job.exports.abba_project`), which ABBA's File > Load State
+(:mod:`langslice.core.exports.abba_project`), which ABBA's File > Load State
 opens on
 its Allen CCFv3 atlas with the job's own image files. Each placed section is
 a slice at its position and the stack's cutting angles, with LangSlice's
@@ -42,6 +42,12 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from langslice.core.exports.abba_project import (
+    AbbaSlice,
+    AbbaWarp,
+    image_channels,
+    project_bytes,
+)
 from langslice.core.maps.abba import (
     MAX_POINTS,
     WarpLandmarks,
@@ -57,15 +63,9 @@ from langslice.core.maps.abba_world import (
 )
 from langslice.core.maps.section_maps import placement_problem, section_frame
 from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.shared_files import atomic_file, write_json_atomic
 from langslice.core.worker_threads import started_with_threads, thread_share
-from langslice.job.exports.abba_project import (
-    AbbaSlice,
-    AbbaWarp,
-    image_channels,
-    project_bytes,
-)
-from langslice.job.state_file import write_json_atomic
-from langslice.tools.bookkeeping.exports import applied_record
+from langslice.tools.bookkeeping.applied import applied_record
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
@@ -406,10 +406,8 @@ def _write(
     angles: tuple[float, float],
 ) -> None:
     """Write the project file atomically, and its record beside it."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-    partial = target.with_suffix(".abba.part")
-    partial.write_bytes(data)
-    partial.replace(target)
+    with atomic_file(target) as handle:
+        handle.write(data)
     write_json_atomic(
         str(target.parent / EXPORT_RECORD),
         {

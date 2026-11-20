@@ -18,7 +18,7 @@ removes single tools on top.
 Every door is generated from this list: the agent tools and the MCP tools
 (``build_tools`` builds the verbs :func:`enabled` names for the run, in this
 order, each one declared by :mod:`langslice.tools.descriptions.render`), the
-agent CLI (``langslice-job ops``, ``langslice-job schema``, ``langslice-job
+agent CLI (``langslice job FOLDER ops``, ``langslice job FOLDER schema``, ``langslice job
 FOLDER VERB``), the library's job methods and the job folder's reference card.
 
 The in-tree engines' tools (``ToolDef.engine``: DeepSlice, Brainways,

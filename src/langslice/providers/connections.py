@@ -1,22 +1,11 @@
-"""Provider taxonomy.
+"""Provider names and image-model resolution.
 
-A provider is an ACCESS METHOD — a vendor plus how you authenticate — never a
-product name. Canonical names:
-
-- ``gemini-api``: Gemini models via a Google API key.
-- ``openai-api``: the OpenAI API (or a compatible endpoint,
-  ``OPENAI_BASE_URL``) via an API key.
-- ``anthropic-api``: Claude models via an Anthropic API key (agent model
-  only; transport in ``providers/anthropic_api.py``).
-- ``openai-oauth``: OpenAI via a ChatGPT-subscription OAuth login (``langslice
-  login``; transport lives in ``providers/oauth/transport.py``).
-- ``none``: no image model; FireANTs fits to the stain directly. There is
-  nothing to authenticate for tracing, so it needs no transport module.
-
-A new provider gets its canonical name in the provider-free table
-:mod:`langslice.core.connections` (re-exported here, so the core compares names
-without importing a provider) and its transport in this package; downstream
-code compares canonical names only.
+A provider is an ACCESS METHOD, a vendor plus how you authenticate. What each
+one is (label, credential, models, prices) is the table in
+:mod:`langslice.providers.table`; the names the core compares are in
+:mod:`langslice.core.connections` (re-exported here). ``none`` means no image
+model: FireANTs fits to the stain directly, with nothing to authenticate. A new
+provider is a row in the table and a transport in this package.
 """
 
 from __future__ import annotations
@@ -31,34 +20,13 @@ from langslice.core.connections import (
     canonical_provider,
 )
 from langslice.core.fits.trace.request import ImageModel
+from langslice.providers.table import find
 
 if TYPE_CHECKING:
     from langslice.core.fits.trace.request import (
         BorderTraceRequest,
         GeneratedSegmentation,
     )
-
-OPENAI_OAUTH_AGENT_MODELS: tuple[str, ...] = tuple(
-    f"openai-oauth/{name}"
-    for name in (
-        "gpt-6.1-sol",
-        "gpt-6-astra",
-        "gpt-6-sol",
-        "gpt-6-luna",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.6-luna",
-    )
-)
-OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-6.1-sol"
-OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare")
-OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_IMAGE_MODELS[0]
-GEMINI_IMAGE_MODELS: tuple[str, ...] = (
-    "gemini-3.1-flash-image",
-    "gemini-3.1-flash-lite-image",
-    "gemini-3-pro-image",
-)
-GEMINI_DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
 
 
 def openai_oauth_credentials_path() -> Path:
@@ -76,12 +44,8 @@ def openai_oauth_credentials_path() -> Path:
 def default_image_model(provider: str) -> str | None:
     """The image model a provider uses when none is named (None for
     ``openai-api``: its transport reads ``OPENAI_IMAGE_MODEL``)."""
-    canonical = canonical_provider(provider)
-    if canonical == "openai-oauth":
-        return OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
-    if canonical == "gemini-api":
-        return GEMINI_DEFAULT_IMAGE_MODEL
-    return None
+    found = find(provider)
+    return None if found is None else found.default_image_model()
 
 
 def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
@@ -115,12 +79,6 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
 __all__ = [
     "CANONICAL_PROVIDERS",
     "CUSTOM_PROVIDER",
-    "GEMINI_DEFAULT_IMAGE_MODEL",
-    "GEMINI_IMAGE_MODELS",
-    "OPENAI_OAUTH_AGENT_MODELS",
-    "OPENAI_OAUTH_DEFAULT_AGENT_MODEL",
-    "OPENAI_OAUTH_DEFAULT_IMAGE_MODEL",
-    "OPENAI_OAUTH_IMAGE_MODELS",
     "canonical_provider",
     "default_image_model",
     "openai_oauth_credentials_path",

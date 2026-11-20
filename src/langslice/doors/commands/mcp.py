@@ -1,5 +1,5 @@
 """``langslice mcp``: the job's tools over MCP, for a host that brings its
-own model. A host opens a job folder made with ``langslice-job FOLDER init``
+own model. A host opens a job folder made with ``langslice job FOLDER init``
 as it stands."""
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def add_mcp_parser(
         "image_folder",
         nargs="?",
         default=None,
-        help="Open this folder at startup: its job (langslice-job FOLDER init) "
+        help="Open this folder at startup: its job (langslice job FOLDER init) "
         "as saved, else a new one. Without it the host names the folder "
         "through the start_job tool",
     )

@@ -29,8 +29,8 @@ environment includes MCP; a minimal pip installation needs the `mcp` extra.
 
 ## Start a job
 
-Create a job with `langslice-job FOLDER init`, then launch the host's agent
-with `langslice-job FOLDER launch --role register`'s `result.prompt`, which
+Create a job with `langslice job FOLDER init`, then launch the host's agent
+with `langslice job FOLDER launch --role register`'s `result.prompt`, which
 names the folder and holds the job statement. The agent calls
 `start_job(image_folder="/absolute/path/to/FOLDER")`; its reply says only that
 the job is open, its section count and the pages of its opening (the server's

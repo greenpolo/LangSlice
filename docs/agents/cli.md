@@ -1,6 +1,6 @@
-# The agent CLI: `langslice-job`
+# The job commands: `langslice job`
 
-`langslice-job FOLDER COMMAND` is the command line of the session that sets a
+`langslice job FOLDER COMMAND` is the command line of the session that sets a
 registration up and checks it: a coding agent with a shell (Claude Code,
 Antigravity, Codex) makes a job with it, writes the message that launches a
 registration agent, reads the job's status and exports its results. It does
@@ -12,17 +12,17 @@ prints one JSON envelope.
 ## Start a job
 
 ```bash
-langslice-job sections/ init --tasks position,transform,nonlinear
-langslice-job sections/ launch --role register
-langslice-job sections/ status
-langslice-job sections/ export_maps
+langslice job sections/ init --tasks position,transform,nonlinear
+langslice job sections/ launch --role register
+langslice job sections/ status
+langslice job sections/ export_maps
 ```
 
 `FOLDER` can be the image folder or its job folder. `init` runs no agent.
 The job contains identical `AGENTS.md` and `CLAUDE.md` reference cards;
 `init` writes `TOOLS.md` beside them: every tool of the job with its
 description and its arguments (type and default), the words `schema` gives
-as JSON. `schema init` lists the initialization flags.
+as JSON. `langslice job FOLDER schema init` lists the initialization flags.
 
 | Command | What it does |
 |---|---|
@@ -37,7 +37,7 @@ as JSON. `schema init` lists the initialization flags.
 ## Launch prompts
 
 A registering agent's instructions are never in a command's output it reads
-itself: they are the message that launched it. `langslice-job FOLDER launch
+itself: they are the message that launched it. `langslice job FOLDER launch
 --role register|register-scripting` prints that message as `result.prompt`
 and saves the exact text in `logs/launches/<six-digit number>_<role>.md`; the
 main session passes it unchanged as the registration subagent's whole prompt.
@@ -62,20 +62,19 @@ MODULE:FACTORY`, or `create_job(plugins=...)` in Python) has those after them.
 
 ## The tools are not commands
 
-`langslice-job FOLDER TOOL` runs `status`, `export_maps` and `review_comments`
+`langslice job FOLDER TOOL` runs `status`, `export_maps` and `review_comments`
 (the comments left in the LangSlice window, with their pictures saved as
 files) only. Any other
 tool (`look`, `position_sections`, the fits, `undo`, `submit` and the rest)
 is refused with `TOOL_OFF`, its message saying where it is: a registration
 agent's MCP tool, or `langslice.open_job(FOLDER).TOOL(...)` in a script.
-`langslice-job FOLDER ops` lists what the command line runs.
+`langslice job FOLDER ops` lists what the command line runs.
 
 Tool names and arguments are shared by MCP, the library and the built-in
-agent. `langslice-job FOLDER schema TOOL [TOOL ...]` (or `langslice-job
-schema TOOL ... --job FOLDER`) gives the exact arguments enabled for that
-job, its tool plugins' included: one tool's entry, or several (separate or
-comma-separated) under `verbs`, every tool's without one. Without a job a
-plugin's tool is unknown, and the refusal says how to name the job. Sections
+agent. `langslice job FOLDER schema TOOL [TOOL ...]` gives the exact arguments
+enabled for that job, its tool plugins' included: one tool's entry, or several (separate or
+comma-separated) under `verbs`, every tool's without one. A FOLDER that holds
+no job declares every argument, and a plugin's tool is unknown there. Sections
 are named by image filename (a unique stem also works), never by number.
 
 `export_maps` writes the job's maps from its present state, submitted or not
@@ -84,10 +83,10 @@ image-model reply to `exports/traces/<name>.npz`
 ([format](../reference/file_formats.md#tracesnamenpz)). It is a long call:
 
 ```bash
-langslice-job sections/ export_maps
-langslice-job sections/ export_maps --background
-langslice-job sections/ runs
-langslice-job sections/ wait
+langslice job sections/ export_maps
+langslice job sections/ export_maps --background
+langslice job sections/ runs
+langslice job sections/ wait
 ```
 
 Called without `--background` it starts a background run and waits for it, at
@@ -146,7 +145,7 @@ own agent and MCP keep four pictures, and four transform sections, per call.)
 
 ## The job's own Python environment
 
-`langslice-job FOLDER env` makes `env/` in the job folder when it is missing
+`langslice job FOLDER env` makes `env/` in the job folder when it is missing
 and answers with its `python`: a virtual environment that also imports every
 package of the environment LangSlice runs in (LangSlice included), with its
 own packages first. `env install PACKAGE [PACKAGE ...]` installs pip
@@ -156,7 +155,7 @@ the environment's packages, pinned, in `scripts/requirements.txt`.
 `env remove` deletes `env/` and keeps that list; the next `env` rebuilds the
 environment from it. LangSlice's own environment is never changed.
 
-`langslice-job FOLDER python SCRIPT [ARGS ...]` runs a script with that
+`langslice job FOLDER python SCRIPT [ARGS ...]` runs a script with that
 python (making `env/` first when it is missing). A relative SCRIPT that is not
 a file from the working folder is the job folder's, so `scripts/NAME.py` runs
 the job's script from any folder (`sys.argv[0]` is then its absolute path).
@@ -170,7 +169,7 @@ environment's own packages, then LangSlice's.
 `langslice session-end --harness claude-code|antigravity` is the hook the
 Claude Code and Antigravity plugins run when a registration agent's session
 ends. It reads the hook's JSON on stdin, finds the job folders the transcript
-names (its `langslice-job FOLDER ...` commands, `open_job(...)` calls and MCP
+names (its `langslice job FOLDER ...` commands, `open_job(...)` calls and MCP
 `start_job` calls, by `image_folder`) and
 copies the transcript into each one's `trace/<harness>_<session id>.jsonl`,
 beside the built-in agent's traces, inline image data replaced by its size.

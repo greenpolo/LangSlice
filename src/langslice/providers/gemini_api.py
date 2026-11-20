@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import Protocol, cast
 
 from langslice.providers.client_cache import CachedClient
+from langslice.providers.table import provider
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def get_api_key() -> str:
     """The API key of the selected backend."""
     backend = get_backend()
     if backend == _BACKEND_AI_STUDIO:
-        key = read_env("GEMINI_API_KEY") or read_env("GOOGLE_API_KEY")
+        key = next((v for n in provider("gemini-api").key_env if (v := read_env(n))), None)
         if key:
             return key
         raise RuntimeError(

@@ -16,8 +16,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from langslice.providers.client_cache import CachedClient
-from langslice.providers.connections import OPENAI_OAUTH_IMAGE_MODELS
 from langslice.providers.gemini_api import read_env
+from langslice.providers.table import provider
 
 if TYPE_CHECKING:
     import openai
@@ -25,17 +25,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
-OPENAI_IMAGE_MODELS = OPENAI_OAUTH_IMAGE_MODELS
-DEFAULT_IMAGE_MODEL = OPENAI_IMAGE_MODELS[0]
+_PROVIDER = provider("openai-api")
 
 
 def get_openai_image_model() -> str:
     """The image model ``openai-api`` calls when none is named."""
-    return read_env("OPENAI_IMAGE_MODEL") or DEFAULT_IMAGE_MODEL
+    return _PROVIDER.image_model_or_default()
+
+
+def _api_key() -> str | None:
+    for name in (*_PROVIDER.image_key_env, *_PROVIDER.key_env):
+        value = read_env(name)
+        if value:
+            return value
+    return None
 
 
 def _make_image_client() -> openai.OpenAI:
-    api_key = read_env("OPENAI_IMAGE_API_KEY") or read_env("OPENAI_API_KEY")
+    api_key = _api_key()
     if api_key is None:
         raise RuntimeError(
             "The openai-api image model needs OPENAI_API_KEY (or "

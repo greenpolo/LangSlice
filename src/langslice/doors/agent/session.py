@@ -41,7 +41,7 @@ from langslice.doors.agent.models import (
     env_value,
     resolve_adk_model,
 )
-from langslice.doors.agent.spend import SpendMonitor
+from langslice.doors.agent.spend import UsageMeter
 from langslice.doors.agent.trace import open_trace
 from langslice.tools.events import LiveCallback
 
@@ -105,67 +105,6 @@ def build_agent(
     )
 
 
-CACHED_TOKEN_WEIGHT = 0.13
-
-
-class TokenTally:
-    """Summed token usage over one session, one line per model call.
-
-    ``paid`` is an input-only proxy: uncached input plus cached input at
-    :data:`CACHED_TOKEN_WEIGHT`. It excludes output and is not an all-token
-    API-equivalent cost. ``input`` remains cumulative;
-    ``latest_input`` and ``peak_input`` measure individual request context.
-    """
-
-    def __init__(self) -> None:
-        self.calls = 0
-        self.input = 0
-        self.latest_input = 0
-        self.peak_input = 0
-        self.cached = 0
-        self.output = 0
-        self.reasoning = 0
-
-    @property
-    def paid(self) -> int:
-        return int(self.input - self.cached + CACHED_TOKEN_WEIGHT * self.cached)
-
-    def add(self, usage: Any) -> str:
-        """Add one call's usage; return the one-line report for it."""
-        prompt = int(getattr(usage, "prompt_token_count", None) or 0)
-        cached = int(getattr(usage, "cached_content_token_count", None) or 0)
-        output = int(getattr(usage, "candidates_token_count", None) or 0)
-        self.reasoning += int(getattr(usage, "thoughts_token_count", None) or 0)
-        self.calls += 1
-        self.input += prompt
-        self.latest_input = prompt
-        self.peak_input = max(self.peak_input, prompt)
-        self.cached += cached
-        self.output += output
-        return (
-            f"call {self.calls}: request_input={prompt} (cached {cached}) out={output}; "
-            f"cumulative_input={self.input} peak_input={self.peak_input} paid~{self.paid}"
-        )
-
-    def as_dict(self) -> dict[str, int]:
-        return {
-            "calls": self.calls,
-            "input": self.input,
-            "latest_input": self.latest_input,
-            "peak_input": self.peak_input,
-            "cached": self.cached,
-            "output": self.output,
-            "reasoning": self.reasoning,
-            "paid": self.paid,
-        }
-
-    def totals(self) -> str:
-        return (
-            f"{self.calls} calls, cumulative_input={self.input} (cached {self.cached}, "
-            f"paid~{self.paid}), out={self.output}, peak_input={self.peak_input}"
-        )
-
-
 async def run_agent_session(
     *,
     agent: LlmAgent,
@@ -180,8 +119,8 @@ async def run_agent_session(
     on_event: LiveCallback | None = None,
     background: Callable[[], list[Any] | None] | None = None,
     plugins: list[dict[str, Any]] | None = None,
-    spend: SpendMonitor | None = None,
-    on_spend: Callable[[SpendMonitor], None] | None = None,
+    spend: UsageMeter | None = None,
+    on_spend: Callable[[UsageMeter], None] | None = None,
     trace_mirror: str | Path | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
@@ -189,7 +128,7 @@ async def run_agent_session(
     Ends when *done* reports the session's submit tool has fired. There is no
     turn, tool-call, token or time limit, and nothing here stops a run for what
     it has spent: *spend* (a
-    :class:`~langslice.doors.agent.spend.SpendMonitor`, made from the agent's
+    :class:`~langslice.doors.agent.spend.UsageMeter`, made from the agent's
     model when not given) only warns the operator, through *progress*, the live
     ``spend`` event and the trace, never the model. *on_spend* is called with
     it after every model call it counted (the engine keeps
@@ -221,7 +160,7 @@ async def run_agent_session(
         root_agent=agent,
         plugins=build_plugins(run_label),
     )
-    spend = spend or SpendMonitor(agent.model)
+    spend = spend or UsageMeter(agent.model)
     runner = InMemoryRunner(app=app)
     assert runner.session_service is not None
     await runner.session_service.create_session(
@@ -236,30 +175,24 @@ async def run_agent_session(
     nudge: str | None = None
     tool_calls = 0
     turns = 0
-    tokens = TokenTally()
 
     def count(usage: Any, event: Any, turn: int) -> None:
-        """Add one call's usage to the tally and the spend meter; the
-        warnings go to the operator."""
-        line = tokens.add(usage)
+        """Add one call's usage to the meter; the warnings go to the
+        operator."""
         quota = (getattr(event, "custom_metadata", None) or {}).get("quota")
-        warnings = spend.add(usage, quota)
-        if quota and spend.quota_used is not None:
-            line += f"; quota {quota}; window used by this run {spend.quota_used}%"
-        elif quota:
-            line += f"; quota {quota}"
-        (progress or logger.info)(f"[tokens] {line}")
+        counted = spend.add(usage, quota)
+        (progress or logger.info)(f"[tokens] {counted.line}")
         if on_spend is not None:
             try:
                 on_spend(spend)
             except Exception:
                 logger.warning("Spend observer failed", exc_info=True)
         if live is not None:
-            live.emit("usage", tokens=tokens.as_dict())
-        for warning in warnings:
-            (progress or logger.warning)(warning["text"])
+            live.emit("usage", tokens=spend.tokens())
+        for warning in counted.warnings:
+            (progress or logger.warning)(warning.text)
             if live is not None:
-                live.emit("spend", **warning)
+                live.emit("spend", **warning.record())
             if trace is not None:
                 trace.spend(warning, turn=turn)
 
@@ -350,16 +283,16 @@ async def run_agent_session(
         if debrief_sink is not None and answer:
             debrief_sink.append("\n".join(answer).strip())
 
-    (progress or logger.info)(f"[tokens] run total: {tokens.totals()}")
+    (progress or logger.info)(f"[tokens] run total: {spend.totals()}")
     (progress or logger.info)(spend.line())
     if trace is not None:
         trace.summary(
             tool_calls=tool_calls,
             turns=turns,
             submitted=done(),
-            tokens=tokens.as_dict(),
+            tokens=spend.tokens(),
             spend=spend.summary(),
         )
     if live is not None:
-        live.emit("complete", submitted=done(), tokens=tokens.as_dict(), spend=spend.summary())
+        live.emit("complete", submitted=done(), tokens=spend.tokens(), spend=spend.summary())
     return tool_calls, turns

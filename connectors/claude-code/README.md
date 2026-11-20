@@ -6,17 +6,16 @@ The plugin is skills for the normal Claude Code session plus registration
 subagents that each register exactly one brain. It bundles LangSlice's MCP
 server (`.mcp.json`: the `langslice` executable with `mcp`, the server
 Claude Desktop uses, [`docs/agents/mcp.md`](../../docs/agents/mcp.md)), and
-the skills use the `langslice-job` command line to set a job up and check it
+the skills use the `langslice job` command line to set a job up and check it
 ([`docs/agents/cli.md`](../../docs/agents/cli.md)). A registration subagent
-never runs `langslice-job`: it registers with the MCP tools, and the scripting
+never runs `langslice job`: it registers with the MCP tools, and the scripting
 one also with scripts of its own.
 
 ## Install
 
 LangSlice itself must be installed first (the conda environment of
-`environment.yml`). Claude Code must then find `langslice` and
-`langslice-job` on PATH: the MCP server runs `langslice mcp`, the hook runs
-`langslice`, and the skills run `langslice-job`.
+`environment.yml`). Claude Code must then find `langslice` on PATH: the MCP server runs `langslice mcp`, the hook runs
+`langslice`, and the skills run `langslice job`.
 Claude Desktop reads PATH from the login shell (`$SHELL -ilc`) on macOS and
 Linux, and from the user and system environment variables on Windows.
 
@@ -60,7 +59,7 @@ registration (choices, job, checking, import and export with ABBA and other
 software); registration is always a subagent's. A subagent has one job and a
 one fixed system prompt, the same for every job; the job itself (LangSlice's
 job statement, the user's notes) is the message that launched them, made by
-`langslice-job <folder> launch --role register` (or `register-scripting`) and
+`langslice job <folder> launch --role register` (or `register-scripting`) and
 passed on unchanged. The job card (`AGENTS.md` in the job folder) is the
 scripting subagent's reference.
 
@@ -127,7 +126,7 @@ the whole session, main agent included:
     "defaultMode": "dontAsk",
     "allow": [
       "mcp__plugin_langslice_langslice",
-      "Bash(langslice-job *)",
+      "Bash(langslice job *)",
       "Bash(\"/data/brains/M04/langslice/env/bin/python\" *)",
       "Read(//data/brains/M04/**)"
     ]
@@ -136,7 +135,7 @@ the whole session, main agent included:
 ```
 
 `dontAsk` denies every call that no rule allows, so only LangSlice's MCP
-tools, the main session's `langslice-job` commands, the job's own Python
+tools, the main session's `langslice job` commands, the job's own Python
 (each part of a compound command must match) and reading under the named path
 run. Replace the paths with your job folder's (`//` starts an absolute path;
 the launch message names the interpreter, `env\Scripts\python.exe` on

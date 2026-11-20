@@ -40,7 +40,7 @@ from langslice.core.stack.images import MaskRef
 from langslice.core.stack.part import Written
 from langslice.tools.changing.images import check_image
 from langslice.tools.looking.look import show_result
-from langslice.tools.refusal import check_frozen, unknown_sections
+from langslice.tools.refusal import check_frozen, named_sections
 from langslice.tools.run import as_list, drawn_image, pictured, spread
 
 if TYPE_CHECKING:
@@ -119,20 +119,9 @@ def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
 
 
 def _records(job: Job, sections: Sequence[object] | None) -> list[Section]:
-    state = job.state
     if not sections:
-        return state.in_order()
-    found: list[Section] = []
-    unknown: list[str] = []
-    for ref in sections:
-        section = state.resolve(ref)
-        if section is None:
-            unknown.append(str(ref))
-        elif section not in found:
-            found.append(section)
-    if unknown:
-        raise unknown_sections(state, unknown)
-    return found
+        return job.state.in_order()
+    return named_sections(job.state, sections)
 
 
 def make_mask(

@@ -9,10 +9,10 @@ do in a run, and to choose what to switch off in the
 
 Every way into LangSlice gives the agent the same tools under the same names:
 the MCP server, the Python library and the built-in agent
-(`langslice linear run`). The agent CLI (`langslice-job`) sets a job up and
+(`langslice linear run`). The agent CLI (`langslice job`) sets a job up and
 checks it: of the tools it runs `status`, `export_maps` and
 `review_comments` only. The exact arguments of a tool in a
-given job are printed by `langslice-job FOLDER schema TOOL`, and the job
+given job are printed by `langslice job FOLDER schema TOOL`, and the job
 folder's `TOOLS.md` lists them all.
 
 ## Summary
@@ -508,7 +508,7 @@ fractions of the picture), `state`, and for an open one `picture` (its
 number, which `zoom` takes) and `box_px` (the box in that picture's pixels).
 At most four pictures at the agent tools and MCP; the rest under
 `not_shown`. It is also one of the three tools the command line runs
-(`langslice-job FOLDER review_comments`), so the session that set the job up
+(`langslice job FOLDER review_comments`), so the session that set the job up
 can read the comments, look at the pictures and brief a registration agent
 in its own words.
 

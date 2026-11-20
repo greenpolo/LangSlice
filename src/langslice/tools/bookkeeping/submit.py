@@ -11,7 +11,7 @@ from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import break_ids, normalize_to_atlas_order
 from langslice.job.gates import submit_errors
 from langslice.tools.bookkeeping.exports import Exported
-from langslice.tools.refusal import unknown_sections
+from langslice.tools.refusal import named_sections
 from langslice.tools.run import as_list
 
 if TYPE_CHECKING:
@@ -47,17 +47,7 @@ def clean_breaks(job: Job, values: Any) -> list[int]:
             RefusalCode.BAD_ARGUMENT,
             message="interval_breaks is a list of filenames.",
         )
-    breaks: list[int] = []
-    unknown: list[str] = []
-    for raw in values:
-        record = job.state.resolve(raw)
-        if record is None:
-            unknown.append(str(raw))
-        else:
-            breaks.append(record.index_corrected)
-    if unknown:
-        raise unknown_sections(job.state, unknown)
-    return breaks
+    return [record.index_corrected for record in named_sections(job.state, values, unique=False)]
 
 
 def submit(

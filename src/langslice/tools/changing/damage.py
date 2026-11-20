@@ -32,7 +32,7 @@ from langslice.core.sections.damage import (
     damage_picture,
     side_pair_refusal,
 )
-from langslice.tools.refusal import check_frozen, unknown_sections
+from langslice.tools.refusal import check_frozen, named_section
 from langslice.tools.run import as_list
 
 if TYPE_CHECKING:
@@ -114,9 +114,7 @@ def mark_damage(
 
     with job.writing():
         state = job.state
-        record = state.resolve(section)
-        if record is None:
-            raise unknown_sections(state, [str(section)])
+        record = named_section(state, section)
         check_frozen(job, [record.id])
         if has_sides(names):
             sides = side_pair_refusal(state, workspace, record, names)

@@ -69,6 +69,7 @@ from google.genai import types
 from langslice.doors.agent.adk_plugins import part_summary
 from langslice.doors.agent.live import _model_name
 from langslice.doors.agent.models import env_value
+from langslice.doors.agent.spend import SpendWarning
 from langslice.doors.call_log import TRACE_DIR_ENV as _TRACE_DIR_ENV
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.job.folder.layout import TRACE_DIR
@@ -151,9 +152,9 @@ class SessionTrace:
     def seed(self, message: types.Content) -> None:
         self._write({"kind": "seed", "parts": _describe_parts(message.parts)})
 
-    def spend(self, warning: dict[str, Any], *, turn: int) -> None:
+    def spend(self, warning: SpendWarning, *, turn: int) -> None:
         """An operator spend warning (:mod:`langslice.doors.agent.spend`)."""
-        self._write({"kind": "spend", "turn": turn, **warning})
+        self._write({"kind": "spend", "turn": turn, **warning.record()})
 
     def nudge(self, text: str, *, turn: int) -> None:
         self._write({"kind": "nudge", "turn": turn, "text": text})

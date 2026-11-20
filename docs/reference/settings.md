@@ -8,13 +8,13 @@ change, and which tools it gets. They are saved in the job folder's
 You usually do not type these settings. Tell your agent what you know ("the
 sections are 40 µm thick, one in every six was kept, don't touch the
 positions"), and it sets them when it creates the job with
-`langslice-job FOLDER init`. Each setting has one name, and every place it
+`langslice job FOLDER init`. Each setting has one name, and every place it
 can be given spells it from that name:
 
 - **`job.json`**: the name, under `spec` (`position.thickness_um` is
   `spec.position.thickness_um`).
-- **Flag**: the option of `langslice-job FOLDER init` and of
-  `langslice linear run` (the same flags; `langslice-job schema init` lists
+- **Flag**: the option of `langslice job FOLDER init` and of
+  `langslice linear run` (the same flags; `langslice job FOLDER schema init` lists
   them with their help). It is the name with `.` and `_` written `-`
   (`--position-thickness-um`); a key of `inputs` drops the `inputs.`
   (`--positions`); a setting that is on unless turned off takes `--no-` and
@@ -24,12 +24,9 @@ can be given spells it from that name:
   section's keys given in that section's mapping
   (`position={"thickness_um": 40}`).
 
-The flags of earlier versions (such as `--thickness`, `--image-provider`,
-`--disable`, `--fresh`) are still read.
-
 Every setting is defined once, as a field of `JobSpec`
 (`job/settings/spec.py`): its type, default, checks and one-line
-description. The flags, their help, `langslice-job schema init`, the
+description. The flags, their help, `langslice job FOLDER schema init`, the
 library's keywords and the LangSlice window's form are all read from those
 fields, so a setting has the same default on every door: the commands, MCP,
 the agent CLI's `init` and the library.

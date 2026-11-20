@@ -1,7 +1,6 @@
 """The agent CLI's answer: one JSON envelope on stdout, an exit code.
 
-Every agent CLI command (``langslice-job ops``, ``langslice-job schema``,
-``langslice-job FOLDER ...``) prints exactly one JSON object on stdout and
+Every ``langslice job FOLDER COMMAND`` prints exactly one JSON object on stdout and
 nothing else; progress and logs go to stderr. The envelope::
 
     {"ok": true|false,
@@ -9,7 +8,7 @@ nothing else; progress and logs go to stderr. The envelope::
      "result": {...},                       # the verb's reply, concise
      "artifacts": [{"path": "...", "kind": "view"}, ...],
      "warnings": ["..."],
-     "next": ["langslice-job ... wait <id>"],
+     "next": ["langslice job ... wait <id>"],
      "error": {"code": "...", "message": "..."}}   # only when not ok
 
 ``error.message`` says what was found and what to do next. ``error.fix`` is

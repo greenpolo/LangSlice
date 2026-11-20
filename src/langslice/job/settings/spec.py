@@ -65,7 +65,7 @@ def no_transform_linear_off(on: ToolsOn) -> str:
     return (
         "A written affine transform is required, and Linear is off for this job, "
         "so nothing here writes one. Supply the in-plane transforms with the job "
-        "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or "
+        "(inputs.transforms; --transforms on `langslice job FOLDER init`), or "
         "switch Linear on (task transform)"
         + on.say("elastix_affine", " and run elastix_affine on the section first")
         + "."
@@ -220,7 +220,7 @@ class PositionSpec(Strict):
     thickness_um: Annotated[
         int | None,
         Field(gt=0, description="Known section thickness in microns; omit if unknown"),
-        Cli(aliases=("--thickness",), metavar="UM"),
+        Cli(metavar="UM"),
     ] = None
     interval_um: Annotated[
         int | None,
@@ -229,7 +229,7 @@ class PositionSpec(Strict):
             description="Known section interval in microns: the spacing of the "
             "sections' initial positions; omit to spread them over the atlas",
         ),
-        Cli(aliases=("--interval",), metavar="UM"),
+        Cli(metavar="UM"),
     ] = None
     start_mm: Annotated[
         int | float | None,
@@ -237,12 +237,12 @@ class PositionSpec(Strict):
             description="The first section's initial atlas position in mm; omit to "
             "centre the stack in the atlas"
         ),
-        Cli(aliases=("--start-mm",), metavar="MM"),
+        Cli(metavar="MM"),
     ] = None
     strict_interval: Annotated[
         bool,
         Field(description="Sections must sit exactly one interval apart"),
-        Cli(aliases=("--strict-interval",)),
+        Cli(),
     ] = False
     playbook: Annotated[
         bool,
@@ -251,7 +251,7 @@ class PositionSpec(Strict):
             "and regions, write supported placements, revisit uncertainty and "
             "review the stack"
         ),
-        Cli(aliases=("--playbook",)),
+        Cli(),
     ] = False
     notes: Annotated[
         str,
@@ -282,12 +282,12 @@ class TransformSpec(Strict):
     hemisphere_cue: Annotated[
         str,
         Field(description="What marks a hemisphere in these sections (a notch, an injection...)"),
-        Cli(aliases=("--hemisphere-cue",), metavar="TEXT"),
+        Cli(metavar="TEXT"),
     ] = ""
     angles: Annotated[
         bool,
         Field(description="Let the agent set the cutting angles"),
-        Cli(aliases=("--angles",)),
+        Cli(),
     ] = False
     max_parallel: Annotated[
         int,
@@ -336,14 +336,14 @@ class NonlinearSpec(Strict):
             "otherwise none (the nonlinear task fits deformations to the stain "
             "alone, with no image model)"
         ),
-        Cli(aliases=("--image-provider",), metavar="PROVIDER", deferred=True),
+        Cli(metavar="PROVIDER", deferred=True),
     ] = "none"
     image_model: Annotated[
         str | None,
         Field(
             description="Image model for the nonlinear tool; default is the provider's image model"
         ),
-        Cli(aliases=("--image-model",), metavar="MODEL"),
+        Cli(metavar="MODEL"),
     ] = None
     notes: Annotated[
         str,
@@ -360,7 +360,7 @@ class NonlinearSpec(Strict):
             "a deformation (NonlinearSpec.require_deformation); otherwise a "
             "deformation is the agent's choice"
         ),
-        Cli(group="session", aliases=("--require-deformation",)),
+        Cli(group="session"),
     ] = False
     image_prompt: Annotated[
         str | None,
@@ -373,7 +373,7 @@ class NonlinearSpec(Strict):
             "per-section edit starts from it. Default: LangSlice's prompt for "
             "the provider"
         ),
-        Cli(kind="file", aliases=("--image-prompt",), metavar="FILE"),
+        Cli(kind="file", metavar="FILE"),
     ] = None
 
     @field_validator("provider")
@@ -564,17 +564,17 @@ class JobSpec(Strict):
     disabled: Annotated[
         list[str],
         Field(description=_TOOL_LISTS),
-        Cli(kind="repeat_csv", aliases=("--disable",), metavar="NAME[,NAME...]"),
+        Cli(kind="repeat_csv", metavar="NAME[,NAME...]"),
     ] = Field(default_factory=list)
     enabled: Annotated[
         list[str],
         Field(description=_START_OFF),
-        Cli(kind="repeat_csv", aliases=("--enable",), metavar="NAME[,NAME...]"),
+        Cli(kind="repeat_csv", metavar="NAME[,NAME...]"),
     ] = Field(default_factory=list)
     facts: Annotated[
         list[str],
         Field(description="A fact about this stack, passed to the agent verbatim (repeatable)"),
-        Cli(kind="repeat", aliases=("--fact",), metavar="TEXT"),
+        Cli(kind="repeat", metavar="TEXT"),
     ] = Field(default_factory=list)
     inputs: Annotated[
         dict[str, Any],
@@ -623,7 +623,6 @@ class JobSpec(Strict):
         Cli(
             group="plugins",
             kind="repeat_csv",
-            aliases=("--tool-plugin",),
             metavar="MODULE:FACTORY",
         ),
     ] = Field(default_factory=list)
@@ -636,7 +635,6 @@ class JobSpec(Strict):
         Cli(
             group="plugins",
             kind="pairs",
-            aliases=("--tool-plugin-config",),
             metavar="MODULE:FACTORY=JSON",
         ),
     ] = Field(default_factory=dict)
@@ -668,7 +666,7 @@ class JobSpec(Strict):
     resume: Annotated[
         bool,
         Field(description="Ignore any existing checkpoint and start over"),
-        Cli(group="resume", aliases=("--fresh",)),
+        Cli(group="resume"),
     ] = True
 
     @field_validator("inputs", mode="before")

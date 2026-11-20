@@ -97,7 +97,7 @@ indices into its sorted region ids, from which every tilted label plane is
 sampled. The first run on an atlas builds them (about 1.6 GB for
 `whs_sd_rat_39um`, 0.4 GB for `allen_mouse_25um`); later processes open them
 memory-mapped, which takes about 5 s off the start of a run on an angled rat
-stack and off every `langslice-job` call that draws a tilted plane. Planes
+stack and off every `langslice job` call that draws a tilted plane. Planes
 sampled from the cache are identical to planes sampled without it.
 
 `LANGSLICE_ATLAS_CACHE` names another folder, or `off` turns the cache off.

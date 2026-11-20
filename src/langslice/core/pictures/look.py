@@ -294,20 +294,27 @@ def changed_since(state: Stack, held: dict[str, Any], *, besides: Collection[str
     return now != then
 
 
+class SectionGone(Refused):
+    """``NOT_FOUND``: a section a picture showed is no longer in the stack."""
+
+    def __init__(self, section_id: str) -> None:
+        super().__init__(
+            RefusalCode.NOT_FOUND,
+            f"{section_id} is no longer in the stack, so this "
+            "picture cannot be drawn again; draw the stack as "
+            "it is now.",
+        )
+
+
 def restored(state: Stack, held: dict[str, Any]) -> Stack:
     """A copy of *state* with the snapshot *held* put back; *state* is
-    untouched. :class:`Refused` ``NOT_FOUND`` when a section of the
+    untouched. :class:`SectionGone` when a section of the
     snapshot is no longer in the stack."""
     out = copy.deepcopy(state)
     snapshots = cast("dict[str, JsonObject]", held.get("sections") or {})
     for section_id in snapshots:
         if out.by_id(section_id) is None:
-            raise Refused(
-                RefusalCode.NOT_FOUND,
-                f"{section_id} is no longer in the stack, so this "
-                "picture cannot be drawn again; draw the stack as "
-                "it is now.",
-            )
+            raise SectionGone(section_id)
     for index, section in enumerate(out.slices):
         fields = snapshots.get(section.id)
         if fields is not None:
@@ -1239,13 +1246,16 @@ def redraw(
     """The picture of *recipe* drawn again at *window* (fractions of its
     unzoomed content; empty: whole), from the stack as it was when the
     recipe was made (``stale`` when it has changed since).
-    :class:`Refused` ``NOT_FOUND`` when a section it showed is gone.
+    :class:`SectionGone` when a section it showed is gone.
     """
     request = replace(LookRequest.from_args(recipe["args"]), zoom=tuple(float(v) for v in window))
     held = recipe.get("state") or {}
     named = {name for name, _number, was_held in request.registrations if not was_held}
     stale = bool(held) and changed_since(state, held, besides=named)
     drawn = restored(state, held) if bool(held) and differs_since(state, held) else state
+    for section_id in request.sections:
+        if drawn.by_id(section_id) is None:
+            raise SectionGone(section_id)
     angles = held.get("view_angles")
     base = recipe.get("base")
     pictures = look(

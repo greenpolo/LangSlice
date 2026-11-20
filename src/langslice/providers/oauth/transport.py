@@ -50,7 +50,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Iterator, Sequence
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import requests
 from google.adk.models._capabilities import LlmCapabilities
@@ -62,16 +62,13 @@ from google.genai import types
 from pydantic import Field, field_validator
 
 from langslice.core.pictures.media_keys import MEDIA_LAYOUT_ATTR
-from langslice.providers.connections import (
-    OPENAI_OAUTH_DEFAULT_AGENT_MODEL,
-    OPENAI_OAUTH_DEFAULT_IMAGE_MODEL,
-)
 from langslice.providers.oauth.login import (
     ORIGINATOR,
     Creds,
     load_credentials,
     refresh,
 )
+from langslice.providers.table import provider
 from langslice.providers.usage import (
     item_descriptor,
     request_descriptor,
@@ -82,11 +79,12 @@ logger = logging.getLogger(__name__)
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 
 IMAGES_EDITS_URL = "https://chatgpt.com/backend-api/codex/images/edits"
-MODEL_PREFIX = "openai-oauth/"
+_PROVIDER = provider("openai-oauth")
+MODEL_PREFIX = _PROVIDER.model_prefix
 
-DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
+DEFAULT_IMAGE_MODEL = _PROVIDER.image_model_or_default()
 
-DEFAULT_REVIEW_MODEL = OPENAI_OAUTH_DEFAULT_AGENT_MODEL
+DEFAULT_REVIEW_MODEL = _PROVIDER.model_string(_PROVIDER.agent_models[0])
 
 
 def _headers(creds: Creds, session_id: str) -> dict[str, str]:
@@ -584,7 +582,10 @@ class OpenAIOAuthLlm(BaseLlm):
     Registered for ``openai-oauth/<model>`` strings, e.g.
     ``openai-oauth/gpt-5.6-luna``.
     Supports vision input, function calling, and media returned by tools.
+    ``provider`` names the table row that bills it.
     """
+
+    provider: ClassVar[str] = "openai-oauth"
 
     reasoning_effort: str = "medium"
     """Reasoning effort: low | medium | high | xhigh | max (the GPT-6 models

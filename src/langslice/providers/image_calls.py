@@ -24,14 +24,12 @@ from langslice.core.fits.trace.request import (
     GeneratedSegmentation,
 )
 from langslice.providers import gemini_api as vlm_config
-from langslice.providers.connections import (
-    GEMINI_DEFAULT_IMAGE_MODEL,
-    canonical_provider,
-)
+from langslice.providers.connections import canonical_provider
 from langslice.providers.openai_api import (
     get_openai_image_client,
     get_openai_image_model,
 )
+from langslice.providers.table import provider
 
 _IMAGE_QUALITIES = {"low", "medium", "high", "xhigh", "max"}
 
@@ -155,7 +153,7 @@ def _gemini_image_config(
 
 
 def _generate_google_segmentation(request: BorderTraceRequest) -> GeneratedSegmentation:
-    model = request.model or GEMINI_DEFAULT_IMAGE_MODEL
+    model = provider("gemini-api").image_model_or_default(request.model)
     client = vlm_config.get_client()
 
     contents = [

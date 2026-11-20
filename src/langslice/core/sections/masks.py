@@ -56,6 +56,7 @@ from langslice.core.fits.deformable.plane_images import (
 from langslice.core.fits.deformable.render import composed_native_grid
 from langslice.core.fits.deformation import RecordStore, fit_grid, linear_key
 from langslice.core.sections.images import images_digest
+from langslice.core.shared_files import atomic_file
 from langslice.core.stack.images import MaskRef
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -286,18 +287,13 @@ def write_mask(
         raise ValueError("A mask is a finite (H, W) weight image")
     stored = np.clip(array.astype(np.float32), 0.0, 1.0).astype(np.float16)
     path = _file_for(layout, section, name)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.stem}.partial.npz")
-    try:
+    with atomic_file(path) as handle:
         np.savez_compressed(
-            temporary,
+            handle,
             weights=stored,
             grid=np.array([stored.shape[1], stored.shape[0]]),
             made=np.array(datetime.now(UTC).isoformat()),
         )
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
     entry = facts.model_copy(update={"file": layout.relative(path)})
     section.masks[name] = entry
     return entry

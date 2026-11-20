@@ -9,6 +9,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from langslice.core.exports.quint import (
+    anchoring_from_pixel_map,
+    from_target_grid,
+    quicknii_points_to_atlas_um,
+    quicknii_target,
+    to_target_grid,
+)
 from langslice.core.maps.imported import (
     ANGLE_EPSILON_DEG,
     RecoveredPlacement,
@@ -16,13 +23,6 @@ from langslice.core.maps.imported import (
     placement_from_pixel_map,
 )
 from langslice.core.maps.section_maps import SWAP, orientation_matrix
-from langslice.job.exports.quint import (
-    anchoring_from_pixel_map,
-    from_target_grid,
-    quicknii_points_to_atlas_um,
-    quicknii_target,
-    to_target_grid,
-)
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace

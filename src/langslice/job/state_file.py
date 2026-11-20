@@ -34,8 +34,6 @@ OLDEST_FORMAT = 5
 ANGLES_KEY = "cutting_angles_deg"
 OPTIONAL_ROW_KEYS = ("layers", "masks", "images")
 
-__all__ = ["write_json_atomic"]
-
 
 def json_object(text: str) -> JsonObject | None:
     """Return the JSON object a text holds; None for any other JSON value.

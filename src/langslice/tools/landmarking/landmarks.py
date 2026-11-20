@@ -20,7 +20,7 @@ from langslice.core.pictures.landmarks import pair_picture
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.landmarks import Endpoint, Landmarks, Pair
 from langslice.tools.looking.look import Looked, save_pictures
-from langslice.tools.refusal import check_frozen, unknown_sections
+from langslice.tools.refusal import check_frozen, named_section
 from langslice.tools.run import Run, pictured
 
 if TYPE_CHECKING:
@@ -55,9 +55,7 @@ def landmark_section(job: Job, section: str) -> Section:
         ``NOT_FOUND``; ``BUSY`` or ``FROZEN`` (its
         deformation), as :func:`langslice.tools.refusal.check_frozen`.
     """
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [section])
+    record = named_section(job.state, section)
     check_frozen(job, [record.id], "deformation")
     return record
 

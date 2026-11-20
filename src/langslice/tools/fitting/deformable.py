@@ -63,9 +63,9 @@ from langslice.tools.fitting.fit_regions import (
 from langslice.tools.looking.look import show_result
 from langslice.tools.refusal import (
     check_section_count,
+    named_sections,
     put_back_words,
     section_refusal,
-    unknown_sections,
 )
 from langslice.tools.run import Run, as_list, drawn_image, pictured
 from langslice.tools.stale import section_inputs, stale_refusal
@@ -685,16 +685,7 @@ def fireants_syn(
         )
     refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
-    records: list[Section] = []
-    unknown: list[str] = []
-    for ref in refs:
-        record = job.state.resolve(ref)
-        if record is None:
-            unknown.append(str(ref))
-        elif all(held.id != record.id for held in records):
-            records.append(record)
-    if unknown:
-        raise unknown_sections(job.state, unknown)
+    records = named_sections(job.state, refs)
     image = refuse_unknown_inputs(job, workspace, records, section_image, mask)
     choice = deformation.Choice(
         fit_section=image,

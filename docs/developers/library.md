@@ -21,7 +21,7 @@ with langslice.open_job("/scans/brain1") as job:
 
 `open_job` accepts a job folder or its image folder. Each enabled verb is a
 method with the same name and arguments as the agent tool. Discover them
-with `job.verbs` and `langslice-job schema VERB --job FOLDER`.
+with `job.verbs` and `langslice job FOLDER schema VERB`.
 Sections are named by filename or a unique filename stem.
 
 A reply is a JSON-safe dict: the full tool result plus `artifacts` (saved

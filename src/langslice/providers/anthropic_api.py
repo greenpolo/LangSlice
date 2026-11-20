@@ -22,12 +22,14 @@ from __future__ import annotations
 import copy
 import os
 from functools import cached_property
-from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from google.adk.models.anthropic_llm import AnthropicLlm
 
-KEY_FILE = Path.home() / ".langslice" / "anthropic_api_key"
+from langslice.providers.table import provider
+
+_PROVIDER = provider("anthropic-api")
+KEY_FILE = _PROVIDER.key_file_path()
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 MAX_TOKENS = 16000
 _EPHEMERAL = {"type": "ephemeral"}
@@ -35,8 +37,8 @@ _EPHEMERAL = {"type": "ephemeral"}
 
 def api_key() -> str:
     """The Anthropic API key: the environment's, else :data:`KEY_FILE`'s."""
-    key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
-    if not key and KEY_FILE.is_file():
+    key = (os.environ.get(_PROVIDER.key_env[0]) or "").strip()
+    if not key and KEY_FILE is not None and KEY_FILE.is_file():
         key = KEY_FILE.read_text(encoding="utf-8").strip()
     if not key:
         raise ValueError(
@@ -67,7 +69,10 @@ def _mark_last_block(messages: list[Any]) -> list[Any]:
 
 
 class AnthropicApiLlm(AnthropicLlm):
-    """ADK ``AnthropicLlm`` with LangSlice's key lookup, effort and prompt caching."""
+    """ADK ``AnthropicLlm`` with LangSlice's key lookup, effort and prompt caching.
+    ``provider`` names the table row that bills it."""
+
+    provider: ClassVar[str] = "anthropic-api"
 
     max_tokens: int = MAX_TOKENS
     reasoning_effort: str | None = None

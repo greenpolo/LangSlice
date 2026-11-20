@@ -39,8 +39,8 @@ from langslice.core.pictures.sizes import (
     clamp_resolution,
 )
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.job.pictures import has_frame
-from langslice.tools.refusal import unknown_sections
+from langslice.job.pictures import has_frame, view_number
+from langslice.tools.refusal import named_sections
 from langslice.tools.run import as_list, pictured
 
 if TYPE_CHECKING:
@@ -61,10 +61,6 @@ class Looked:
     layers: list[dict[str, Any]] = field(default_factory=list)
     masks: list[dict[str, Any]] = field(default_factory=list)
     sheets: list[dict[str, Any]] = field(default_factory=list)
-
-
-def _picture_id(name: str) -> int:
-    return int(name.split("_", 1)[0])
 
 
 def save_pictures(
@@ -104,7 +100,7 @@ def save_pictures(
         tiles=tiles,
     )
     return [
-        {"id": _picture_id(name), "caption": picture.caption}
+        {"id": view_number(name), "caption": picture.caption}
         for name, picture in zip(names, drawn, strict=True)
     ]
 
@@ -333,16 +329,7 @@ def look_pictures(
     plugin_layers, masks = request.layers, request.masks
     state = job.state
     refs = _strings(sections, "sections")
-    ids: list[str] = []
-    unknown: list[Any] = []
-    for ref in refs:
-        record = state.resolve(ref)
-        if record is None:
-            unknown.append(ref)
-        else:
-            ids.append(record.id)
-    if unknown:
-        raise unknown_sections(state, [str(ref) for ref in unknown])
+    ids = [record.id for record in named_sections(state, refs, unique=False)]
     shown_under: tuple[tuple[str, int, bool], ...] = ()
     if registrations:
         state, ids, shown_under = _under_registrations(job, str(mode), ids, registrations)
@@ -611,7 +598,7 @@ def _sheet_reply(
         images.append(sheet.image)
     names = job.views.save(tool=LOOK_TOOL, pictures=items, arguments={**arguments, "sheet": True})
     for name, sheet_entry, tiled in zip(names, made, parts, strict=True):
-        sheet_entry["id"] = _picture_id(name)
+        sheet_entry["id"] = view_number(name)
         for entry in tiled:
             entry["sheet"] = sheet_entry["id"]
     made = [

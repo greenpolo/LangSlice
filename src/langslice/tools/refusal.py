@@ -9,7 +9,7 @@ takes is refused whole (:func:`check_section_count`).
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from typing import TYPE_CHECKING, cast
 
 from langslice.core.refusal import RefusalCode, Refused
@@ -18,9 +18,11 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.stack import (
     unknown_sections as state_unknown_sections,
 )
+from langslice.job.settings.tool_table import TOOLS
 from langslice.job.settings.tools_on import ToolsOn
 
 if TYPE_CHECKING:
+    from langslice.core.stack.section import Section
     from langslice.job.job import Job
 
 
@@ -39,6 +41,50 @@ def unknown_sections(state: Stack, refs: object) -> Refused:
     valid filenames and the message saying sections are named by filename
     (:func:`langslice.core.stack.stack.unknown_sections`)."""
     return Refused(RefusalCode.NOT_FOUND, **state_unknown_sections(state, refs))
+
+
+def named_section(state: Stack, ref: object) -> Section:
+    """The section *ref* names, else ``NOT_FOUND`` (:func:`unknown_sections`)."""
+    record = state.resolve(ref)
+    if record is None:
+        raise unknown_sections(state, [str(ref)])
+    return record
+
+
+def named_sections(state: Stack, refs: Iterable[object], *, unique: bool = True) -> list[Section]:
+    """The sections *refs* name, in the order named.
+
+    Parameters
+    ----------
+    state
+        The stack whose sections the refs name.
+    refs
+        Filenames, or filenames without their extension.
+    unique
+        Whether a section named twice is listed once.
+
+    Returns
+    -------
+    list of Section
+        One per ref (one per section with *unique*).
+
+    Raises
+    ------
+    Refused
+        ``NOT_FOUND`` naming every ref that names no section
+        (:func:`unknown_sections`).
+    """
+    found: list[Section] = []
+    unknown: list[str] = []
+    for ref in refs:
+        record = state.resolve(ref)
+        if record is None:
+            unknown.append(str(ref))
+        elif not unique or all(held.id != record.id for held in found):
+            found.append(record)
+    if unknown:
+        raise unknown_sections(state, unknown)
+    return found
 
 
 def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> None:
@@ -122,7 +168,7 @@ def reworded(refusal: Refused, message: str) -> Refused:
     return Refused(refusal.code, **facts)
 
 
-TRANSFORM_TOOLS = ("interactive_transform", "elastix_affine")
+TRANSFORM_TOOLS = tuple(name for name, tool in TOOLS.items() if tool.group == "Linear")
 
 
 def check_section_count(

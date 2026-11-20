@@ -29,21 +29,17 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from langslice.providers.table import PROVIDERS, provider
+
 logger = logging.getLogger(__name__)
 
 SETTINGS_ENV = "LANGSLICE_SETTINGS"
 SETTINGS_FILE = "settings.json"
 VERSION = 1
 _OFF = frozenset({"", "0", "off", "false", "no", "none"})
-CONNECTIONS: tuple[str, ...] = ("openai-oauth", "openai-api", "anthropic-api", "gemini-api")
+CONNECTIONS: tuple[str, ...] = tuple(item.name for item in PROVIDERS)
 RUNS_IN: tuple[str, ...] = ("app", "langslice")
 REASONING: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
-_MODEL_PREFIX = {
-    "openai-oauth": "openai-oauth/",
-    "openai-api": "",
-    "anthropic-api": "anthropic-api/",
-    "gemini-api": "gemini-api/",
-}
 
 
 def settings_file() -> Path | None:
@@ -128,35 +124,22 @@ def write(settings: dict[str, Any]) -> dict[str, Any]:
 def model_string(connection: str, name: str) -> str:
     """*name* (a model id, or a ``--model`` string already) as
     ``langslice linear run --model`` takes it for *connection*."""
-    prefix = _MODEL_PREFIX[connection]
-    name = name.strip()
-    return name if not prefix or name.startswith(prefix) else prefix + name
+    return provider(connection).model_string(name)
 
 
 def model_name(connection: str, model: str) -> str:
     """A ``--model`` string of *connection* as its bare model id."""
-    prefix = _MODEL_PREFIX[connection]
-    return model[len(prefix) :] if prefix and model.startswith(prefix) else model
+    return provider(connection).model_name(model)
 
 
 def agent_models() -> dict[str, dict[str, Any]]:
     """Per connection, the agent models to offer (bare ids) and LangSlice's
-    default (None where LangSlice names none). The ChatGPT account's are
-    :mod:`langslice.providers.connections`'s; an API key's are the models
-    LangSlice prices (:data:`langslice.doors.agent.spend.PRICES`), and the
-    OpenAI
-    API's default is the ChatGPT account's default model."""
-    from langslice.doors.agent.spend import PRICES
-    from langslice.providers import connections as registry
-
-    oauth = [model_name("openai-oauth", m) for m in registry.OPENAI_OAUTH_AGENT_MODELS]
-    oauth_default = model_name("openai-oauth", registry.OPENAI_OAUTH_DEFAULT_AGENT_MODEL)
-    out: dict[str, dict[str, Any]] = {"openai-oauth": {"models": oauth, "default": oauth_default}}
-    for connection in ("openai-api", "anthropic-api", "gemini-api"):
-        models = list(PRICES.get(connection, {}))
-        default = oauth_default if connection == "openai-api" and oauth_default in models else None
-        out[connection] = {"models": models, "default": default}
-    return out
+    default (None where LangSlice names none), both from the provider table
+    (:mod:`langslice.providers.table`)."""
+    return {
+        item.name: {"models": list(item.agent_models), "default": item.agent_default}
+        for item in PROVIDERS
+    }
 
 
 def agent_choice(settings: dict[str, Any] | None = None) -> tuple[str, str | None] | None:

@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from langslice.core.shared_files import replace_file
+from langslice.core.shared_files import write_json_atomic
 
 INDEX_FORMAT_VERSION = 1
 _JOB_ID = re.compile(r"[0-9a-f]{12}")
@@ -69,11 +69,7 @@ def register(
     }
     if fallback is not None:
         record["fallback"] = fallback
-    temporary = path.with_suffix(".tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-        os.chmod(temporary, 0o600)
-        json.dump(record, handle, indent=2)
-    replace_file(temporary, path)
+    write_json_atomic(path, record, permissions=0o600)
     return path
 
 

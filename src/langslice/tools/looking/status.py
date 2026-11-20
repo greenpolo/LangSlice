@@ -99,7 +99,9 @@ def raw_channels(run: Run) -> list[str] | dict[str, list[str]]:
     return list(next(iter(distinct))) if len(distinct) == 1 else named
 
 
-DEFORMABLE_FITS = ("fireants_syn", "trace_borders", "stalign_lddmm", "spomialign", "emlddmm_stack")
+DEFORMABLE_FITS = tuple(
+    name for name, tool in TOOLS.items() if tool.group == "Nonlinear" and tool.long
+)
 
 
 def can_change(run: Run) -> list[str]:

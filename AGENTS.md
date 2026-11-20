@@ -26,7 +26,7 @@ and CI) with no exceptions: a violation is fixed by moving code.
 | `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; the declarations and the job statement (`descriptions/`) |
 | `plugins/` | the tool-plugin machinery and `ToolContext`; the public facade is `plugin_api.py` |
 | `engines/` | the first-party engines' tools (DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm), each declared once in the tool table |
-| `doors/` | the ways in: the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI `langslice-job` (`agent_cli/`), the `langslice` command (`commands/`), the library (`library/`) |
+| `doors/` | the ways in: the built-in agent (`agent/`), MCP (`mcp/`), the `langslice` command with its `job` group for coding agents (`commands/`, `commands/job/`), the library (`library/`) |
 | `providers/` | model access (Gemini, OpenAI, OpenAI OAuth, none); imports `core` only |
 | `hosts/` | code in LangSlice's own environment: the `gui` command and the window (`gui/`) |
 | `_vendor/` | STalign and emlddmm as published; never edited |

@@ -126,7 +126,7 @@ the registration look like, and how did it get here.
   and says *revised*, and the section's new picture fades in over the old
   one while you watch. The `×` beside a comment removes it. The button counts
   the comments still open. Then tell your agent to look at the comments: it
-  reads them with `langslice-job FOLDER review_comments`, which saves a
+  reads them with `langslice job FOLDER review_comments`, which saves a
   picture of each commented section with its boxes, and briefs a
   registration agent on what to fix. Review works in both views.
 - **The run so far.** The journal, on the right: a timeline of the agent's
@@ -242,14 +242,14 @@ With `--tab prompt` and a folder, the form starts from that folder's job
 what is kept on every section, damage notes, facts and notes.
 
 The form is a column of numbered cards. The message beside it updates as
-you type and is shown whole, and **Copy** puts it on the clipboard. It is a short request and the job's `langslice-job FOLDER init`
+you type and is shown whole, and **Copy** puts it on the clipboard. It is a short request and the job's `langslice job FOLDER init`
 command, holding only what you set:
 
 ````text
 Please register my brain sections with LangSlice, following its register-brain skill: create the job with the init command below, then launch the registration and check the result. The command leaves out the pixel size (when the image files do not record it): choose it yourself, or ask me when the images do not tell you. When the registration is done, prepare the results for the QUINT tools (PyNutil, QuickNII, VisuAlign) and DMC-BrainMap. The command is quoted for bash; if your shell is another, quote it for yours.
 
 ```bash
-langslice-job /data/brain1 init \
+langslice job /data/brain1 init \
   --tasks position,transform,nonlinear \
   --atlas allen_mouse_25um \
   --plane coronal \
@@ -263,7 +263,7 @@ langslice-job /data/brain1 init \
 ```
 ````
 
-Each line of the command is one of `init`'s settings (`langslice-job schema
+Each line of the command is one of `init`'s settings (`langslice job FOLDER schema
 init` lists them all): `--tasks` what to do, `--disabled` the tools
 turned off, `--frozen` what stays as it is on every section,
 `--damaged` the damage notes, `--facts` the cutting order and `--notes` your

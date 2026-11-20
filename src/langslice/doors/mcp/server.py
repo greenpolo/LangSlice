@@ -181,8 +181,8 @@ def open_job(
 def mcp_statement(session: Session, *, scripting: str = "") -> str:
     """The job statement as the MCP door words it: the toolbox's tool names, its
     picture limit, the ``show_stack`` pages (drawn now when not yet), the
-    user's notes and the image-model line. ``langslice-job FOLDER launch --role
-    register`` (:mod:`langslice.doors.agent_cli.launch`) embeds it in the
+    user's notes and the image-model line. ``langslice job FOLDER launch --role
+    register`` (:mod:`langslice.doors.commands.job.launch`) embeds it in the
     message that launches an MCP registration agent; *scripting* is the
     paragraph on scripts that ``--role register-scripting`` adds after the
     opening's (``door_text.SCRIPTING``, filled)."""
@@ -241,7 +241,7 @@ def open_folder(
     atlas_loader: Callable[[str], Any] | None,
 ) -> Session:
     """The job of the folder the host names: an image folder or its job
-    folder. A job made there (``langslice-job FOLDER init``, any door)
+    folder. A job made there (``langslice job FOLDER init``, any door)
     opens as it stands, with its saved settings and notes, resuming its
     checkpoint; a folder without one gets its job from this server's job
     flags (*spec_for*)."""

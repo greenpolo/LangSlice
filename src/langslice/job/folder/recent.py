@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from langslice.core.shared_files import replace_file
+from langslice.core.shared_files import atomic_file
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,5 @@ def _compact(path: Path) -> None:
         newest.pop(entry["folder"], None)
         newest[entry["folder"]] = entry
     kept = list(newest.values())[-KEEP_JOBS:]
-    temporary = path.with_name(path.name + ".tmp")
-    lines = "".join(json.dumps(entry) + "\n" for entry in kept)
-    temporary.write_text(lines, encoding="utf-8", newline="\n")
-    replace_file(temporary, path)
+    with atomic_file(path, "w") as handle:
+        handle.writelines(json.dumps(entry) + "\n" for entry in kept)

@@ -24,9 +24,10 @@ from typing import Any
 from pydantic import ConfigDict, ValidationError
 
 from langslice.core.jsonable import Json
+from langslice.core.shared_files import write_json_atomic
 from langslice.core.stack.part import Shape, Whole
 from langslice.job.folder.layout import JobLayout
-from langslice.job.state_file import FORMAT_KEY, json_object, write_json_atomic
+from langslice.job.state_file import FORMAT_KEY, json_object
 
 logger = logging.getLogger(__name__)
 

@@ -41,15 +41,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 import langslice
+from langslice.core.exports.quint_images import QUICKNII_FILE, VISUALIGN_FILE
 from langslice.core.jsonable import to_jsonable
-from langslice.core.shared_files import replace_file
+from langslice.core.shared_files import atomic_file, write_json_atomic
 from langslice.job.folder.layout import (
     IMAGES_ARE_PARENT,
     REGISTRATION_FILE,
     JobLayout,
     job_folder_for,
 )
-from langslice.job.state_file import json_object, write_json_atomic
 
 if TYPE_CHECKING:
     from langslice.core.maps.section_maps import SectionFrame, SectionMaps
@@ -68,8 +68,6 @@ LABELS_FIJI_FILE = "labels_fiji.tif"
 LABELS_CSV_FILE = "labels.csv"
 RESIDUAL_FILE = "residual.tif"
 MAPS_FILE = "maps.json"
-QUICKNII_FILE = "quicknii.json"
-VISUALIGN_FILE = "visualign.json"
 TRACES_DIR = "traces"
 SECTION_FILES: dict[str, str] = {
     "coords": COORDS_FILE,
@@ -93,7 +91,7 @@ CONVENTION = (
 )
 NOTE = (
     "Derived from state.json on every change and never read back: edit nothing "
-    "here. Change a registration through the verbs (langslice-job FOLDER VERB, or "
+    "here. Change a registration through the verbs (langslice job FOLDER VERB, or "
     "langslice.open_job in Python). Edited maps or label images become a "
     "registration only through a fit (see docs/reference/file_formats.md)."
 )
@@ -557,47 +555,14 @@ def write_trace_reply(
     (bool, the model's lines), ``reply`` (uint8 RGB, its raw reply), both on
     the grid *info* names, and ``info`` (the facts as JSON text)."""
     path = trace_reply_path(layout, section_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.stem + ".tmp.npz")
-    np.savez_compressed(
-        temporary,
-        borders=np.asarray(borders, dtype=bool),
-        reply=np.asarray(reply, dtype=np.uint8),
-        info=np.array(json.dumps(info, sort_keys=True)),
-    )
-    replace_file(temporary, path)
+    with atomic_file(path) as handle:
+        np.savez_compressed(
+            handle,
+            borders=np.asarray(borders, dtype=bool),
+            reply=np.asarray(reply, dtype=np.uint8),
+            info=np.array(json.dumps(info, sort_keys=True)),
+        )
     return path
-
-
-def quint_copies(exports_dir: Path) -> list[str]:
-    """Return the image filenames the folder's ``quicknii.json`` names.
-
-    Parameters
-    ----------
-    exports_dir
-        The job's exports folder.
-
-    Returns
-    -------
-    list of str
-        The ``filename`` of each slice (its last path component): the PNG
-        copies an export wrote beside it. Empty when there is no readable
-        file.
-    """
-    try:
-        text = (exports_dir / QUICKNII_FILE).read_text(encoding="utf-8")
-        document = json_object(text) or {}
-    except (OSError, ValueError):
-        return []
-    slices = document.get("slices")
-    if not isinstance(slices, list):
-        return []
-    names: list[str] = []
-    for entry in slices:
-        name = entry.get("filename") if isinstance(entry, dict) else None
-        if isinstance(name, str) and Path(name).name:
-            names.append(Path(name).name)
-    return names
 
 
 def write_landmarks(layout: JobLayout, state: Stack) -> None:

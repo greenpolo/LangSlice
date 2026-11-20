@@ -10,7 +10,7 @@ scripting verbs, their declarations and ``Verb.limits``, the job's own
 transform cap), so it cannot drift from what the doors offer; written when a
 job folder is created and rewritten whenever a LangSlice that would word it
 differently opens the folder (:func:`write_card`). One screen: the details are
-one command away (``langslice-job ops``, ``langslice-job schema VERB``).
+one command away (``langslice job FOLDER ops``, ``langslice job FOLDER schema VERB``).
 """
 
 from __future__ import annotations
@@ -132,7 +132,7 @@ One registration job: the sections in `{images}` placed in a BrainGlobe atlas.
 Written by LangSlice {langslice.__version__} from its code; regenerated on open, so do not edit it.
 
 A registering agent's job is the message that launched it, made by
-`langslice-job {layout.folder} launch --role register` (or `register-scripting`).
+`langslice job {layout.folder} launch --role register` (or `register-scripting`).
 
 ## Files: settings, state and derived outputs
 - `state.json`: THE TRUTH. Order, positions, flips, transforms and the applied
@@ -166,14 +166,14 @@ millimetres along the slicing axis.
 
 ## Command line (JSON on stdout: ok, result, artifacts, warnings, next)
 For the session that sets a job up and checks it, not for registering:
-`langslice-job {layout.folder} COMMAND`: `init` (`schema init`: its flags), `launch --role
+`langslice job {layout.folder} COMMAND`: `init` (`schema init`: its flags), `launch --role
 register|register-scripting`, `status`, {export_command}`env`, `python SCRIPT`.
 Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`, `error.message`), 4 internal.
 
 ## Tools
 A registration agent has these as MCP tools; a script has them as methods (Python, below).
 `{TOOLS_FILE}` (from `init`) describes each and its arguments;
-`langslice-job {layout.folder} schema TOOL [TOOL ...]` as JSON (every tool without one).
+`langslice job {layout.folder} schema TOOL [TOOL ...]` as JSON (every tool without one).
 {verbs}
 
 ## Python
@@ -186,7 +186,7 @@ re-checks each section before it applies (`STALE_INPUT`: run it again for that s
 {background}Atlases: `langslice.load_atlas("allen_mouse_25um")`.
 Keep your own files here, never in /tmp: scripts in `scripts/`, the rest in `scratch/`.
 Run a script with the job's own Python, `env/` here (made by `launch --role register-scripting`,
-whose message names its interpreter, or by `langslice-job {layout.folder} python
+whose message names its interpreter, or by `langslice job {layout.folder} python
 scripts/NAME.py [ARGS]`; `env install PACKAGE ...` adds packages).
 Your own method (an affine, a warp field) goes in through `job.context`: `help(job.context)`.
 Judge and choose fits by looking at their pictures, never by image-similarity scores (mutual

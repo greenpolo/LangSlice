@@ -1,6 +1,6 @@
 # LangSlice
 
-> LangSlice registers histology brain sections to BrainGlobe atlases. A user's coding-agent app (Codex, Antigravity, Claude Code) creates a job folder for one brain with `langslice-job FOLDER init`, launches one registration agent with the prompt `langslice-job FOLDER launch --role register|register-scripting` writes, and checks the saved pictures. Install from PyPI into a Python 3.11 conda environment named `langslice`: `pip install "langslice[registration,mcp]"`.
+> LangSlice registers histology brain sections to BrainGlobe atlases. A user's coding-agent app (Codex, Antigravity, Claude Code) creates a job folder for one brain with `langslice job FOLDER init`, launches one registration agent with the prompt `langslice job FOLDER launch --role register|register-scripting` writes, and checks the saved pictures. Install from PyPI into a Python 3.11 conda environment named `langslice`: `pip install "langslice[registration,mcp]"`.
 
 Rules for an agent setting up a registration: never register sections yourself; put the user's notes in the job (`init --notes`); pass `result.prompt` of `launch` to the registration agent unchanged; run `launch` again for each launch; judge the result by its pictures, not the agent's summary.
 

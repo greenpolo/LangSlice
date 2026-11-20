@@ -37,6 +37,7 @@ from langslice.core.atlas.borders import (
     supersampled_positions,
 )
 from langslice.core.atlas.levels import OVERLAY_DEPTH, labels_at
+from langslice.core.fits.deformable.fields import remap_field
 from langslice.core.fits.deformable.plane_images import (
     native_labels,
     placement_left,
@@ -62,20 +63,7 @@ def composed_native_grid(
     """
     map_x, map_y = supersampled_positions(record.section_size, supersample)
     scale = 1.0 / record.mm_per_px
-    dx = cv2.remap(
-        np.ascontiguousarray(record.field_mm[..., 0], dtype=np.float32),
-        map_x,
-        map_y,
-        cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
-    dy = cv2.remap(
-        np.ascontiguousarray(record.field_mm[..., 1], dtype=np.float32),
-        map_x,
-        map_y,
-        cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
+    dx, dy = remap_field(record.field_mm, map_x, map_y)
     px = map_x + dx * scale
     py = map_y + dy * scale
     inverse = np.linalg.inv(record.placement.atlas_to_section)
@@ -373,19 +361,10 @@ def warp_source_points(
     inverse, mm = _inverse_pixels(record, size)
     mx = np.asarray(x, dtype=np.float32)
     my = np.asarray(y, dtype=np.float32)
-    shift = [
-        cv2.remap(
-            np.ascontiguousarray(inverse[..., k]),
-            mx,
-            my,
-            cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REPLICATE,
-        )
-        for k in range(2)
-    ]
+    dx, dy = remap_field(inverse, mx, my)
     return (
-        np.asarray(x, dtype=np.float64) + shift[0] / mm,
-        np.asarray(y, dtype=np.float64) + shift[1] / mm,
+        np.asarray(x, dtype=np.float64) + dx / mm,
+        np.asarray(y, dtype=np.float64) + dy / mm,
     )
 
 

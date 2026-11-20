@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from google.genai import types
+
+from langslice.providers.table import provider
 
 if TYPE_CHECKING:
     from google.adk.models.base_llm import BaseLlm
 
-_OAUTH_PREFIX = "openai-oauth/"
-_ANTHROPIC_PREFIX = "anthropic-api/"
+_OAUTH = provider("openai-oauth")
+_ANTHROPIC = provider("anthropic-api")
+_GEMINI = provider("gemini-api")
 _PROXY_PREFIX = "litellm-proxy:"
 _OPENROUTER_PREFIX = "openrouter:"
 _OLLAMA_PREFIX = "ollama:"
@@ -78,6 +82,21 @@ def _missing_litellm_error() -> RuntimeError:
     )
 
 
+@functools.cache
+def _openai_api_llm_class() -> Callable[..., BaseLlm]:
+    """ADK's ``LiteLlm`` declared as billed by the ``openai-api`` provider,
+    for the OpenAI endpoint itself (not a proxy or another base URL)."""
+    try:
+        from google.adk.models.lite_llm import LiteLlm
+    except ImportError as exc:
+        raise _missing_litellm_error() from exc
+
+    class OpenAIApiLlm(LiteLlm):
+        provider: ClassVar[str] = "openai-api"
+
+    return OpenAIApiLlm
+
+
 def default_http_options() -> types.HttpOptions:
     """Transport retry + wall-clock timeout for model calls.
 
@@ -118,22 +137,22 @@ def resolve_adk_model(model: str | BaseLlm) -> str | BaseLlm:
 
     lowered = stripped.lower()
 
-    if lowered.startswith("gemini-api/"):
-        stripped = stripped[len("gemini-api/") :].strip()
+    if lowered.startswith(_GEMINI.model_prefix):
+        stripped = stripped[len(_GEMINI.model_prefix) :].strip()
         lowered = stripped.lower()
         if not stripped:
             raise ValueError("gemini-api model strings require a model id after '/'")
 
-    if lowered.startswith(_OAUTH_PREFIX):
-        model_id = stripped[len(_OAUTH_PREFIX) :].strip()
+    if lowered.startswith(_OAUTH.model_prefix):
+        model_id = stripped[len(_OAUTH.model_prefix) :].strip()
         if not model_id:
             raise ValueError("openai-oauth model strings require a model id after '/'")
         from langslice.providers.oauth.transport import OpenAIOAuthLlm
 
         return OpenAIOAuthLlm(model=model_id)
 
-    if lowered.startswith(_ANTHROPIC_PREFIX):
-        model_id = stripped[len(_ANTHROPIC_PREFIX) :].strip()
+    if lowered.startswith(_ANTHROPIC.model_prefix):
+        model_id = stripped[len(_ANTHROPIC.model_prefix) :].strip()
         if not model_id:
             raise ValueError("anthropic-api model strings require a model id after '/'")
         from langslice.providers.anthropic_api import AnthropicApiLlm
@@ -199,7 +218,6 @@ def resolve_adk_model(model: str | BaseLlm) -> str | BaseLlm:
         )
 
     if lowered.startswith(_OPENAI_MODEL_PREFIXES):
-        litellm_cls = _load_litellm_class()
         openai_kwargs: dict[str, Any] = {}
         key = env_value("OPENAI_API_KEY")
         if key:
@@ -207,6 +225,9 @@ def resolve_adk_model(model: str | BaseLlm) -> str | BaseLlm:
         base_url = env_value("OPENAI_BASE_URL")
         if base_url:
             openai_kwargs["api_base"] = base_url
+            litellm_cls = _load_litellm_class()
+        else:
+            litellm_cls = _openai_api_llm_class()
         return litellm_cls(model=f"openai/{stripped}", **openai_kwargs)
 
     return stripped

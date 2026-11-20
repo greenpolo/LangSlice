@@ -248,17 +248,10 @@ def section_picture_point(panel: dict[str, Any], fractions: Any, warp: Any = Non
     size = np.asarray(panel["render_size"])
     p = oriented * size - 0.5
     if warp is not None:
-        from scipy.ndimage import map_coordinates
+        from langslice.core.fits.deformable.fields import sample_field
 
         wp = (p + 0.5) * np.asarray(warp.section_size) / size - 0.5
-        shift = np.array(
-            [
-                map_coordinates(
-                    warp.field_mm[..., k], [[wp[1]], [wp[0]]], order=1, mode="nearest"
-                ).item()
-                for k in range(2)
-            ]
-        )
+        shift = sample_field(warp.field_mm, wp[None])[0].astype(np.float64)
         p += shift / warp.mm_per_px * size / np.asarray(warp.section_size)
     return transform(np.linalg.inv(panel["pixel_to_render"]), p)
 

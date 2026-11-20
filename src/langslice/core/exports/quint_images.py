@@ -25,19 +25,36 @@ name those copies:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from langslice.job.imports.matching import section_number
+from langslice.core.shared_files import atomic_file
 
 logger = logging.getLogger(__name__)
 
+QUICKNII_FILE = "quicknii.json"
+VISUALIGN_FILE = "visualign.json"
+SECTION_NUMBER = re.compile(r"_s(\d+)")
 NUMBER_DIGITS = 3
 PNG_COMPRESSION = 1
+
+
+def base_name(filename: str) -> str:
+    """The last path component of *filename* (``/`` and ``\\`` both separate)."""
+    return re.split(r"[\\/]", filename)[-1]
+
+
+def section_number(filename: str) -> int | None:
+    """The one ``_sNNN`` section number in *filename*'s base name, else None."""
+    found = SECTION_NUMBER.findall(os.path.splitext(base_name(filename))[0])
+    return int(found[0]) if len(found) == 1 else None
 
 
 def section_numbers(filenames: Sequence[str]) -> list[int]:
@@ -108,11 +125,10 @@ def write_copies(
     written: list[Path] = []
     for name, pixels in copies:
         path = folder / name
-        partial = path.with_name(f".{name}.partial")
-        Image.fromarray(np.asarray(pixels, dtype=np.uint8)).save(
-            partial, format="PNG", compress_level=PNG_COMPRESSION
-        )
-        partial.replace(path)
+        with atomic_file(path) as handle:
+            Image.fromarray(np.asarray(pixels, dtype=np.uint8)).save(
+                handle, format="PNG", compress_level=PNG_COMPRESSION
+            )
         written.append(path)
     keep = {name for name, _pixels in copies}
     for name in previous:
@@ -125,3 +141,33 @@ def write_copies(
         except OSError:
             logger.warning("Could not remove the old copy %s", stale, exc_info=True)
     return written
+
+
+def quint_copies(exports_dir: Path) -> list[str]:
+    """Return the image filenames the folder's ``quicknii.json`` names.
+
+    Parameters
+    ----------
+    exports_dir
+        The job's exports folder.
+
+    Returns
+    -------
+    list of str
+        The ``filename`` of each slice (its last path component): the PNG
+        copies an export wrote beside it. Empty when there is no readable
+        file.
+    """
+    try:
+        document = json.loads((exports_dir / QUICKNII_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    slices = document.get("slices") if isinstance(document, dict) else None
+    if not isinstance(slices, list):
+        return []
+    names: list[str] = []
+    for entry in slices:
+        name = entry.get("filename") if isinstance(entry, dict) else None
+        if isinstance(name, str) and Path(name).name:
+            names.append(Path(name).name)
+    return names

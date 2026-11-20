@@ -43,7 +43,7 @@ from langslice.job.steps.history import (
     set_head,
 )
 from langslice.tools.looking.look import show_result
-from langslice.tools.refusal import check_frozen, unknown_sections
+from langslice.tools.refusal import check_frozen, named_section, named_sections
 from langslice.tools.run import as_list, pictured, spread
 
 if TYPE_CHECKING:
@@ -165,9 +165,7 @@ def row(
 
 
 def _resolve(job: Job, section: str) -> Section:
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [section])
+    record = named_section(job.state, section)
     return record
 
 
@@ -347,16 +345,7 @@ def restore(job: Job, sections: Any) -> RestoredMany:
         )
     with job.writing():
         state = job.state
-        named: list[Section] = []
-        unknown: list[str] = []
-        for item in entries:
-            record = state.resolve(str(item["id"]))
-            if record is None:
-                unknown.append(str(item["id"]))
-            else:
-                named.append(record)
-        if unknown:
-            raise unknown_sections(state, unknown)
+        named = named_sections(state, [str(item["id"]) for item in entries], unique=False)
         ids = [record.id for record in named]
         doubled = sorted({name for name in ids if ids.count(name) > 1})
         if doubled:

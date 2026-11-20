@@ -4,7 +4,7 @@ Skills for the main session and two custom agents that register one brain:
 `register` works only through LangSlice's MCP tools (`langslice mcp`), and
 `register_scripting` works through the same MCP tools and, in the shell,
 scripts of its own with the Python library. The main session sets a job up
-and checks it with the `langslice-job` command line
+and checks it with the `langslice job` command line
 ([`docs/agents/cli.md`](../../docs/agents/cli.md)), which runs no registration tool.
 The plugin carries the skills; its `setup` skill puts the agents, the command
 rules and the MCP server entry in Codex's own folder.
@@ -24,7 +24,7 @@ LangSlice itself must be installed first (the conda environment named
    appends its folder to PATH (a guarded line in `~/.zprofile` and
    `~/.zshrc` for zsh; in `~/.bashrc` and the bash login file for bash; the
    user `Path` on Windows), because the skills and the rules run
-   `langslice-job` by name, copies `agents/*.toml` into `~/.codex/agents/` and `rules/langslice.rules`
+   `langslice` by name, copies `agents/*.toml` into `~/.codex/agents/` and `rules/langslice.rules`
    into `~/.codex/rules/` from the installed plugin, and adds this to
    `~/.codex/config.toml`, with the full path of `langslice`:
 
@@ -55,7 +55,7 @@ an agent with plugins off does not see a plugin's server; it does see one in
 plugin cannot set.
 
 - `args = ["mcp"]` names no folder: the agent opens its job with
-  `start_job(image_folder=...)`, which opens the job `langslice-job FOLDER
+  `start_job(image_folder=...)`, which opens the job `langslice job FOLDER
   init` created as saved. The job's tools appear only then, so Codex must
   follow MCP tool-list changes: `mcp_tool_list_changed` is a Codex feature
   marked "under development" (codex-cli 0.164.0), and without it the agent
@@ -79,12 +79,12 @@ plugin cannot set.
 | `skills/registration-playbook`, `placement`, `damage-and-masks`, `landmarks`, `choosing-engines` | registration agents, through the session's skills | how to register, with example pictures; one source in `src/langslice/skills/`, written here by `packaging/build_connector_skills.py` and checked by `tests/test_connector_skills.py` |
 | `agents/register.toml` | registers one brain | LangSlice's MCP tools only; no shell |
 | `agents/register_scripting.toml` | registers one brain | LangSlice's MCP tools, plus Python-library scripts of its own in the job folder, workspace-write sandbox |
-| `rules/langslice.rules` | sandboxing | allows `langslice-job` commands outside the sandbox, forbids `curl` |
+| `rules/langslice.rules` | sandboxing | allows `langslice job` commands outside the sandbox, forbids `curl` |
 
 The role split is the same as in Claude Code: the main session owns setup,
 checking and import/export; each agent file has the same fixed
 `developer_instructions`, and the job statement comes in the launch message
-(`langslice-job <folder> launch --role register`, or `register-scripting`),
+(`langslice job <folder> launch --role register`, or `register-scripting`),
 which the main session passes on unchanged. Ask Codex
 to spawn the agent by name, for example "have register register the job in
 /data/M04". `register` is the default; `register_scripting` is for a user who
@@ -112,7 +112,7 @@ wants the agent to write scripts.
   web (`web__run`), generate images (`image_gen`), open local images
   (`view_image`), read MCP resources, and start other agents. Codex ignores
   the agent-file switches for these. Running the main session read-only
-  (`codex --sandbox read-only`) removes the file writes; the `langslice-job`
+  (`codex --sandbox read-only`) removes the file writes; the `langslice job`
   rule still lets the main session's setup commands run.
 - `sandbox_mode`, `approval_policy` and `mcp_servers` in an agent file do not
   override the main session: every agent sees the session's MCP servers and
@@ -121,8 +121,8 @@ wants the agent to write scripts.
 - `register_scripting` needs the shell, so the sandbox is its boundary. Rules
   (`prefix_rule`) apply only to commands that would run outside the sandbox;
   they are not an allowlist of everything the shell may run, so a
-  "`langslice-job` only" shell is not possible. `rules/langslice.rules` lets
-  every `langslice-job` command run outside the sandbox (the main session's).
+  "`langslice job` only" shell is not possible. `rules/langslice.rules` lets
+  every `langslice job` command run outside the sandbox (the main session's).
   The scripting agent runs its scripts with the job's own Python, inside the
   sandbox unless a rule of the user's own names that interpreter; a script
   that must read images outside the workspace needs such a rule.

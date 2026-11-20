@@ -15,15 +15,14 @@ from pathlib import Path
 from typing import Any
 
 from langslice.doors import user_settings
+from langslice.providers.table import IMAGE_PROVIDERS, KEY_PROVIDERS, find
 
 logger = logging.getLogger(__name__)
 
-_KEY_ENV = {
-    "openai-api": ("OPENAI_API_KEY",),
-    "gemini-api": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-    "anthropic-api": ("ANTHROPIC_API_KEY",),
-}
-_IMAGE_KEY_PROVIDERS = ("openai-api", "gemini-api")
+_KEY_ENV = {p.name: p.key_env for p in KEY_PROVIDERS}
+
+
+_KEY_NAMES = " and ".join([", ".join(list(_KEY_ENV)[:-1]), list(_KEY_ENV)[-1]])
 
 
 def _credentials_path() -> Path:
@@ -31,14 +30,14 @@ def _credentials_path() -> Path:
 
 
 def _key_file_present(provider: str) -> bool:
-    """Whether the Anthropic key file ``providers/anthropic_api.py`` also
-    reads (its ``KEY_FILE``, ``~/.langslice/anthropic_api_key``) holds a key."""
-    if provider != "anthropic-api":
+    """Whether the provider's key file (the Anthropic one
+    ``providers/anthropic_api.py`` also reads) holds a key."""
+    found = find(provider)
+    path = None if found is None else found.key_file_path()
+    if path is None:
         return False
     try:
-        return bool(
-            (Path.home() / ".langslice" / "anthropic_api_key").read_text(encoding="utf-8").strip()
-        )
+        return bool(path.read_text(encoding="utf-8").strip())
     except OSError:
         return False
 
@@ -118,9 +117,10 @@ def image_model_connected(provider: str) -> bool:
     canonical = canonical_provider(str(provider or ""))
     if canonical == "openai-oauth":
         return bool(_oauth_status()["configured"])
-    if canonical not in _IMAGE_KEY_PROVIDERS:
+    found = find(canonical)
+    if found is None or not found.images or not found.key_env:
         return False
-    if canonical == "openai-api" and os.getenv("OPENAI_IMAGE_API_KEY", "").strip():
+    if any(os.getenv(name, "").strip() for name in found.image_key_env):
         return True
     try:
         keys = _read_keys()
@@ -129,7 +129,7 @@ def image_model_connected(provider: str) -> bool:
     return bool(_api_status(canonical, keys)["configured"])
 
 
-SAVED_IMAGE_PROVIDERS: tuple[str, ...] = ("openai-oauth", "openai-api", "gemini-api")
+SAVED_IMAGE_PROVIDERS: tuple[str, ...] = tuple(p.name for p in IMAGE_PROVIDERS)
 
 
 def saved_image_provider() -> str | None:
@@ -156,7 +156,7 @@ def saved_image_provider() -> str | None:
 def save_api_key(provider: str, api_key: str) -> dict[str, object]:
     """Atomically save a supported provider key with owner-only file permissions."""
     if provider not in _KEY_ENV:
-        raise ValueError("API-key setup supports openai-api, gemini-api and anthropic-api only.")
+        raise ValueError(f"API-key setup supports {_KEY_NAMES} only.")
     key = api_key.strip()
     if not key or any(character.isspace() or ord(character) < 32 for character in key):
         raise ValueError("Enter a nonempty API key without whitespace or control characters.")

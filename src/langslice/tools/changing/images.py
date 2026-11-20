@@ -29,7 +29,7 @@ from langslice.core.sections.images import NAME_PATTERN, PREPROCESSED
 from langslice.core.sections.reading import ITK_THREADS
 from langslice.core.stack.images import ImageRef
 from langslice.tools.looking.look import show_result
-from langslice.tools.refusal import unknown_sections
+from langslice.tools.refusal import named_sections
 from langslice.tools.run import as_list, pictured, spread
 
 if TYPE_CHECKING:
@@ -139,20 +139,9 @@ def _check_name(workspace: Workspace, state: Stack, name: object) -> str:
 
 
 def _records(job: Job, sections: Sequence[str] | None) -> list[Section]:
-    state = job.state
     if not sections:
-        return state.in_order()
-    found: list[Section] = []
-    unknown: list[str] = []
-    for ref in sections:
-        record = state.resolve(ref)
-        if record is None:
-            unknown.append(str(ref))
-        elif record not in found:
-            found.append(record)
-    if unknown:
-        raise unknown_sections(state, unknown)
-    return found
+        return job.state.in_order()
+    return named_sections(job.state, sections)
 
 
 def _in_force(workspace: Workspace, job: Job, name: str) -> dict[str, Any]:
@@ -238,10 +227,7 @@ def _section_ids(run: Run, named: list[str]) -> list[str] | None:
     """Return the filenames of the sections named; None when none is named."""
     if not named:
         return None
-    scope, unknown = run.resolve_many(named)
-    if unknown or not scope:
-        raise unknown_sections(run.job.state, unknown)
-    return [section.id for section in scope]
+    return [section.id for section in named_sections(run.job.state, named)]
 
 
 def _exponent(gamma: float | None) -> float | None:

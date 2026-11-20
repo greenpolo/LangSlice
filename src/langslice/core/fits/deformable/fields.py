@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
+import cv2
 import numpy as np
 
 from langslice.core.fits.deformable.geometry import WorkingGrid
@@ -155,6 +156,39 @@ def sample_field(field_mm: np.ndarray, coordinates_px: np.ndarray) -> np.ndarray
         _map_coordinates(field_mm[..., k], [rows, cols], order=1, mode="nearest") for k in range(2)
     ]
     return np.stack(channels, axis=-1).astype(np.float32)
+
+
+def remap_field(
+    field_mm: np.ndarray, map_x: np.ndarray, map_y: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample a field's two components as the section pictures do.
+
+    Parameters
+    ----------
+    field_mm
+        A ``(rows, cols, 2)`` field.
+    map_x, map_y
+        Where to sample it, pixel ``x`` and ``y``, float32 arrays of one
+        shape; beyond the edge the nearest edge value.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        The field's ``x`` and ``y`` components there, float32, in the shape
+        of *map_x* (:func:`cv2.remap`, bilinear: the arithmetic the pictures
+        use, which :func:`sample_field` does not share).
+    """
+    dx, dy = (
+        cv2.remap(
+            np.ascontiguousarray(field_mm[..., axis], dtype=np.float32),
+            map_x,
+            map_y,
+            cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+        for axis in range(2)
+    )
+    return dx, dy
 
 
 def compose_forward(step_mm: np.ndarray, previous_mm: np.ndarray, mm_per_px: float) -> np.ndarray:

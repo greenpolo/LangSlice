@@ -25,7 +25,7 @@ checkpointed, and picked up by an agent working on the same folder
 (``Job.sync``), whose writes this handle picks up before each call.
 
 A script makes a job with :func:`create_job` (a folder of sections and the
-settings ``langslice-job FOLDER init`` takes, or a :class:`JobSpec`), the
+settings ``langslice job FOLDER init`` takes, or a :class:`JobSpec`), the
 same ingest every host uses, and gets the same handle. Both take
 ``image_model=``: the model ``trace_borders`` calls, a provider name, a
 model profile (:func:`langslice.providers.profiles.image_model`) or a model
@@ -305,7 +305,7 @@ class JobHandle:
     def wait(self, timeout: float | None = None) -> Reply:
         """Wait for the job's background work (a fit or trace a tool started and
         answered ``started`` for) to land, and return its landing result as the
-        agent CLI's ``langslice-job FOLDER VERB`` does: ``background`` holds each
+        agent CLI's ``langslice job FOLDER VERB`` does: ``background`` holds each
         finished work's notice (what it wrote, its numbers, its picture numbers),
         ``work`` its summaries (id, kind, sections, status), the pictures on
         ``artifacts`` and ``images``. Work that finished meanwhile is delivered
@@ -339,7 +339,7 @@ class JobHandle:
         self.close()
 
     def __repr__(self) -> str:
-        return f"<langslice-job {self.folder} ({len(self.state.slices)} sections)>"
+        return f"<langslice job {self.folder} ({len(self.state.slices)} sections)>"
 
 
 def as_image_model(value: Any) -> ImageModel | None:
@@ -386,7 +386,7 @@ def open_job(
     emit: Callable[[str], None] | None = None,
 ) -> JobHandle:
     """Open the job in *folder* (the job folder, or the image folder beside
-    it). Create one with :func:`create_job` or ``langslice-job <images> init``.
+    it). Create one with :func:`create_job` or ``langslice job <images> init``.
 
     *image_model* is the model ``trace_borders`` calls (a provider name, a
     profile, a model of your own: :func:`langslice.providers.profiles.image_model`);

@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.pictures.drawn import collecting, note_for
 from langslice.job.border_traces import Traces
 from langslice.job.folder.lock import FolderLock, LockYielded
-from langslice.job.pictures import ViewStore
+from langslice.job.pictures import ViewStore, view_number
 from langslice.job.steps.undo import UndoStore
 
 if TYPE_CHECKING:
@@ -382,7 +382,7 @@ class BackgroundWork:
                 arguments={"work": entry.work.id, "sections": list(entry.work.sections)},
                 atlas=workspace.atlas if workspace is not None else None,
             )
-            entry.work.pictures = [int(name.split("_", 1)[0]) for name in names]
+            entry.work.pictures = [view_number(name) for name in names]
         except Exception:
             logger.warning("Could not save the pictures of %s", entry.work.id, exc_info=True)
         entry.work.images = list(drawn)

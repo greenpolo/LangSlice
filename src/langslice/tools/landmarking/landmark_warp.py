@@ -19,13 +19,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import scipy
-from scipy.ndimage import map_coordinates
 
 from langslice.core.fits import deformation
 from langslice.core.fits import landmarks as geometry
 from langslice.core.fits.deformable import finish_fit, prepare_warp
 from langslice.core.fits.deformable.engines import EngineResult
-from langslice.core.fits.deformable.fields import MeshStep, mesh_fields
+from langslice.core.fits.deformable.fields import MeshStep, mesh_fields, sample_field
 from langslice.core.fits.deformable.geometry import WorkingGrid
 from langslice.core.fits.deformable.record import DeformableRecord
 from langslice.core.fits.frame import digest
@@ -48,21 +47,6 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
-
-
-def _sample(field: np.ndarray, points: np.ndarray) -> np.ndarray:
-    return np.stack(
-        [
-            map_coordinates(
-                field[..., k],
-                [points[..., 1], points[..., 0]],
-                order=1,
-                mode="nearest",
-            )
-            for k in range(2)
-        ],
-        -1,
-    )
 
 
 DISPLACEMENT_NOTE_KEY = "displacement_note"
@@ -318,7 +302,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> Land
         )
         if previous is not None:
             assert previous.inverse_field_mm is not None
-            target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
+            target += sample_field(previous.inverse_field_mm, target) / previous.mm_per_px
         names = [p.id for p in pairs]
         prepared = prepare_warp(
             workspace.atlas,

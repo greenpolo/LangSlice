@@ -49,7 +49,7 @@ importlib.import_module("langslice.plugins")
 
 def job_viewer(layout: JobLayout) -> str:
     """The job's viewer for the agent CLI's pictures (``job.json``
-    ``viewer``, written by ``langslice-job FOLDER init --viewer``), else
+    ``viewer``, written by ``langslice job FOLDER init --viewer``), else
     :data:`langslice.core.pictures.opening.DEFAULT_VIEWER`."""
     from langslice.core.pictures.opening import DEFAULT_VIEWER, VIEWER_LIMITS
 
@@ -153,7 +153,7 @@ def find(path: str | os.PathLike[str]) -> Path:
             return folder
     raise NoJob(
         f"No LangSlice job in {given} (neither a job folder nor an image folder "
-        "with one beside it). Create the job first: `langslice-job IMAGE_FOLDER init`; a job "
+        "with one beside it). Create the job first: `langslice job IMAGE_FOLDER init`; a job "
         "made with init --job-dir is named by its own folder."
     )
 
@@ -174,7 +174,7 @@ def read_spec(job_folder: Path) -> JobSpec:
     if images is None or not images.is_dir():
         raise NoJob(
             f"The images of the job in {job_folder} are not in {images} any more. If they "
-            "moved, reattach the job from their new folder: langslice-job NEW_IMAGE_FOLDER "
+            "moved, reattach the job from their new folder: langslice job NEW_IMAGE_FOLDER "
             f"init --job-dir {job_folder} (or move the job folder back beside them, as "
             "<images>/langslice)."
         )

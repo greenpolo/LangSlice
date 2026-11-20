@@ -12,7 +12,7 @@ Saved host jobs are found by id through a small index
 (:mod:`langslice.job.job`) owns the state, undo, the checkpoint
 (:mod:`langslice.job.state_file`) and the submit gates;
 :mod:`langslice.job.exports.public_files` and
-:mod:`langslice.job.exports.quint` write the
+:mod:`langslice.core.exports.quint` write the
 public files and exports.
 
 Layer: the job layer. It imports the core only, never an operation

@@ -51,7 +51,6 @@ if TYPE_CHECKING:
     from langslice.core.fits.deformation import RecordStore
 
 CROP_RENDERER = "crop"
-CROPPED_INSTEAD = (RefusalCode.NOT_FOUND, RefusalCode.STALE_INPUT)
 MAX_CROP_ENLARGE = 4.0
 
 
@@ -217,8 +216,8 @@ def redraw(
             window = compose((recipe.get("args") or {}).get("zoom") or (), inner)
         try:
             drawn = known[renderer](recipe, window, workspace, state, store, long_edge)
-        except Refused as exc:
-            if region or exc.code not in CROPPED_INSTEAD or source is None:
+        except looks.SectionGone as exc:
+            if region or source is None:
                 raise
             return _crop(
                 None,
