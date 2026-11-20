@@ -10,7 +10,7 @@ door is built from the declaration:
 door                reads
 ==================  =================================================
 agent tools, MCP    ``doc`` and ``signature``, through :func:`declare`
-``langslice-job``   ``summary`` (``ops``), :func:`arguments_schema` and
+``langslice job``   ``summary`` (``ops``), :func:`arguments_schema` and
                     ``doc`` (``schema``), ``text`` (``TOOLS.md``),
                     ``arguments`` (the fix of an unknown argument)
 reference card      ``summary``

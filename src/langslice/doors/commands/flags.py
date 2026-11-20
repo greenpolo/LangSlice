@@ -33,7 +33,6 @@ class Flag:
     """One flag as the commands add it."""
 
     flag: str
-    aliases: tuple[str, ...] = ()
     dest: str
     help: str
     group: FlagGroup = "job"
@@ -43,6 +42,7 @@ class Flag:
     switch: bool = False
     default: Any = None
     choices: tuple[str, ...] | None = None
+    required: bool = False
     path: str | None = None
     deferred: bool = False
 
@@ -104,7 +104,27 @@ COMMAND_ONLY: tuple[Flag, ...] = (
         help="Which model reads the pictures (job.json; default claude): it "
         "sets their largest size",
     ),
+    Flag(
+        flag="--role",
+        dest="role",
+        group="launch",
+        required=True,
+        metavar="ROLE",
+        help="The subagent the prompt launches: register (MCP tools) or "
+        "register-scripting (and scripts)",
+    ),
+    Flag(
+        flag="--timeout",
+        dest="timeout",
+        group="wait",
+        metavar="SECONDS",
+        number=float,
+        default=30.0,
+        help="Seconds to wait before answering with the run still running",
+    ),
 )
+
+COMMAND_GROUPS: tuple[FlagGroup, ...] = ("launch", "wait")
 
 
 def load_json_arg(value: str | None, flag: str = "JSON argument") -> object | None:
@@ -157,7 +177,6 @@ def _flag_of(leaf: Leaf, cli: Cli) -> Flag:
     switch = leaf.is_switch
     return Flag(
         flag=leaf.flag,
-        aliases=cli.aliases,
         dest=leaf.dest,
         help=leaf.description,
         group=cli.group,
@@ -188,7 +207,9 @@ def flag_names() -> dict[str, str]:
     ``inputs.pixel_size_um``), and each command-only flag by its destination
     (``notes``), for the window's prompt generator."""
     spelled = {leaf.path: leaf.flag for leaf in leaves(JobSpec) if leaf.cli is not None}
-    spelled.update({flag.dest: flag.flag for flag in COMMAND_ONLY})
+    spelled.update(
+        {flag.dest: flag.flag for flag in COMMAND_ONLY if flag.group not in COMMAND_GROUPS}
+    )
     return spelled
 
 
@@ -213,9 +234,7 @@ def add_flags(
     known = choices or {}
     for flag in all_flags(group):
         values = _values(known.get(flag.flag), flag)
-        _add(parser, flag.flag, flag, values, hidden=False)
-        for alias in flag.aliases:
-            _add(parser, alias, flag, values, hidden=True)
+        _add(parser, flag, values)
 
 
 def flag_rows(
@@ -235,8 +254,7 @@ def flag_rows(
     Returns
     -------
     list of dict
-        Per flag its ``flag``, ``aliases`` (none: an old spelling is hidden),
-        ``help``, ``default``, ``choices``, ``takes_value`` and ``metavar``.
+        Per flag its ``flag``, ``help``, ``default``, ``choices``, ``takes_value`` and ``metavar``.
     """
     known = choices or {}
     rows: list[dict[str, Any]] = []
@@ -249,7 +267,6 @@ def flag_rows(
             rows.append(
                 {
                     "flag": flag.flag,
-                    "aliases": [],
                     "help": flag.help,
                     "default": [] if flag.action == "append" else _default(flag),
                     "choices": values,
@@ -349,9 +366,11 @@ def _angles(args: argparse.Namespace) -> dict[str, Any] | None:
 
 def _default(flag: Flag) -> Any:
     """The default argparse is given: the setting's own, none for a flag the
-    command works the default out of (``tasks``, the provider), a JSON or file
-    flag, or a flag that is no setting."""
-    if flag.path is None or flag.deferred or flag.kind in ("json", "file", "csv"):
+    command works the default out of (``tasks``, the provider) or a JSON or file
+    flag; a flag that is no setting has the one it declares."""
+    if flag.path is None:
+        return flag.default
+    if flag.deferred or flag.kind in ("json", "file", "csv"):
         return None
     return flag.default
 
@@ -365,41 +384,30 @@ def _values(listed: Sequence[str] | None, flag: Flag) -> list[str] | None:
     return None if chosen is None else list(chosen)
 
 
-def _add(
-    parser: argparse.ArgumentParser,
-    spelling: str,
-    flag: Flag,
-    values: list[str] | None,
-    *,
-    hidden: bool,
-) -> argparse.Action:
-    """Add one spelling of a flag to *parser*, as :func:`add_flags` does.
-
-    A hidden spelling (an old name of the flag) has no default and no help.
-    Returns the parser's action for it.
-    """
-    text = argparse.SUPPRESS if hidden else flag.help
-    default = argparse.SUPPRESS if hidden else _default(flag)
+def _add(parser: argparse.ArgumentParser, flag: Flag, values: list[str] | None) -> None:
+    """Add one flag to *parser*, as :func:`add_flags` does."""
     if flag.switch:
-        return parser.add_argument(
-            spelling, dest=flag.dest, action=flag.action, default=default, help=text
+        parser.add_argument(
+            flag.flag, dest=flag.dest, action=flag.action, default=_default(flag), help=flag.help
         )
-    if flag.action == "append":
-        return parser.add_argument(
-            spelling,
+    elif flag.action == "append":
+        parser.add_argument(
+            flag.flag,
             dest=flag.dest,
             action="append",
-            default=default if hidden else [],
+            default=[],
             metavar=flag.metavar,
-            help=text,
+            help=flag.help,
         )
-    return parser.add_argument(
-        spelling,
-        dest=flag.dest,
-        action="store",
-        default=default,
-        type=flag.number or str,
-        choices=values,
-        metavar=flag.metavar,
-        help=text,
-    )
+    else:
+        parser.add_argument(
+            flag.flag,
+            dest=flag.dest,
+            action="store",
+            default=_default(flag),
+            type=flag.number or str,
+            choices=values,
+            required=flag.required,
+            metavar=flag.metavar,
+            help=flag.help,
+        )

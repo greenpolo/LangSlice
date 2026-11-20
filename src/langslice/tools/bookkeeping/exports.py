@@ -13,7 +13,7 @@ doors) writes, from the stack as it stands:
 - ``exports/quicknii.json`` (every placed section's linear anchoring, made
   perpendicular) and ``exports/visualign.json`` (the same, with VisuAlign
   markers of each applied deformation and of the shear the perpendicular
-  anchoring drops) (:func:`langslice.job.exports.quint.job_export`);
+  anchoring drops) (:func:`langslice.core.exports.quint.job_export`);
 - ``registration.json`` again, so it lists the files just written;
 - ``exports/traces/<name>.npz``: per mapped section whose last
   ``trace_borders`` call holds a reply, the model's lines and its raw reply on
@@ -40,27 +40,17 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
-from langslice.core.maps.section_maps import placement_problem
+from langslice.core.maps.section_maps import (
+    placed_sections,
+    placement_problem,
+    section_frame,
+)
 from langslice.core.refusal import RefusalCode
-from langslice.core.sections.images import PREPROCESSED, image_plane
-from langslice.job.exports.public_files import (
-    QUICKNII_FILE,
-    VISUALIGN_FILE,
-    quint_copies,
-)
-from langslice.job.exports.quint import job_export
-from langslice.job.exports.quint_images import (
-    copy_filename,
-    section_numbers,
-    write_copies,
-)
-from langslice.job.state_file import write_json_atomic
-from langslice.tools.refusal import unknown_sections
+from langslice.tools.bookkeeping.applied import applied_warp
+from langslice.tools.bookkeeping.quint_export import quint_paths, write_quint
+from langslice.tools.refusal import named_section, named_sections
 from langslice.tools.run import Run, as_list
 
 if TYPE_CHECKING:
@@ -87,34 +77,6 @@ class Exported:
     seconds: float = 0.0
 
 
-def _warp(
-    job: Job,
-    state: Stack,
-    record: Section,
-) -> tuple[DeformableRecord | None, str | None]:
-    """The section's applied deformation record (None: linear) and its
-    stored folder; ``ValueError`` when one is applied but cannot be read."""
-    from langslice.job.exports.public_files import applied_deformation
-
-    held = applied_deformation(state, record)
-    if held is None:
-        return None, None
-    loaded = job.deformations.get(record.id, held.key or "")
-    if loaded is None:
-        raise ValueError("its applied deformation record cannot be read")
-    return loaded, held.record or None
-
-
-def applied_record(
-    job: Job,
-    state: Stack,
-    record: Section,
-) -> DeformableRecord | None:
-    """The section's applied deformation record (None: linear);
-    ``ValueError`` when one is applied but cannot be read."""
-    return _warp(job, state, record)[0]
-
-
 def export_maps(
     job: Job,
     workspace: Workspace,
@@ -135,10 +97,6 @@ def export_maps(
     (:func:`langslice.tools.stale.section_inputs`); a changed section is
     skipped as ``STALE_INPUT``. The exports and ``registration.json`` are
     written last, under the lock, from the stack as it then stands."""
-    from langslice.core.maps.section_maps import (
-        placement_problem,
-        section_frame,
-    )
     from langslice.core.pictures.layers import atlas_facts
     from langslice.job.exports import public_files as formats
     from langslice.tools.stale import section_inputs
@@ -148,11 +106,7 @@ def export_maps(
         state = copy.deepcopy(job.state)
     records = state.in_order()
     if ids:
-        named = {str(ref): state.resolve(ref) for ref in ids}
-        unknown = [ref for ref, record in named.items() if record is None]
-        if unknown:
-            raise unknown_sections(state, unknown)
-        chosen = {record.id for record in named.values() if record is not None}
+        chosen = {record.id for record in named_sections(state, ids)}
         targets = [record for record in records if record.id in chosen]
     else:
         targets = records
@@ -170,7 +124,7 @@ def export_maps(
             continue
         try:
             frame = section_frame(state, workspace, record)
-            warp, stored = _warp(job, state, record)
+            warp, stored = applied_warp(job, state, record)
         except (OSError, ValueError) as exc:
             skipped.append({"id": record.id, "reason": str(exc)})
             continue
@@ -226,12 +180,8 @@ def export_maps(
         with job.writing():
             files += _write_exports(job, workspace, facts)
     else:
-        files += _copy_paths(state, exports_dir)
-        files += [
-            (str(exports_dir / formats.QUICKNII_FILE), "quicknii"),
-            (str(exports_dir / formats.VISUALIGN_FILE), "visualign"),
-            (str(layout.folder / "registration.json"), "registration"),
-        ]
+        files += quint_paths(state, exports_dir)
+        files.append((str(layout.folder / "registration.json"), "registration"))
     return Exported(
         files=files,
         sections=done,
@@ -242,30 +192,6 @@ def export_maps(
     )
 
 
-def _copy_paths(state: Stack, exports_dir: Path) -> list[tuple[str, str]]:
-    """List the image copies an export of *state* would write.
-
-    Parameters
-    ----------
-    state
-        The stack as it stands.
-    exports_dir
-        The job's exports folder.
-
-    Returns
-    -------
-    list of tuple
-        ``(path, "quint_image")`` per placed section.
-    """
-    numbers = _section_numbers(state)
-    paths: list[tuple[str, str]] = []
-    for record in state.in_order():
-        if placement_problem(state, record) is None:
-            name = copy_filename(record.id, numbers[record.id])
-            paths.append((str(exports_dir / name), "quint_image"))
-    return paths
-
-
 def export_stack(job: Job, workspace: Workspace) -> Exported:
     """Write the stack's exports and ``registration.json`` (no per-section
     maps; see the module text), under the job lock, from the stack as it
@@ -273,10 +199,6 @@ def export_stack(job: Job, workspace: Workspace) -> Exported:
     copy's grid (``exports/traces/<name>.npz``, as :func:`export_maps`
     writes it). A job that persists nothing writes nothing (``written``
     False)."""
-    from langslice.core.maps.section_maps import (
-        placement_problem,
-        section_frame,
-    )
     from langslice.core.pictures.layers import atlas_facts
 
     started = time.perf_counter()
@@ -285,8 +207,8 @@ def export_stack(job: Job, workspace: Workspace) -> Exported:
     with job.writing():
         state = copy.deepcopy(job.state)
     files: list[tuple[str, str]] = []
-    for record in state.in_order():
-        if _completed_trace(record) is None or placement_problem(state, record) is not None:
+    for record in placed_sections(state):
+        if _completed_trace(record) is None:
             continue
         try:
             size = section_frame(state, workspace, record).working_size
@@ -314,21 +236,14 @@ def section_maps(
     it stands after a sync. ``NOT_FOUND`` for a name that is no
     section's; ``ValueError`` saying why for a section without a placement,
     or whose applied record or image file cannot be read."""
-    from langslice.core.maps.section_maps import (
-        placement_problem,
-        section_frame,
-    )
-
     with job.writing():
         state = copy.deepcopy(job.state)
-    record = state.resolve(section)
-    if record is None:
-        raise unknown_sections(state, [str(section)])
+    record = named_section(state, section)
     problem = placement_problem(state, record)
     if problem is not None:
         raise ValueError(f"{record.id}: {problem}")
     frame = section_frame(state, workspace, record)
-    warp, _stored = _warp(job, state, record)
+    warp, _stored = applied_warp(job, state, record)
     return _section_maps(workspace, frame, warp, full_resolution)
 
 
@@ -428,67 +343,11 @@ def _write_exports(
     """The stack's exports (every placed section, whatever the call named)
     and ``registration.json``, from the job's state as it stands. Call it
     under the job lock."""
-    from langslice.core.maps.section_maps import (
-        placement_problem,
-        residual_markers,
-        section_frame,
-    )
     from langslice.job.exports import public_files as formats
 
     state = job.state
     layout = job.layout
-    exports_dir = layout.exports_dir
-    files: list[tuple[str, str]] = []
-    rows: list[dict[str, Any]] = []
-    copies: list[tuple[str, np.ndarray]] = []
-    numbers = _section_numbers(state)
-    for record in state.in_order():
-        if placement_problem(state, record) is not None:
-            continue
-        try:
-            frame = section_frame(state, workspace, record)
-            warp, _stored = _warp(job, state, record)
-            markers = [] if warp is None else residual_markers(frame, warp)
-        except (OSError, ValueError):
-            logger.warning("Not exported: %s", record.id, exc_info=True)
-            continue
-        number = numbers[record.id]
-        copy_name = copy_filename(record.id, number)
-        rows.append(
-            {
-                "filename": copy_name,
-                "nr": number,
-                "width": frame.file_size[0],
-                "height": frame.file_size[1],
-                "pixel_to_atlas_um": frame.pixel_to_atlas_um(),
-                "markers": markers,
-            }
-        )
-        try:
-            copies.append((copy_name, image_plane(workspace, record, PREPROCESSED)))
-        except (OSError, ValueError):
-            logger.warning("No image copy of %s", record.id, exc_info=True)
-
-    if rows:
-        previous = quint_copies(exports_dir)
-        exports_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            written = write_copies(exports_dir, copies, previous)
-            files += [(str(path), "quint_image") for path in written]
-        except OSError:
-            logger.warning("Could not write the QUINT image copies", exc_info=True)
-        for name, kind, with_markers in (
-            (QUICKNII_FILE, "quicknii", False),
-            (VISUALIGN_FILE, "visualign", True),
-        ):
-            path = exports_dir / name
-            try:
-                document = job_export(rows, facts, write_markers=with_markers)
-                write_json_atomic(str(path), document)
-            except (OSError, ValueError, KeyError):
-                logger.warning("Could not write %s", name, exc_info=True)
-                continue
-            files.append((str(path), kind))
+    files = write_quint(job, workspace, facts)
     path = formats.write_registration(layout, state, workspace)
     if path is not None:
         files.append((str(path), "registration"))
@@ -500,23 +359,6 @@ def _write_exports(
             for relative in export_layers(layout, state)
         ]
     return files
-
-
-def _section_numbers(state: Stack) -> dict[str, int]:
-    """Number every section of the stack for the QUINT files.
-
-    Parameters
-    ----------
-    state
-        The stack, every section of it in order.
-
-    Returns
-    -------
-    dict
-        Section id -> its number (:func:`section_numbers`).
-    """
-    ids = [record.id for record in state.in_order()]
-    return dict(zip(ids, section_numbers(ids), strict=True))
 
 
 def export_maps_tool(run: Run, sections: Sequence[str], full_resolution: bool) -> dict[str, Any]:

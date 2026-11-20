@@ -27,6 +27,18 @@ ALLOWED = (
 )
 
 
+def test_every_agents_file_equals_the_claude_file_beside_it() -> None:
+    differing = [
+        str(agents.relative_to(ROOT))
+        for agents in ROOT.rglob("AGENTS.md")
+        if ".venv" not in agents.parts
+        and "node_modules" not in agents.parts
+        and (agents.parent / "CLAUDE.md").is_file()
+        and agents.read_bytes() != (agents.parent / "CLAUDE.md").read_bytes()
+    ]
+    assert not differing, f"AGENTS.md differs from CLAUDE.md beside it: {differing}"
+
+
 def test_every_markdown_file_is_of_an_allowed_kind() -> None:
     try:
         listed = subprocess.run(

@@ -1,1 +1,1 @@
-"""The files a job writes for others: public files and exports."""
+"""The job's own files others read: ``registration.json`` and the maps."""

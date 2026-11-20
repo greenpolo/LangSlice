@@ -7,7 +7,7 @@ as a :class:`Cli` in the field's ``Annotated`` metadata. :func:`leaves`
 walks a model, a task's section and the answers in ``inputs`` included, and
 yields each field with its dotted path (``position.thickness_um``,
 ``inputs.positions``); the commands' flags, the flags' help, the window's
-form and ``langslice-job schema init`` are all read from that walk.
+form and ``langslice job FOLDER schema init`` are all read from that walk.
 
 Every spelling follows the path: the flag is the path with ``inputs.``
 dropped and ``.`` and ``_`` written ``-`` (``--position-thickness-um``,
@@ -25,7 +25,7 @@ from typing import Any, Literal, Union, cast, get_args, get_origin
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
-FlagGroup = Literal["job", "plugins", "session", "resume", "init"]
+FlagGroup = Literal["job", "plugins", "session", "resume", "init", "launch", "wait"]
 
 Kind = Literal["value", "csv", "repeat", "repeat_csv", "pairs", "json", "file"]
 
@@ -43,11 +43,10 @@ class Cli:
     group
         Which commands add the flag: ``job`` every command that opens a stack,
         ``plugins`` and ``session`` ``linear run`` alone, ``resume`` the
-        commands that continue a folder's job.
+        commands that continue a folder's job, ``init``, ``launch`` and ``wait``
+        the flags of those ``langslice job`` commands.
     flag
         The flag when it is not the one the path gives.
-    aliases
-        Other spellings, read and listed nowhere.
     metavar
         The value's name in ``--help``.
     kind
@@ -63,7 +62,6 @@ class Cli:
 
     group: FlagGroup = "job"
     flag: str | None = None
-    aliases: tuple[str, ...] = ()
     metavar: str | None = None
     kind: Kind = "value"
     deferred: bool = False

@@ -32,13 +32,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from langslice.core.shared_files import write_json_atomic
 from langslice.job.folder.layout import JobLayout
-from langslice.job.state_file import write_json_atomic
 
 CHILD_COMMAND: list[str] = [
     sys.executable,
     "-m",
-    "langslice.doors.agent_cli.main",
+    "langslice",
+    "job",
 ]
 START_GRACE_S = 120.0
 POLL_S = 0.25

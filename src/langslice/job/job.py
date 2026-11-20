@@ -4,11 +4,11 @@ A :class:`Job` owns the :class:`~langslice.core.stack.stack.Stack` and the
 :class:`~langslice.job.settings.spec.JobSpec`, its job folder
 (:class:`langslice.job.folder.layout.JobLayout`: ``<images>/langslice/``), the
 sections' frozen properties and the host's damage notes, undo/redo (persisted
-in the job folder), the checkpoint and its observers (:meth:`Job.observe`), the
+in the job folder), the checkpoint and its observers (:meth:`Checkpoints.observe`), the
 submit gates, the stale-deformation rule, the deformation record store, the
 store of the pictures the model was shown
 (:class:`langslice.job.pictures.ViewStore`), the transform-count cap, the
-background image-correction jobs and the background work built on them
+background border traces and the background work built on them
 (:class:`langslice.job.background.BackgroundWork`). ``ingest``,
 ``apply_host_inputs`` and ``emit_results`` open and close it. It imports the
 core and the job folder package (``langslice.job``) only: no agent framework,
@@ -19,33 +19,41 @@ What a Job never holds: the model-delivery bookkeeping (which pictures a
 model has received). That is the tool doors'
 (:class:`langslice.tools.pipeline.ToolBox`).
 
-The class is assembled from one class per seam, each built on the one
-below: ``checkpoint.py`` (the state, its files, the checkpoint and its
-observers, the registrations each step leaves), ``undo.py`` (writes under
-the lock, undo steps, the live sync with the files) and
-``border_traces.py`` (the background border traces). This module adds the
-opening, the rules (the submit gates, the frozen and busy refusals, the
-stale-deformation rule) and the results; ``host_inputs.py`` applies a
-host's inputs to a new stack.
+A :class:`Job` holds its collaborators as named attributes, each a plain class
+with its own state: ``checkpoints`` (:class:`~langslice.job.checkpoint.Checkpoints`:
+the state file, the derived files, the observers), ``undo``
+(:class:`~langslice.job.steps.undo.UndoStore`: the steps and the history lines
+they name), ``histories`` (the sections' history files), ``traces``
+(:class:`~langslice.job.border_traces.Traces`: the background border traces),
+``background`` (:class:`~langslice.job.background.BackgroundWork`), ``views``
+and ``deformations``. The Job itself holds the state, the spec, the lock and the
+write protocol (``writing``, ``reading``, ``sync``, ``snapshot``, ``commit``,
+``amend``, ``acting``), opening and the rules (the frozen and busy refusals, the
+stale-deformation rule) and the results; ``host_inputs.py`` applies a host's
+inputs to a new stack.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
-from collections.abc import Callable, Collection
+import threading
+from collections.abc import Callable, Collection, Iterator, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langslice.core.fits import deformation
+from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.space import as_plane
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack, initial_positions
-from langslice.job.border_traces import JobBorderTraces
-from langslice.job.checkpoint import file_stamp, state_from_file
+from langslice.job.background import BackgroundWork, in_worker
+from langslice.job.border_traces import Traces
+from langslice.job.checkpoint import Checkpoints, Stamp, file_stamp, state_from_file
 from langslice.job.folder import recent
 from langslice.job.folder.layout import (
     JobLayout,
@@ -54,22 +62,25 @@ from langslice.job.folder.layout import (
     write_job_file,
 )
 from langslice.job.folder.lock import FolderLock
-from langslice.job.gates import submit_errors
 from langslice.job.host_inputs import (
     apply_host_inputs,
     changed_inputs,
     check_damaged_regions,
+    host_damaged_ids,
     inputs_changed,
 )
-from langslice.job.pictures import DiscardedViews
+from langslice.job.pictures import DiscardedViews, ViewStore
 from langslice.job.settings import frozen as freeze
 from langslice.job.settings.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.job.state_file import (
     read_checkpoint,
+    stack_from_json,
     stack_to_json,
     write_json_atomic,
 )
-from langslice.job.steps.undo_steps import UndoFile
+from langslice.job.steps.history import SCRIPT, SectionHistories
+from langslice.job.steps.undo import UndoStore
+from langslice.job.steps.undo_steps import UndoFile, UndoLists
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -136,7 +147,7 @@ def emit_results(
     return state
 
 
-class Job(JobBorderTraces):
+class Job:
     """One stack being registered: its state, its rules and its files.
 
     Build one with :meth:`open` (resume or ingest, then the first
@@ -145,7 +156,96 @@ class Job(JobBorderTraces):
     written until the first operation; the files as they stand on disk at
     that moment count as already seen, unless *seen* gives the stamps of
     the state file and ``history/undo.json`` taken before they were read).
+
+    Parameters
+    ----------
+    state
+        The stack the job registers.
+    spec
+        The job's settings form.
+    layout
+        The job folder and the paths in it.
+    results_path
+        Where the results JSON goes; None is the job folder's
+        ``exports/linear_results.json``.
+    seen
+        The stamps of the state file and ``history/undo.json`` taken
+        before they were read; None takes them now.
+    lock
+        The job folder's write lock; None makes one.
+    persist
+        False: the job writes nothing at all.
+    views
+        The store of the pictures the model was shown; None makes one.
+    workspace
+        The workspace the job's sections and atlas are read through.
+    undo_file
+        ``history/undo.json`` as the opening read it; None makes one.
+    undo_lists
+        The undo steps that file held; None starts without any.
     """
+
+    def __init__(
+        self,
+        state: Stack,
+        spec: JobSpec,
+        *,
+        layout: JobLayout,
+        results_path: str | None = None,
+        seen: tuple[Stamp, Stamp] | None = None,
+        lock: FolderLock | None = None,
+        persist: bool = True,
+        views: ViewStore | None = None,
+        workspace: Workspace | None = None,
+        undo_file: UndoFile | None = None,
+        undo_lists: UndoLists | None = None,
+    ) -> None:
+        state_seen, undo_seen = seen if seen is not None else (None, None)
+        self.state = state
+        self.spec = spec
+        self.layout = layout
+        self.results_path = str(results_path or layout.results_file)
+        self.persist = persist
+        self.lock = lock if lock is not None else FolderLock(layout.folder)
+        self.host_damaged = frozenset(host_damaged_ids(spec))
+        self.picture_cap: int | None = None
+        self.histories = SectionHistories(layout)
+        self.checkpoints = Checkpoints(state, layout, self.lock, persist=persist, seen=state_seen)
+        self.undo = UndoStore(
+            state,
+            self.histories,
+            self.lock,
+            undo_file if undo_file is not None else UndoFile(layout),
+            persist=persist,
+            actor=lambda: self.actor,
+            writing=self.writing,
+            checkpoint=self.checkpoints.write,
+            lists=undo_lists,
+            seen=undo_seen,
+        )
+        self.traces = Traces(
+            state,
+            layout.folder,
+            writing=self.writing,
+            checkpoint=self.checkpoints.write,
+        )
+        self.views: ViewStore = views if views is not None else ViewStore(layout)
+        self.views.step_source = lambda: len(self.undo.steps)
+        self.views.registration_source = self._registration_numbers
+        self.background = BackgroundWork(
+            self.lock,
+            self.traces,
+            self.undo,
+            self.views,
+            acting=self.acting,
+            workspace=lambda: self.workspace,
+        )
+        self._deformations: deformation.RecordStore | None = None
+        self._acting = threading.local()
+        self._peeked: dict[str, Any] | None = None
+        self._peek_stamp: Stamp = None
+        if workspace is not None:
+            self.workspace = workspace
 
     @classmethod
     def open(
@@ -188,7 +288,7 @@ class Job(JobBorderTraces):
         check_owner(layout)
         layout.ensure()
         lock = FolderLock(layout.folder)
-        if getattr(workspace, "job_folder", None) is None:
+        if workspace.job_folder is None:
             workspace.job_folder = str(layout.folder)
         with lock.held():
             state = None
@@ -224,17 +324,16 @@ class Job(JobBorderTraces):
                 spec,
                 layout=layout,
                 results_path=results_path,
+                lock=lock,
+                workspace=workspace,
+                undo_file=undo_file,
+                undo_lists=lists,
             )
-            job.lock = lock
-            job.workspace = workspace
-            job.undo_file = undo_file
-            job.undo_stack, job.redo_stack = lists.undo, lists.redo
-            job.next_step = lists.next_step
             if not resumed:
-                job.record_opening()
+                job.undo.record_opening()
                 if undo_file.path.exists():
-                    job._save_undo()
-            job.checkpoint()
+                    job.undo.save()
+            job.checkpoints.write()
         _log_migrated(layout, upgraded)
         layout.log_event("open", resumed=resumed)
         recent.remember(layout.folder, images, spec.atlas)
@@ -263,7 +362,7 @@ class Job(JobBorderTraces):
         images = Path(os.path.abspath(workspace.image_folder))
         layout = JobLayout(Path(os.path.abspath(folder)), images)
         check_owner(layout)
-        if getattr(workspace, "job_folder", None) is None:
+        if workspace.job_folder is None:
             workspace.job_folder = str(layout.folder)
         undo_file = UndoFile(layout)
         seen = (
@@ -280,14 +379,12 @@ class Job(JobBorderTraces):
             layout=layout,
             results_path=results_path,
             seen=seen,
+            persist=persist,
+            views=None if persist else DiscardedViews(layout),
+            workspace=workspace,
+            undo_file=undo_file,
         )
-        job.persist = persist
-        job.workspace = workspace
-        job.undo_file = undo_file
-        job.load_undo()
-        if not persist:
-            job.views = DiscardedViews(layout)
-            job.wire_views()
+        job.undo.load()
         if section_images.ensure_opening(workspace, layout, job.state) or read.upgraded:
             if persist and os.access(layout.folder, os.W_OK):
                 job._write_upgrade_if_writable()
@@ -314,33 +411,234 @@ class Job(JobBorderTraces):
         to) the job since it was read, and its state is the one kept. Nothing
         is written when that read needs no upgrade and every section has its
         opening image."""
-        assert self.workspace is not None
+        workspace = self.workspace
+        assert workspace is not None
         with self.lock.held():
-            read = read_checkpoint(self.checkpoint_path)
+            read = read_checkpoint(self.checkpoints.path)
             if read is not None:
-                self.state.replace_with(state_from_file(read.fields, self.checkpoint_path))
-            self.load_undo()
-            made = section_images.ensure_opening(self.workspace, self.layout, self.state)
+                self.state.replace_with(state_from_file(read.fields, self.checkpoints.path))
+            self.undo.load()
+            made = section_images.ensure_opening(workspace, self.layout, self.state)
             if read is None or read.upgraded or made:
-                self.checkpoint()
+                self.checkpoints.write()
             else:
-                self._state_stamp = file_stamp(self.checkpoint_path)
-                self._undo_stamp = file_stamp(self.undo_path)
+                self.checkpoints.stamp = file_stamp(self.checkpoints.path)
+                self.undo.mark_seen()
         _log_migrated(self.layout, read is not None and read.upgraded)
+
+    @property
+    def workspace(self) -> Workspace | None:
+        """The workspace the job's sections and atlas are read through (set by
+        :meth:`open`, :meth:`load` and the tool door): every checkpoint rewrites
+        ``registration.json`` through it
+        (:func:`langslice.job.exports.public_files.write_registration`), and
+        its made
+        section images are read from this job's folder."""
+        return self.checkpoints.workspace
+
+    @workspace.setter
+    def workspace(self, workspace: Workspace | None) -> None:
+        self.checkpoints.workspace = workspace
+        if workspace is not None and workspace.job_folder is None:
+            workspace.job_folder = str(self.layout.folder)
+
+    @property
+    def folder(self) -> Path:
+        """The job folder."""
+        return self.layout.folder
+
+    @property
+    def engine_log(self) -> str | None:
+        """Where the registration engines' own output goes while they fit
+        (``logs/engine.log``, :mod:`langslice.core.fits.engine_log`); None for
+        a job that persists nothing."""
+        return str(self.layout.logs_dir / "engine.log") if self.persist else None
+
+    @property
+    def deformations(self) -> deformation.RecordStore:
+        """Fitted records, saved in each section's folder
+        (``sections/<name>/deformable/<key>``; made on first use)."""
+        if self._deformations is None:
+            self._deformations = deformation.RecordStore(
+                root=self.layout.sections_dir, folder_of=self.layout.deformable_dir
+            )
+        return self._deformations
+
+    def _registration_numbers(self, ids: Sequence[str]) -> dict[str, int]:
+        """The number of the registration each section of *ids* holds now,
+        for the sections that hold a numbered one (a picture records them)."""
+        out: dict[str, int] = {}
+        for section_id in ids:
+            record = self.state.by_id(section_id)
+            number = (
+                self.histories.registration_number(self.state, record)
+                if record is not None
+                else None
+            )
+            if number is not None:
+                out[section_id] = number
+        return out
+
+    @contextlib.contextmanager
+    def acting(self, tool: str) -> Iterator[None]:
+        """This thread runs *tool*'s call for the block: the history lines its
+        writes append are made by it."""
+        outer = getattr(self._acting, "tool", None)
+        self._acting.tool = tool
+        try:
+            yield
+        finally:
+            self._acting.tool = outer
+
+    @property
+    def actor(self) -> str:
+        """The tool this thread runs (:meth:`acting`); ``script`` for none."""
+        return getattr(self._acting, "tool", None) or SCRIPT
+
+    @contextlib.contextmanager
+    def writing(self) -> Iterator[dict[str, Any] | None]:
+        """Hold the job folder's write lock and bring the state up to date.
+
+        Every write goes lock -> :meth:`sync` (reload what another writer
+        saved) -> apply -> :meth:`commit` -> unlock, so a running agent, CLI
+        calls and scripts on one folder never overwrite each other. Yields
+        what :meth:`sync` returned (the state as held before a reload, or
+        None). Reentrant in this thread. A long operation computes outside
+        it, from the state it read, and enters it only to apply: after the
+        sync it checks that each section's inputs are unchanged and refuses
+        a section whose inputs moved (``STALE_INPUT``). The section records
+        are new objects after a reload: resolve them by id inside the block.
+        A thread running the job's background work gives way to a lock holder
+        that waits for that work (:mod:`langslice.job.background`:
+        ``LockYielded``).
+        """
+        abort = self.background.gives_way if in_worker() else None
+        with self.lock.held(abort):
+            yield self.sync()
+
+    @contextlib.contextmanager
+    def reading(self) -> Iterator[None]:
+        """For a read: the state brought up to date without waiting for
+        another process's writer. This process's other threads are kept out
+        (their writes are short); when another process holds the job folder's
+        lock (a long fit applying, a plugin tool that holds it while it
+        computes), the state is read as that process last saved it, and the
+        next locked :meth:`sync` puts the job's own back first."""
+        with self.lock.threads():
+            with self.lock.held_if_free() as free:
+                if free:
+                    self.sync()
+            if not free:
+                self._peek()
+            yield
+
+    def _peek(self) -> None:
+        """Read the state file as it stands, without the lock (:meth:`reading`)."""
+        stamp = file_stamp(self.checkpoints.path)
+        if stamp in (self.checkpoints.stamp, self._peek_stamp):
+            return
+        try:
+            read = read_checkpoint(self.checkpoints.path)
+        except (OSError, ValueError):
+            return
+        if read is None:
+            return
+        held = stack_to_json(self.state)
+        loaded = stack_to_json(state_from_file(read.fields, self.checkpoints.path))
+        self._peek_stamp = stamp
+        if loaded == held:
+            return
+        if self._peeked is None:
+            self._peeked = held
+        self.state.replace_with(stack_from_json(loaded))
+        self.checkpoints.notify()
+
+    def sync(self) -> dict[str, Any] | None:
+        """Reload the state file if it changed on disk since this job last
+        read or wrote it.
+
+        Returns the state as this job held it before a reload, or ``None``
+        when nothing was reloaded. An edit from outside (``undo.json``
+        unchanged) becomes one undo step by ``script``; when ``undo.json``
+        changed too, another job wrote both and its steps are read back
+        instead. A file that does not parse (a script mid-write) is left
+        alone and read at the next call; the job's own next write replaces it.
+        """
+        if self._peeked is not None:
+            self.state.replace_with(stack_from_json(self._peeked))
+            self._peeked, self._peek_stamp = None, None
+        state_stamp = file_stamp(self.checkpoints.path)
+        history_changed = self.undo.reload_if_changed()
+        if state_stamp == self.checkpoints.stamp:
+            return None
+        try:
+            read = read_checkpoint(self.checkpoints.path)
+        except (OSError, ValueError):
+            logger.warning(
+                "State file %s changed but does not read; keeping the job's state",
+                self.checkpoints.path,
+                exc_info=True,
+            )
+            return None
+        self.checkpoints.stamp = state_stamp
+        if read is None:
+            return None
+        held = stack_to_json(self.state)
+        loaded = stack_to_json(state_from_file(read.fields, self.checkpoints.path))
+        if loaded == held:
+            return None
+        self.state.replace_with(stack_from_json(loaded))
+        if not history_changed:
+            with self.lock.held():
+                self.undo.push(self.undo.record(held, SCRIPT))
+                self.undo.save()
+        logger.info("Reloaded %s: it changed on disk", self.checkpoints.path)
+        self.checkpoints.notify()
+        return held
+
+    def snapshot(self) -> dict[str, Any]:
+        """The state as it stands: take it before a write, hand it to :meth:`commit`."""
+        return stack_to_json(self.state)
+
+    def commit(self, before: dict[str, Any]) -> None:
+        """Record one write, then checkpoint.
+
+        A history line for each section the write changed, one undo step,
+        the redo side cleared. Call it inside :meth:`writing`, with *before*
+        taken there.
+
+        Parameters
+        ----------
+        before
+            The state before the write, as :meth:`snapshot` gives it.
+        """
+        with self.lock.held():
+            self.undo.push(self.undo.record(before, self.actor))
+            self.undo.save()
+            self.checkpoints.write()
+
+    def amend(self, before: JsonObject) -> None:
+        """Record a change that belongs to the last write, then checkpoint.
+
+        The deformations a write made stale are cleared after it: their
+        history lines are appended and their sections joined to the
+        write's undo step. Call it inside :meth:`writing`.
+
+        Parameters
+        ----------
+        before
+            The state before the change, as :meth:`snapshot` gives it.
+        """
+        with self.lock.held():
+            if self.undo.amend(before, self.actor):
+                self.undo.save()
+            self.checkpoints.write()
 
     @property
     def transform_cap(self) -> int | None:
         """Below the maximum, the most sections one transform call may take."""
         cap = self.spec.transform.max_parallel
         return cap if cap < MAX_PARALLEL_TRANSFORMS else None
-
-    def submit_errors(self, breaks: list[int]) -> Refused | None:
-        """Every submit gate that applies to this job, in order (:func:`submit_errors`)."""
-        return submit_errors(self.state, self.spec, breaks)
-
-    def frozen_for(self, section_id: str) -> frozenset[str]:
-        """The properties frozen on one section (:meth:`JobSpec.frozen_for`)."""
-        return self.spec.frozen_for(section_id)
 
     def frozen_refusal(
         self,
@@ -353,7 +651,7 @@ class Job(JobBorderTraces):
         frozen ones), else None."""
         hit: dict[str, list[str]] = {}
         for section_id in section_ids:
-            held = [name for name in properties if name in self.frozen_for(section_id)]
+            held = [name for name in properties if name in self.spec.frozen_for(section_id)]
             if held:
                 hit[section_id] = held
         if not hit:
@@ -372,7 +670,7 @@ class Job(JobBorderTraces):
         work is running on any of *section_ids* (it will write them when it
         lands, from what they hold now), else None. The landing of that work
         itself is not refused."""
-        busy = self._background.busy(section_ids) if self._background is not None else {}
+        busy = self.background.busy(section_ids)
         if not busy:
             return None
         works = list({work.id: work for work in busy.values()}.values())
@@ -411,6 +709,5 @@ class Job(JobBorderTraces):
     def close(self) -> None:
         """Finish the job's background work (:attr:`background`), then its
         background writes (the pictures); the job stays usable."""
-        if self._background is not None:
-            self._background.close()
+        self.background.close()
         self.views.flush()

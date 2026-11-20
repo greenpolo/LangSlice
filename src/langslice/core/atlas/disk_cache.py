@@ -31,7 +31,7 @@ from typing import Any
 
 import numpy as np
 
-from langslice.core.shared_files import replace_file
+from langslice.core.shared_files import atomic_file
 
 logger = logging.getLogger(__name__)
 
@@ -100,20 +100,13 @@ def cached_volume(atlas: Any, name: str, build: Callable[[], np.ndarray]) -> np.
     except (OSError, ValueError) as exc:
         logger.warning("atlas cache: rebuilding %s (%s)", path, exc)
     array = build()
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.part")
     try:
         if not folder.exists():
             _remove_older_formats(folder)
-        folder.mkdir(parents=True, exist_ok=True)
-        with open(temporary, "wb") as handle:
+        with atomic_file(path) as handle:
             np.save(handle, np.ascontiguousarray(array))
-        replace_file(temporary, path)
     except OSError as exc:
         logger.warning("atlas cache: could not save %s (%s)", path, exc)
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
         return array
     return np.load(path, mmap_mode="r")
 

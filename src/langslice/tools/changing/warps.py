@@ -36,7 +36,7 @@ from langslice.tools.fitting.deformable import (
     refuse_without_engine,
     resolved_atlas_image,
 )
-from langslice.tools.refusal import put_back_words, section_refusal, unknown_sections
+from langslice.tools.refusal import named_section, put_back_words, section_refusal, unknown_sections
 from langslice.tools.stale import stale_refusal
 
 if TYPE_CHECKING:
@@ -88,9 +88,7 @@ def fit_record(
     """
     from langslice.core.fits.deformable.fit import prepare_fit, run_prepared
 
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [str(section)])
+    record = named_section(job.state, section)
     if (
         not isinstance(settings, FitSettings)
         or settings.engine != "fireants"
@@ -229,9 +227,7 @@ def warp_from_map(
     ``PRECONDITION`` (``current`` on a section that holds no deformation);
     ``IO_ERROR``.
     """
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [str(section)])
+    record = named_section(job.state, section)
     if start not in tuple(deformation.FitStart):
         raise Refused(RefusalCode.BAD_ARGUMENT, message="start is 'linear' or 'current'.")
     try:

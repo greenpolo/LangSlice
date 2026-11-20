@@ -16,7 +16,7 @@ Formats (``read_registration`` tells them apart by extension and content):
   and DeepSlice write (``target``, ``aligner``, ``slices``: ``filename``,
   ``anchoring`` ``[ox, oy, oz, ux, uy, uz, vx, vy, vz]``, ``width``,
   ``height``, ``nr``, ``markers``); VisuAlign when any slice carries markers.
-  The same file :func:`langslice.job.exports.quint.job_export` writes.
+  The same file :func:`langslice.core.exports.quint.job_export` writes.
 - ``quicknii-xml``: QuickNII's XML (``<series><slice filename= nr= width=
   height= anchoring="ox=...&oy=...&..."/>``), also what DeepSlice's
   ``write_QuickNII_XML`` and its older releases wrote (width and height
@@ -39,7 +39,7 @@ first rule that finds anything wins, per entry:
    (a registration made on PNG copies of TIFF scans);
 3. ``export copy`` — the entry's stem, without a final ``_sNNN``, equals the
    section file's stem, ignoring case (the PNG copies a LangSlice export
-   names, :mod:`langslice.job.exports.quint_images`);
+   names, :mod:`langslice.core.exports.quint_images`);
 4. ``section number`` — both names carry exactly one QuickNII/DeepSlice
    section number ``_sNNN`` (``_s`` then digits) and the numbers are equal.
 
@@ -54,9 +54,9 @@ resolution (a registration made on a downsampled copy carries over); an
 image of another aspect ratio is placed by the same fractions and said
 (``problems``). QuickNII coordinates are voxel edges on the target's grid:
 the Allen CCFv3 target is the 25 um volume whatever the job's Allen
-resolution (:func:`langslice.job.exports.quint.from_target_grid`), and the axes
+resolution (:func:`langslice.core.exports.quint.from_target_grid`), and the axes
 are
-mapped as the exporter maps them (:func:`langslice.job.exports.quint.quicknii_points_to_atlas_um`).
+mapped as the exporter maps them (:func:`langslice.core.exports.quint.quicknii_points_to_atlas_um`).
 A registration whose target is not the job atlas's is refused.
 ``registration.json`` of the same atlas is used in micrometres directly; of
 another atlas with the same QuickNII target (another Allen resolution), it

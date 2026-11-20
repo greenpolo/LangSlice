@@ -7,7 +7,7 @@ page instead.
 | Page | Read it to |
 |---|---|
 | [Install LangSlice (for agents)](install.md) | Find conda, install LangSlice, check it, and connect it to Codex, Claude Code or Antigravity |
-| [The agent CLI: `langslice-job`](cli.md) | Create a job, write its launch prompt, read its status and export its results |
+| [The job commands: `langslice job`](cli.md) | Create a job, write its launch prompt, read its status and export its results |
 | [The MCP server](mcp.md) | Serve the tools to an MCP host and open a job there |
 | [The built-in agent](builtin.md) | Run LangSlice's own agent session: model access, job settings, spend, logs |
 
@@ -16,7 +16,7 @@ same registration verbs:
 
 | Interface | Who drives it | Entry point |
 |---|---|---|
-| Agent CLI | The main session of a coding agent with a shell (Claude Code, Antigravity, Codex): it sets the job up, launches the registration agent and checks the result; it runs no registration tool | `langslice-job FOLDER COMMAND` |
+| Agent CLI | The main session of a coding agent with a shell (Claude Code, Antigravity, Codex): it sets the job up, launches the registration agent and checks the result; it runs no registration tool | `langslice job FOLDER COMMAND` |
 | MCP | An agent in an MCP host, or a coding agent's `register` and `register-scripting` roles | `langslice mcp` |
 | Built-in agent | LangSlice's agent session | `langslice linear run FOLDER` |
 | Python | A script: a `register-scripting` agent's own, or a coding agent's workflow | [Python library](../developers/library.md) |
@@ -27,7 +27,7 @@ Rules for a main session that sets up a registration (the connectors'
 - Never register sections yourself. Create the job, launch one registration
   agent, check its result.
 - Put the user's notes in the job (`init --notes`). Pass the launch prompt
-  (`langslice-job FOLDER launch --role register|register-scripting`,
+  (`langslice job FOLDER launch --role register|register-scripting`,
   `result.prompt`) to the registration agent unchanged.
 - Run `launch` again for every launch; it reflects the job as it stands.
 - Check the result by looking at the saved pictures, not only the agent's

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.tools.refusal import put_back_words, unknown_sections
+from langslice.tools.refusal import named_section, put_back_words
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -55,11 +55,9 @@ def _placed(job: Job, workspace: Workspace, section: Any) -> tuple[Any, Any, Any
         placement_problem,
         section_frame,
     )
-    from langslice.tools.bookkeeping.exports import applied_record
+    from langslice.tools.bookkeeping.applied import applied_record
 
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [str(section)])
+    record = named_section(job.state, section)
     problem = placement_problem(job.state, record)
     if problem is not None:
         raise Refused(RefusalCode.PRECONDITION, message=f"{record.id}: {problem}")

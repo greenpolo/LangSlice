@@ -12,7 +12,7 @@ Registration is always the subagent's, and it registers exactly one brain.
 
 ## 1. Ask the user (only what is not already said)
 
-If the user's message holds a `langslice-job FOLDER init` command from the
+If the user's message holds a `langslice job FOLDER init` command from the
 LangSlice window's prompt generator, those settings are the user's choices:
 run that command as given (change only its quoting to suit your shell, and add
 any setting it names as left to you), and ask only about what its request says
@@ -35,16 +35,16 @@ it leaves out, and which subagent to use.
 - Notes about the brain (a tear, a damaged section).
 - Which subagent the user allows (step 3).
 
-`init` takes the job flags `langslice-job schema init` lists (each with its
+`init` takes the job flags `langslice job FOLDER schema init` lists (each with its
 help, default and choices), among them `--notes TEXT` (the user's notes,
-saved in the job). Check that `langslice-job`
-runs (`langslice-job ops`); if it does not, follow the `setup` skill and
+saved in the job). Check that `langslice job`
+runs (`langslice job FOLDER schema init`); if it does not, follow the `setup` skill and
 stop.
 
 ## 2. Create the job
 
 ```bash
-langslice-job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
+langslice job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
   --pixel-size-um 4.0 --nonlinear-provider none
 ```
 
@@ -65,12 +65,12 @@ Pick the agent the user allows:
 | `register-scripting` | the same MCP tools, plus run_command, write_to_file, replace_file_content and the web for scripts of its own with the LangSlice Python library (a starting transform it computes, an image it cleans, a method no tool has), and packages installed in the job's own environment | the user wants scripting |
 
 Use `invoke_subagent` with `TypeName` set to that agent's name and
-`Workspace` set to `inherit`. Make its prompt with `langslice-job FOLDER launch --role register` (or `--role
+`Workspace` set to `inherit`. Make its prompt with `langslice job FOLDER launch --role register` (or `--role
 register-scripting` for `register-scripting`) and pass `result.prompt` as the
 prompt, unchanged: nothing added, shortened or summarised. The user's notes
 belong in `init --notes` (the prompt holds them). Run `launch` again for each
 launch: it reflects the job as it stands. Do not give the subagent any other
-task. Run one subagent per job at a time. `langslice-job` is yours, not the
+task. Run one subagent per job at a time. `langslice job` is yours, not the
 subagent's: it sets the job up and checks it (`init`, `launch`, `status`,
 `export_maps`) and runs no registration tool.
 
@@ -86,11 +86,11 @@ When the session ends, the plugin copies its transcript into
 
 When the subagent returns, do not trust its summary alone:
 
-- `langslice-job FOLDER status`: the job's state, tasks and open items;
+- `langslice job FOLDER status`: the job's state, tasks and open items;
   confirm the job was submitted.
 - Read `FOLDER/registration.json` (derived from `state.json`, the truth) and
   the exports under `FOLDER/exports/` (`quicknii.json`, `visualign.json`).
-  Submit writes no per-section maps: `langslice-job FOLDER export_maps`
+  Submit writes no per-section maps: `langslice job FOLDER export_maps`
   writes them when they are wanted. `docs/reference/file_formats.md` in the
   LangSlice repository describes every file.
 - Look at the pictures the job saved (`views/`, paths in `artifacts`) with
@@ -112,7 +112,7 @@ job folder is `langslice/` inside the image folder unless `init --job-dir`
 put it elsewhere.
 
 - **QUINT tools (PyNutil, QuickNII, VisuAlign) and VERSO.** Run
-  `langslice-job FOLDER export_maps`. In the job folder's `exports/` it
+  `langslice job FOLDER export_maps`. In the job folder's `exports/` it
   writes `visualign.json` (the placement and the warps: give this one to
   PyNutil, VisuAlign and VERSO), `quicknii.json` (the placement only, for
   QuickNII) and a PNG copy of each section beside them
@@ -131,7 +131,7 @@ put it elsewhere.
   ```
 
   and run it with LangSlice's own Python:
-  `langslice-job FOLDER python scripts/export_dmc.py FOLDER` (the job's
+  `langslice job FOLDER python scripts/export_dmc.py FOLDER` (the job's
   `env/`, made on first use, imports LangSlice). It writes the animal
   folder `exports/dmc_brainmap/<animal>/` in the job folder, named after
   the image folder, and prints what it wrote. DMC-BrainMap holds the linear
@@ -150,7 +150,7 @@ put it elsewhere.
       print(langslice.open_job(sys.argv[1]).export_abba())
   ```
 
-  and run it with `langslice-job FOLDER python scripts/export_abba.py
+  and run it with `langslice job FOLDER python scripts/export_abba.py
   FOLDER`. It writes `exports/<image folder>.abba`, which ABBA opens with
   **File ‣ Load State** on the Allen Brain Adult Mouse Brain CCF 2017 atlas,
   coronal; `exports/abba_export.json` names any section left out and why.

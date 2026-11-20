@@ -71,7 +71,6 @@ dependencies = [
 
 [project.scripts]
 langslice = "langslice.cli:main"
-langslice-job = "langslice.doors.agent_cli.main:main"
 
 [project.optional-dependencies]
 # HDF5 reading (h5py). The deformable engine is a core dependency (above).
@@ -208,7 +207,7 @@ select = ["E", "F", "I", "B", "UP", "BLE001", "ERA001", "SLF001", "T201", "PLW06
 
 [tool.ruff.lint.per-file-ignores]
 "src/langslice/cli.py" = ["T201"]
-"src/langslice/doors/agent_cli/*.py" = ["T201"]
+"src/langslice/doors/commands/job/*.py" = ["T201"]
 "src/langslice/doors/commands/*.py" = ["T201"]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]

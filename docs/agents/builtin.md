@@ -38,8 +38,8 @@ message are marked for prompt caching.
 
 Every job setting, with its flag, default and when to change it, is in
 [Job settings](../reference/settings.md); `langslice linear run --help` and
-`langslice-job schema init` are the complete flag reference.
-`langslice linear run` takes the same flags as `langslice-job FOLDER init`,
+`langslice job FOLDER schema init` are the complete flag reference.
+`langslice linear run` takes the same flags as `langslice job FOLDER init`,
 and these of its own:
 
 | Flag | What it does |

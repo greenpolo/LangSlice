@@ -6,7 +6,7 @@ input (JSON) on stdin: Claude Code's ``SubagentStop``
 (``agent_transcript_path``, else ``<session>/subagents/agent-<agent_id>.jsonl``
 beside ``transcript_path``) or Antigravity's ``Stop`` (``transcriptPath``,
 ``conversationId``). The job folders the transcript worked on are the ones its
-``langslice-job FOLDER ...`` commands and ``open_job(...)`` calls name, and the
+``langslice job FOLDER ...`` commands and ``open_job(...)`` calls name, and the
 ones its MCP ``start_job`` calls open (:func:`started_jobs`: their
 ``image_folder``, under any harness's name for the tool); each gets the
 transcript in ``trace/<harness>_<session id>.jsonl``
@@ -16,12 +16,12 @@ LangSlice's own agent's traces, with inline image data replaced by its size
 the registration agent's, never the main session's that launched it), or the
 job's own checkpoint says it is submitted (:func:`job_submitted`), that
 job's own Python environment is then removed, its package list kept
-(:func:`langslice.doors.agent_cli.environment.remove`).
+(:func:`langslice.doors.commands.job.environment.remove`).
 
 Each copy gets a launch check beside it, ``trace/<harness>_<session id>.launch.json``
 (:func:`launch_check`): whether the agent's first user message is, character
 for character, one of the job's saved launch prompts (``logs/launches/``,
-``langslice-job FOLDER launch``), which the main session must pass on
+``langslice job FOLDER launch``), which the main session must pass on
 unchanged.
 
 Never fails a session: anything that goes wrong is said on stderr, and
@@ -43,18 +43,15 @@ if TYPE_CHECKING:
 
 _UNQUOTED = r"[^\s\"';|&]+" if sys.platform == "win32" else r"[^\s\"'\\;|&]+"
 FOLDER_PATTERNS = (
-    re.compile(r"""langslice-job\s+(?:"([^"]+)"|'([^']+)'|(""" + _UNQUOTED + "))"),
+    re.compile(r"""langslice\s+job\s+(?:"([^"]+)"|'([^']+)'|(""" + _UNQUOTED + "))"),
     re.compile(r"""open_job\(\s*(?:r?"([^"]+)"|r?'([^']+)')"""),
-    re.compile(
-        r"Register the brain in job folder (.+?)(?:\. Call start_job"
-        r"| with the langslice-job command line\.)"
-    ),
+    re.compile(r"Register the brain in job folder (.+?)\. Call start_job"),
 )
 START_JOB = re.compile(r"(?:^|__)start_job$")
 START_JOB_KEYS = ("image_folder",)
-SUBMIT_PATTERN = re.compile(r"langslice-job\s+\S+\s+submit\b|\.submit\(")
+SUBMIT_PATTERN = re.compile(r"langslice\s+job\s+\S+\s+submit\b|\.submit\(")
 MCP_SUBMIT = re.compile(r"(?:^|__)submit$")
-NOT_FOLDERS = frozenset({"ops", "schema", "-h", "--help"})
+NOT_FOLDERS = frozenset({"-h", "--help"})
 INLINE_DATA_CHARS = 4096
 _BASE64 = re.compile(r"[A-Za-z0-9+/=\s]+")
 
@@ -87,7 +84,7 @@ def run(args: Any) -> None:
 
 def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
     """Copy the hook's transcript into each job folder it names; the copies."""
-    from langslice.doors.agent_cli import environment as jobenv
+    from langslice.doors.commands.job import environment as jobenv
     from langslice.job.folder.layout import JobLayout
 
     transcript = transcript_path(hook)

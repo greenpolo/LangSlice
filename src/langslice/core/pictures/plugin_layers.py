@@ -207,18 +207,10 @@ def fractions_to_picture(
     size = np.asarray(panel["render_size"], dtype=np.float64)
     point = oriented * size - 0.5
     if warp is not None:
-        from scipy.ndimage import map_coordinates
+        from langslice.core.fits.deformable.fields import sample_field
 
         scaled = (point + 0.5) * np.asarray(warp.section_size) / size - 0.5
-        shift = np.stack(
-            [
-                map_coordinates(
-                    warp.field_mm[..., k], [scaled[:, 1], scaled[:, 0]], order=1, mode="nearest"
-                )
-                for k in range(2)
-            ],
-            axis=1,
-        )
+        shift = sample_field(warp.field_mm, scaled)
         point = point + shift / warp.mm_per_px * size / np.asarray(warp.section_size)
     return transform(np.linalg.inv(np.asarray(panel["pixel_to_render"])), point)
 

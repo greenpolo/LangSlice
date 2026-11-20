@@ -1,7 +1,7 @@
 'use strict';
 // The prompt generator's message, as pure functions (`Generator`): the form's state in,
 // the message to paste into an agent app out (a short request and the job's
-// `langslice-job FOLDER init` command, which the register-brain skill runs). One source
+// `langslice job FOLDER init` command, which the register-brain skill runs). One source
 // for the older page (generator.js), the React window (web/src/prompt, through
 // generator-logic.d.ts) and tests/test_gui_generator.py, which runs them under node.
 // What the form offers comes from the code (GET generator: hosts/gui/generator.py).
@@ -242,7 +242,7 @@ const Generator = (() => {
     if (Object.keys(damaged).length) flag('inputs.damaged', JSON.stringify(damaged));
     if (form.ordered) flag('facts', ORDERED);
     if (!blank(form.notes)) flag('notes', String(form.notes).trim());
-    return { text: 'langslice-job ' + args.map(words => words.join(' ')).join(' \\\n  '),
+    return { text: 'langslice job ' + args.map(words => words.join(' ')).join(' \\\n  '),
              quoted: args.some(words => words.some(word => /^['"]/.test(word))) };
   }
 

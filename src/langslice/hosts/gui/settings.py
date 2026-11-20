@@ -27,13 +27,8 @@ from typing import Any
 
 from langslice.doors import credentials as setup
 from langslice.doors import user_settings as store
+from langslice.providers.table import KEY_PROVIDERS, PROVIDERS
 
-LABELS = {
-    "openai-oauth": ("ChatGPT account", "signin"),
-    "openai-api": ("OpenAI API key", "key"),
-    "anthropic-api": ("Claude (Anthropic) API key", "key"),
-    "gemini-api": ("Gemini API key", "key"),
-}
 POSTS = ("settings", "settings/key", "settings/signin")
 SIGNIN_TIMEOUT_S = 300.0
 
@@ -57,8 +52,8 @@ class Settings:
         saved = store.read()
         found = setup.connections()
         rows = []
-        for name in store.CONNECTIONS:
-            label, kind = LABELS[name]
+        for item in PROVIDERS:
+            name, label, kind = item.name, item.label, item.kind
             presence = found["providers"].get(name, {})
             configured = bool(presence.get("configured"))
             source = presence.get("source")
@@ -117,7 +112,9 @@ class Settings:
             self._save_choices(body)
         elif resource == "settings/key":
             provider = body.get("provider")
-            if provider not in ("openai-api", "anthropic-api", "gemini-api"):
+            if not isinstance(provider, str) or provider not in [
+                item.name for item in KEY_PROVIDERS
+            ]:
                 raise SettingsError("Unknown API-key provider.")
             key = body.get("key")
             if not isinstance(key, str):

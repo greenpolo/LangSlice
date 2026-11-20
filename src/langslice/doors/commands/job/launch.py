@@ -1,4 +1,4 @@
-"""``langslice-job FOLDER launch --role register|register-scripting``: the launch prompt.
+"""``langslice job FOLDER launch --role register|register-scripting``: the launch prompt.
 
 A registering agent's job is the message that launched it. The main session
 (the user's app) runs this command and passes ``result.prompt`` unchanged as
@@ -16,8 +16,8 @@ for every job.
   interpreter of the job's own Python environment, made now when it is
   missing, the command that installs a package into it, the library and
   where the agent's files go. It registers with the MCP tools and with
-  scripts of its own; ``langslice-job`` runs no registration tool
-  (:data:`langslice.doors.agent_cli.catalog.CLI_VERBS`).
+  scripts of its own; ``langslice job`` runs no registration tool
+  (:data:`langslice.doors.commands.job.catalog.CLI_VERBS`).
 
 The exact text is saved in ``logs/launches/<six-digit number>_<role>.md``;
 ``langslice session-end`` compares the subagent's first message with those
@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from langslice.doors.agent_cli import environment
+from langslice.doors.commands.job import environment
 from langslice.job.folder.layout import JobLayout
 from langslice.tools.descriptions.door_text import (
     SCRIPTING,
@@ -177,12 +177,12 @@ def save(layout: Any, role: str, prompt: str) -> Path:
 
 def write_tools(folder: Path, box: Any) -> Path | None:
     """Write ``TOOLS.md``
-    (:func:`langslice.doors.agent_cli.catalog.tools_text`) for
+    (:func:`langslice.doors.commands.job.catalog.tools_text`) for
     the toolbox *box* of the job in *folder*: its verbs as its run declares
     them. Its path, or None when it could not be written."""
     import logging
 
-    from langslice.doors.agent_cli.catalog import tools_text
+    from langslice.doors.commands.job.catalog import tools_text
     from langslice.doors.reference_card import TOOLS_FILE
 
     path = Path(folder) / TOOLS_FILE

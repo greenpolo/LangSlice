@@ -53,7 +53,6 @@ from langslice.tools.changing.transforms import (
     set_transforms,
 )
 from langslice.tools.fitting.deformable import (
-    check_atlas_image,
     inputs_block,
     nothing_fitted,
     refuse_unknown_inputs,
@@ -66,10 +65,10 @@ from langslice.tools.fitting.fit_regions import (
 from langslice.tools.looking.look import show_result
 from langslice.tools.refusal import (
     check_section_count,
+    named_section,
     refused_row,
     reworded,
     section_refusal,
-    unknown_sections,
 )
 from langslice.tools.run import Run, as_list, drawn_image, pictured
 from langslice.tools.stale import section_inputs, stale_refusal
@@ -266,7 +265,7 @@ def _fit_elastix(
                 rows[index] = AffineRow(record.id, refusal=stale_refusal())
                 continue
             made = fit_transform(outcome, include=kept, exclude=dropped, fit_atlas=fit_atlas)
-            if "orientation" in job.frozen_for(record.id) and reverses_orientation(now, made):
+            if "orientation" in job.spec.frozen_for(record.id) and reverses_orientation(now, made):
                 frozen = section_refusal(job, record.id, "orientation")
                 assert frozen is not None
                 told = reworded(frozen, mirror_message(record.id))
@@ -420,9 +419,7 @@ def elastix_fit(
     the atlas does not have, a region too small), ``STALE_INPUT``,
     ``PRECONDITION``, ``FIT_FAILED``.
     """
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [str(section)])
+    record = named_section(job.state, section)
     if record.deformation:
         raise refit_refusal(record)
     try:
@@ -523,12 +520,7 @@ def elastix_affine(
         raise Refused(RefusalCode.BAD_ARGUMENT, message=str(exc)) from exc
     if any(not isinstance(name, str) for name in restrict_to):
         raise Refused(RefusalCode.BAD_ARGUMENT, message="restrict_to lists atlas regions")
-    records = []
-    for ref in sections:
-        record = job.state.resolve(ref)
-        if record is None:
-            raise unknown_sections(job.state, [str(ref)])
-        records.append(record)
+    records = [named_section(job.state, ref) for ref in sections]
     named = refuse_unknown_inputs(job, workspace, records, section_image, mask)
     label = str(mask or "none").strip()
     result = _fit_elastix(
@@ -619,10 +611,7 @@ def elastix_affine_tool(
     """
     job, workspace = run.job, run.workspace
     regions = region_entries(workspace, job.state, as_list(restrict_to))
-    check_atlas_image(workspace, atlas_image)
     named = as_list(sections)
-    if not named:
-        raise Refused(RefusalCode.BAD_ARGUMENT, "sections must name one or more sections")
     check_section_count(job, "elastix_affine", len(named))
     done = elastix_affine(
         job,

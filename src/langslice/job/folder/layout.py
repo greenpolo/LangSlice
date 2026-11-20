@@ -29,14 +29,14 @@ without an id. Inside::
                          tool_start / tool_end on every door), runs/ (the agent
                          CLI's background runs), calls.jsonl (the agent CLI's calls),
                          calls/ (each call's envelope), launches/ (the exact
-                         launch prompts of `langslice-job FOLDER launch`)
+                         launch prompts of `langslice job FOLDER launch`)
     trace/               agent transcripts: LangSlice's own agent's trace (also
                          when --trace-dir sends it elsewhere), and a coding
                          agent's session copied in by its harness plugin
                          (langslice.doors.commands.transcripts)
     env/                 the job's own Python environment, made by
-                         `langslice-job FOLDER env`
-                         (langslice.doors.agent_cli.environment)
+                         `langslice job FOLDER env`
+                         (langslice.doors.commands.job.environment)
     AGENTS.md, CLAUDE.md the reference card for coding agents
     TOOLS.md             every verb's description and arguments (by `launch`)
 
@@ -200,7 +200,7 @@ def check_owner(layout: JobLayout) -> None:
     continued. The default job folder's images are its parent wherever it
     moves (:data:`IMAGES_ARE_PARENT`). An explicit folder whose image folder
     no longer exists is taken over by the images it is opened with (they
-    moved: ``langslice-job NEW_IMAGES init --job-dir FOLDER``). Raises
+    moved: ``langslice job NEW_IMAGES init --job-dir FOLDER``). Raises
     ``ValueError``.
     """
     held = read_job_file(layout)
@@ -511,7 +511,7 @@ def read_job_file(layout: JobLayout) -> dict[str, Any] | None:
 def write_job_file(layout: JobLayout, **fields: Any) -> dict[str, Any]:
     """Write ``job.json``: *fields* over what it holds (``created_at`` and any
     field not given are kept), at the current format version."""
-    from langslice.job.state_file import write_json_atomic
+    from langslice.core.shared_files import write_json_atomic
 
     held = read_job_file(layout) or {}
     record = {**held, **fields, FORMAT_KEY: JOB_FORMAT_VERSION}

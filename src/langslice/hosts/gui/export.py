@@ -1,11 +1,9 @@
 """The window's Export menu: a job's registration as another program's file.
 
-Three formats (:data:`FORMATS`), each written by the code the library uses:
-``abba``, ``exports/<image folder>.abba``, an ABBA project file
-(``tools/bookkeeping/abba_export.py``); ``quicknii`` and ``visualign``,
-``exports/quicknii.json`` and ``exports/visualign.json`` with the section
-images they name, both written together (``export_stack``, what ``submit``
-and ``export_maps`` write).
+The formats are the registry's
+(:data:`langslice.tools.bookkeeping.export_formats.EXPORT_FORMATS`), written
+by :func:`langslice.tools.bookkeeping.export_formats.write_export`; this
+module holds no format.
 
 An export runs on a thread of its own (an ABBA file with warps takes
 minutes); :class:`Exports` keeps each job's last export, which the page
@@ -23,7 +21,6 @@ the warps move tissue 95 um at the median; 100 landmarks miss them by
 from __future__ import annotations
 
 import os
-import statistics
 import subprocess
 import sys
 import threading
@@ -36,17 +33,10 @@ from pathlib import Path
 import langslice
 from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.maps.abba import MAX_POINTS
-from langslice.core.refusal import RefusalCode, Refused
-from langslice.job.exports.public_files import QUICKNII_FILE, VISUALIGN_FILE
+from langslice.core.refusal import Refused
+from langslice.tools.bookkeeping.export_formats import EXPORT_FORMATS, Written, write_export
 
-FORMATS = {
-    "abba": "ABBA project (.abba)",
-    "abba_linear": "ABBA project, linear only (.abba)",
-    "quicknii": "QuickNII (.json)",
-    "visualign": "VisuAlign (.json)",
-}
 MIN_LANDMARKS = 100
-QUINT_FILES = {"quicknii": QUICKNII_FILE, "visualign": VISUALIGN_FILE}
 
 
 class ExportError(ValueError):
@@ -91,29 +81,7 @@ class ExportState:
     seconds: float = 0.0
 
 
-@dataclass(frozen=True)
-class Written:
-    """What one export wrote: the file, in words, and the sections left out."""
-
-    path: str
-    message: str
-    skipped: int
-
-
 Runner = Callable[[Path, str, int], Written]
-
-
-def _quint(folder: Path, kind: str) -> Written:
-    """Write the job's QuickNII and VisuAlign files; name *kind*'s."""
-    with langslice.open_job(folder) as job:
-        files = [Path(path) for path in job.export_stack()]
-    named = [path for path in files if path.name == QUINT_FILES[kind]]
-    if not named:
-        raise Refused(
-            RefusalCode.PRECONDITION, "no section has a placement to write: place a section first"
-        )
-    count = sum(1 for path in files if path.suffix == ".png")
-    return Written(str(named[0]), f"{count} sections", 0)
 
 
 def run_export(folder: Path, kind: str, landmarks: int) -> Written:
@@ -124,7 +92,7 @@ def run_export(folder: Path, kind: str, landmarks: int) -> Written:
     folder
         The job folder.
     kind
-        One of :data:`FORMATS`.
+        A name of :data:`~langslice.tools.bookkeeping.export_formats.EXPORT_FORMATS`.
     landmarks
         An ABBA project's most landmark pairs per warp.
 
@@ -133,20 +101,8 @@ def run_export(folder: Path, kind: str, landmarks: int) -> Written:
     Written
         The file, what it holds, and how many sections were left out.
     """
-    if kind in QUINT_FILES:
-        return _quint(folder, kind)
-    warps = kind != "abba_linear"
-    with langslice.open_job(folder) as job:
-        done = job.export_abba(warps=warps, landmarks=landmarks)
-    message = f"{len(done.sections)} sections"
-    if done.warp_error_um:
-        medians = [row["median"] for row in done.warp_error_um.values()]
-        typical = statistics.median(medians)
-        message += (
-            f", {len(done.warped)} with their warp (at most {landmarks}"
-            f" landmarks, {typical:.0f} µm from LangSlice's at the median)"
-        )
-    return Written(done.path, message, len(done.skipped))
+    with langslice.open_job(folder) as handle:
+        return write_export(kind, handle.job, handle.workspace, landmarks=landmarks)
 
 
 class Exports:
@@ -187,7 +143,7 @@ class Exports:
         folder
             The job folder.
         kind
-            One of :data:`FORMATS`.
+            A name of :data:`~langslice.tools.bookkeeping.export_formats.EXPORT_FORMATS`.
         landmarks
             An ABBA project's most landmark pairs per warp.
 
@@ -202,7 +158,7 @@ class Exports:
             For a format the menu does not offer, a landmark count out
             of range, or while an export of the job is running.
         """
-        if kind not in FORMATS:
+        if kind not in EXPORT_FORMATS:
             raise ExportError(f"LangSlice cannot export {kind!r}")
         if not MIN_LANDMARKS <= landmarks <= MAX_POINTS:
             raise ExportError(f"A warp takes {MIN_LANDMARKS} to {MAX_POINTS} landmarks.")

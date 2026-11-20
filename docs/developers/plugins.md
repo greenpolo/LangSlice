@@ -371,7 +371,7 @@ already has some. The work's own landing is not refused.
 ## In-tree engines
 
 The five engines in `langslice.engines` are tools of every job, on every
-door (`langslice-job init`, `langslice linear run`, the MCP server's
+door (`langslice job FOLDER init`, `langslice linear run`, the MCP server's
 `start_job`, the library); no job names them in `plugins`.
 Each tool is a row of the tool table (`job/settings/tool_table.py`,
 `ToolDef.engine`, with the atlases and planes it is offered on), listed
@@ -529,11 +529,11 @@ the layers the sections show to `exports/plugins/<tool>/` with a manifest.
 | Job spec | `JobSpec.plugins`: `["module:factory", ...]`, saved in `job.json` (an in-tree engine's reference is dropped: its tools are in every job); `JobSpec.plugin_config`: options for a factory, by reference (the factory is called with the options object when it has one) |
 | `langslice linear run` | `--plugins MODULE:FACTORY` (repeatable); `--plugin-config 'MODULE:FACTORY=JSON-or-file'` |
 | Python | `langslice.create_job(folder, plugins=[...], plugin_config={...})`: references, factory functions defined at module level, or `ToolSpec` objects |
-| Reopening | `open_job(folder)` and `langslice-job FOLDER VERB` read `plugins` from `job.json` and load them again |
+| Reopening | `open_job(folder)` and `langslice job FOLDER VERB` read `plugins` from `job.json` and load them again |
 
 A plugin that cannot be loaded, or whose tools clash, is refused with one line
 when the spec is made. The plugin tools follow the native ones in every
-listing: the built-in agent's tools and job statement, `langslice-job ops` and
+listing: the built-in agent's tools and job statement, `langslice job FOLDER ops` and
 `schema` (in a job folder), the job's `AGENTS.md` card, the library's `verbs`,
 and `status`' `can_change`. They are named in `disabled` like native tools
 (`--disabled nudge_sections`), are absent while their task is off, and plugin

@@ -7,23 +7,22 @@ it is skills for the main session plus two registration agents that each
 register exactly one brain: `register` through LangSlice's MCP tools, and
 `register-scripting` through the same MCP tools and scripts of its own with
 the Python library. The main session sets a job up and checks it with the
-`langslice-job` command line ([`docs/agents/cli.md`](../../docs/agents/cli.md)),
+`langslice job` command line ([`docs/agents/cli.md`](../../docs/agents/cli.md)),
 which runs no registration tool.
 
 The registration skills (`registration-playbook`, `placement`,
 `damage-and-masks`, `landmarks`, `choosing-engines`) teach the agents how to
 register, with example pictures they open with `view_file`. Both agents list
 `skills/registration-playbook` in their frontmatter `skills`. The skills' one
-source is `src/langslice/skills/`; each connector carries a copy, checked by
+source is `src/langslice/skills/`; each connector carries a copy, written by `packaging/build_connector_skills.py` and checked by
 `tests/test_connector_skills.py`.
 
 ## Install
 
 LangSlice must be installed first (the conda environment of
-`environment.yml`). Antigravity must then find `langslice` and
-`langslice-job` on the PATH it reads from the login shell (`$SHELL -ilc`;
+`environment.yml`). Antigravity must then find `langslice` on the PATH it reads from the login shell (`$SHELL -ilc`;
 on Windows, the user and system environment variables): the plugin's MCP
-server runs `langslice mcp`, the skills run `langslice-job`, and
+server runs `langslice mcp`, the skills run `langslice job`, and
 the plugin's hook runs `langslice`. The `setup` skill (below) puts them
 there.
 
@@ -84,8 +83,8 @@ Both agents are `mainAgent` and `subagent`: the main session starts one with
 folder, with the launch prompt as its message:
 
 ```bash
-cd /data/brains/M04/langslice     # the job folder (made by `langslice-job ... init`)
-agy -p "$(langslice-job . launch --role register | jq -r .result.prompt)" \
+cd /data/brains/M04/langslice     # the job folder (made by `langslice job ... init`)
+agy -p "$(langslice job . launch --role register | jq -r .result.prompt)" \
   --agent register --model gemini-4-argon-high --output-format stream-json \
   > run.jsonl
 ```
@@ -99,9 +98,9 @@ model (`--model`, or the chat's).
 Antigravity runs an agent's commands in an OS sandbox (Linux namespaces):
 the working folder and temporary folders are writable, the paths that
 `read_file` rules allow are visible read-only, and network access is limited
-to the domains `read_url` rules allow. `langslice-job` reads the atlas and the
+to the domains `read_url` rules allow. `langslice job` reads the atlas and the
 images, so the main session runs it outside the sandbox (`BypassSandbox`),
-which a `command(langslice-job)` rule allows without asking. A
+which a `command(langslice job)` rule allows without asking. A
 `register-scripting` agent's script reads them too: it runs the job's own
 Python (its launch message names the interpreter) outside the sandbox, which
 asks each time unless a `command(...)` rule names that interpreter. The MCP server is a process Antigravity starts, not an agent's
@@ -119,7 +118,7 @@ this machine's paths:
   "permissions": {
     "allow": [
       "mcp(langslice_mcp/*)",
-      "command(langslice-job)",
+      "command(langslice job)",
       "read_url(*)",
       "read_file(/path/to/LangSlice)",
       "read_file(/path/to/the/python/LangSlice/runs/on)",

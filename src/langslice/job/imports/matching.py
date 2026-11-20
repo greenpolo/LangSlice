@@ -2,28 +2,17 @@
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-SECTION_NUMBER = re.compile(r"_s(\d+)")
+from langslice.core.exports.quint_images import base_name, section_number
+
 COPY_NUMBER = re.compile(r"_s\d+$")
 
 
 class AmbiguousMatch(ValueError):
     """The file's entries cannot be matched to the job's sections one to one."""
-
-
-def base_name(filename: str) -> str:
-    """The last path component of *filename* (``/`` and ``\\`` both separate)."""
-    return re.split(r"[\\/]", filename)[-1]
-
-
-def section_number(filename: str) -> int | None:
-    """The one ``_sNNN`` section number in *filename*'s base name, else None."""
-    found = SECTION_NUMBER.findall(os.path.splitext(base_name(filename))[0])
-    return int(found[0]) if len(found) == 1 else None
 
 
 def _stem(name: str) -> str:

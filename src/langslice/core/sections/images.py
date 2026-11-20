@@ -67,6 +67,7 @@ from langslice.core.sections.reading import (
     custom_appearance,
     enhance_plane,
 )
+from langslice.core.shared_files import atomic_file
 from langslice.core.stack.images import ImageRef
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -319,15 +320,10 @@ def write_file(
     digest = digest_of(held)
     path, exists = _file_for(layout, section_id, name, digest)
     if not exists:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f"{path.stem}.partial.png")
-        try:
+        with atomic_file(path) as handle:
             Image.fromarray(held, mode="L").save(
-                temporary, format="PNG", compress_level=PNG_COMPRESS_LEVEL
+                handle, format="PNG", compress_level=PNG_COMPRESS_LEVEL
             )
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
     return ImageRef(
         source=dict(source),
         file=layout.relative(path),

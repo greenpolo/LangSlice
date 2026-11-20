@@ -34,7 +34,7 @@ from langslice.tools.fitting.deformable import (
 from langslice.tools.fitting.deformable_rows import deformable_row_to_json
 from langslice.tools.fitting.fit_regions import region_entries
 from langslice.tools.looking.fit_pictures import draw_fits
-from langslice.tools.refusal import section_refusal, unknown_sections
+from langslice.tools.refusal import named_section, section_refusal
 from langslice.tools.run import Run, as_list
 from langslice.tools.stale import section_inputs
 
@@ -88,16 +88,14 @@ def _start_trace(
     """Start one section's border trace in the background, or reuse it
     (the trace alone; :func:`trace_borders` adds the fit). The call is
     prepared outside the job's write lock and started under it."""
-    record = job.state.resolve(ref)
-    if record is None:
-        raise unknown_sections(job.state, [str(ref)])
+    record = named_section(job.state, ref)
     section_id = record.id
     refusal = section_refusal(job, section_id, "deformation")
     if refusal is not None:
         raise Refused(refusal.code, id=section_id, **refusal.facts)
     try:
         current = handoff.correction_fingerprint(job.state, workspace, section_id)
-        if job.image_job_running(section_id, current):
+        if job.traces.running(section_id, current):
             return TraceStarted(id=section_id, running=True, record=_trace_json(record))
         kept, dropped = exclusions(record, chosen)
         result, call = registration_tool.start_correction(
@@ -129,8 +127,8 @@ def _start_trace(
                 RefusalCode.STALE_INPUT, id=section_id, message=_STALE_MESSAGE + " Call it again."
             )
         if call is not None:
-            job.start_image_job(section_id, fingerprint, call, workers=workers)
-        portable = job.portable(result)
+            job.traces.start(section_id, fingerprint, call, workers=workers)
+        portable = job.traces.portable(result)
         trace = BorderTrace.from_json(portable)
         if _without_cached(trace) != _without_cached(now.border_trace):
             now.border_trace = trace
@@ -196,9 +194,7 @@ def trace_borders(
     """
     refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
-    record = job.state.resolve(ref)
-    if record is None:
-        raise unknown_sections(job.state, [str(ref)])
+    record = named_section(job.state, ref)
     held = job.background.running_for(record.id, TRACE_WORK)
     if held is not None:
         return TraceStarted(id=record.id, running=True, work=held.id, record=_trace_json(record))

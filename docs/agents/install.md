@@ -124,16 +124,15 @@ PY -m pip install "FOLDER[registration,mcp]"
 
 ## 5. Check
 
-`langslice` and `langslice-job` sit beside `PY` (on Windows, in the `Scripts`
-folder beside it). Run both by their full path:
+`langslice` sits beside `PY` (on Windows, in the `Scripts`
+folder beside it). Run it by its full path:
 
 ```bash
 langslice version
-langslice-job ops
+langslice job --help
 ```
 
-The first prints `langslice 0.2.0` or a later version. The second prints one
-JSON object with `"ok": true`.
+The first prints `langslice 0.2.0` or a later version. The second prints the usage of the job commands.
 
 ## 6. Connect the app
 

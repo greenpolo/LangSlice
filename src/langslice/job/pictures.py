@@ -284,6 +284,11 @@ def view_name(seq: int, tool: str, mode: str | None) -> str:
     return "_".join(part for part in parts if part)
 
 
+def view_number(name: str) -> int:
+    """The sequence number of a picture named by :func:`view_name`."""
+    return int(name.split("_", 1)[0])
+
+
 @dataclass
 class _Picture:
     seq: int
@@ -377,7 +382,7 @@ class ViewStore:
         exit. Without a usable folder: the index alone, as before."""
         from filelock import FileLock, Timeout
 
-        from langslice.job.state_file import write_json_atomic
+        from langslice.core.shared_files import write_json_atomic
 
         counter = self.layout.folder / VIEWS_COUNTER
         try:
@@ -541,7 +546,7 @@ class ViewStore:
                 call_id=call.call_id,
                 atlas=atlas_of() if placed and atlas_of is not None else None,
             )
-            call.numbers = [int(name.split("_", 1)[0]) for name in call.names]
+            call.numbers = [view_number(name) for name in call.names]
             call.captions = [held.caption if held is not None else None for _p, held in noted]
         except Exception:
             logger.warning("Could not queue the pictures of %s", tool, exc_info=True)

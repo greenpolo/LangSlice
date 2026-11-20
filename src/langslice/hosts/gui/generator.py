@@ -2,7 +2,7 @@
 
 The prompt generator tab (``web/src/prompt/``) is a form that runs in the
 page: it turns a person's choices into one message to paste into their agent
-app, a short request and the job's ``langslice-job FOLDER init`` command,
+app, a short request and the job's ``langslice job FOLDER init`` command,
 which the main agent's ``register-brain`` skill runs. This module gives the
 page what the choices are, so nothing in the form is written by hand twice:
 
@@ -57,7 +57,6 @@ from langslice.doors.credentials import (
     image_model_connected,
     saved_image_provider,
 )
-from langslice.hosts.gui.settings import LABELS as CONNECTION_LABELS
 from langslice.job.folder.layout import (
     JobLayout,
     held_image_folder,
@@ -67,7 +66,7 @@ from langslice.job.settings import labels as tool_labels
 from langslice.job.settings import tool_table
 from langslice.job.settings.spec import ALL_TASKS, DEFAULT_ATLAS, JobSpec, NonlinearSpec, Task
 from langslice.providers import connections as image_registry
-from langslice.providers.openai_api import OPENAI_IMAGE_MODELS
+from langslice.providers.table import find
 
 SPECIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Mouse", ("mouse",)),
@@ -76,12 +75,6 @@ SPECIES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 KEEP: dict[str, str] = {"angles": "position", "orientation": "transform"}
-
-IMAGE_MODELS: dict[str, tuple[str, ...]] = {
-    "openai-oauth": image_registry.OPENAI_OAUTH_IMAGE_MODELS,
-    "openai-api": OPENAI_IMAGE_MODELS,
-    "gemini-api": image_registry.GEMINI_IMAGE_MODELS,
-}
 
 NO_IMAGE_MODEL = "None (no image model)"
 
@@ -210,15 +203,14 @@ def image_models() -> list[ImageModelChoice]:
     rows: list[ImageModelChoice] = []
     for name in sorted(CANONICAL_PROVIDERS, key=_provider_order):
         no_model = _calls_no_model(name)
-        label = CONNECTION_LABELS.get(name, (name, ""))[0]
-        if no_model:
-            label = NO_IMAGE_MODEL
+        known = find(name)
+        label = NO_IMAGE_MODEL if no_model else known.label if known else name
         rows.append(
             ImageModelChoice(
                 provider=name,
                 label=label,
                 default=name == default,
-                models=list(IMAGE_MODELS.get(name, ())),
+                models=list(known.image_models) if known else [],
                 default_model=image_registry.default_image_model(name),
                 connected=no_model or image_model_connected(name),
             )

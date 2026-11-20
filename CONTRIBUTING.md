@@ -40,10 +40,11 @@ python -m pytest
 python -m langslice version
 ```
 
-`pytest` runs four tests in a few seconds: one registration from start to
-export on a small synthetic brain (`tests/test_smoke.py`), the comment and
-waiver rule (`tests/test_no_comments_or_waivers.py`), the import layers and
-the Markdown file kinds. A change to pictures is judged by running a real
+`pytest` runs in a few seconds: one registration from start to export on a
+small synthetic brain (`tests/test_smoke.py`), the state records, the import
+graph and layers, the comment and waiver rule
+(`tests/test_no_comments_or_waivers.py`), the Markdown file kinds and the
+connectors' skill copies (`tests/test_connector_skills.py`). A change to pictures is judged by running a real
 brain and looking at the pictures.
 
 ## The style
@@ -56,8 +57,8 @@ and no waiver: a finding is fixed in the code.
 
 - Branch from `main`, open the PR against `main`.
 - Keep PRs focused — one logical change per PR is easier to review.
-- The app plugins' manifests (`connectors/claude-code/.claude-plugin/plugin.json`, `connectors/codex/.codex-plugin/plugin.json`) carry the package's version: a version change in `pyproject.toml` changes them too (`tests/test_plugin_versions.py`), because Claude Code and Codex update an installed plugin only when its version changes.
-- CI runs `ruff`, the style checker (against the base, with both baselines), `basedpyright` and the test suite on Linux and Windows, Python 3.11. The checks run in the locked environment (`uv sync --locked --extra dev --extra registration`), since basedpyright's findings change with the libraries' type stubs; the tests run on the newest versions `pip` installs. A change of `uv.lock` that moves basedpyright's findings carries the baseline's update. The Fiji connector builds and runs discovery, menu and geometry checks on Windows; its shebang-based fake-worker subprocess check runs on Linux.
+- The app plugins' manifests (`connectors/claude-code/.claude-plugin/plugin.json`, `connectors/codex/.codex-plugin/plugin.json`) carry the package's version: a version change in `pyproject.toml` changes them too because Claude Code and Codex update an installed plugin only when its version changes.
+- CI runs `ruff`, `basedpyright`, import-linter and the test suite on Linux and Windows, Python 3.11. The checks run in the locked environment (`uv sync --locked --extra dev --extra registration`), since basedpyright's findings change with the libraries' type stubs; the tests run on the newest versions `pip` installs.
 
 ## License
 

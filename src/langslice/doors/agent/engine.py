@@ -21,17 +21,17 @@ from typing import Any
 from google.genai import types
 
 from langslice.core.atlas.load import load_atlas
+from langslice.core.shared_files import write_json_atomic
 from langslice.core.stack.stack import Stack
 from langslice.doors.agent.media import opening_parts, packaged_tools
 from langslice.doors.agent.session import build_agent, run_agent_session
-from langslice.doors.agent.spend import SpendMonitor
+from langslice.doors.agent.spend import UsageMeter
 from langslice.doors.jobs import JobContext, close_job
 from langslice.doors.reference_card import write_card
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.folder.layout import JobLayout, locate_job_folder
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.job.state_file import write_json_atomic
 from langslice.tools.descriptions.description import AGENT_DOOR
 from langslice.tools.descriptions.door_text import read_notes, status_and_notes
 from langslice.tools.descriptions.statement import (
@@ -195,9 +195,9 @@ async def run_session(
     sink: list[str] = []
     seed = build_seed_message(state, ctx, statement)
     on_event = with_seed_views(on_event, save_opening(box, seed))
-    spend = SpendMonitor(agent.model)
+    spend = UsageMeter(agent.model)
 
-    def write_spend(monitor: SpendMonitor) -> None:
+    def write_spend(monitor: UsageMeter) -> None:
         """``exports/spend.json``: the account so far, after every model
         call, and the final one when the session ends."""
         try:
@@ -227,7 +227,7 @@ async def run_session(
         write_spend(spend)
     if sink and sink[0]:
         state.debrief = sink[0]
-        box.job.checkpoint()
+        box.job.checkpoints.write()
     return outcome
 
 

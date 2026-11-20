@@ -39,8 +39,8 @@ Keep this absolute path for steps 2 and 4.
 
 ## 2. Put LangSlice's folder on PATH
 
-Apps and LangSlice's agents run `langslice` and `langslice-job` by name, so
-the folder that holds them must be on PATH everywhere, not only in a terminal
+Apps and LangSlice's agents run `langslice` by name, so
+the folder that holds it must be on PATH everywhere, not only in a terminal
 where the LangSlice environment is active. That folder is the one holding the
 path from step 1 (the environment's `bin`, or `Scripts` on Windows). Add it
 to the end of PATH and change nothing else: no `conda activate`.
@@ -55,7 +55,7 @@ macOS and Linux:
   comment line.
 
   ```sh
-  # Added by LangSlice setup: lets apps find langslice and langslice-job
+  # Added by LangSlice setup: lets apps find langslice
   case ":$PATH:" in *":FOLDER:"*) ;; *) export PATH="$PATH:FOLDER" ;; esac
   ```
 

@@ -37,14 +37,14 @@ The files most readers use are the exports (`exports/quicknii.json`,
                         plugins/script/: the layers a script left through job.context
   logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
                         calls/<n>_<verb>.json, each call's whole envelope as printed),
-                        launches/<n>_<role>.md (the exact launch prompts of `langslice-job FOLDER launch`),
+                        launches/<n>_<role>.md (the exact launch prompts of `langslice job FOLDER launch`),
                         runs/<id>.json and <id>.log (background runs), events.jsonl (job events: opens, plugins,
                         every tool call on every door, a script_write line per write
                         a script's job.context landed);
                         engine.log (what the registration engines printed while they fit);
                         env.lock, held while env/ is made
   trace/                agent transcripts: the built-in agent's trace (also when it is sent elsewhere), a coding agent's session copied in by its harness plugin, and its launch check (<harness>_<session>.launch.json)
-  env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends
+  env/                  the job's own Python environment (`langslice job FOLDER env`), removed when the harness session that submitted the job ends
   scripts/, scratch/    a coding agent's own files; scripts/requirements.txt lists the packages env/ holds
   AGENTS.md, CLAUDE.md  the reference card for coding agents
   TOOLS.md              every verb of the job with its description and arguments (written by init and launch)
@@ -392,7 +392,7 @@ one.
 
 ## Recent jobs (`~/.langslice/recent_jobs.jsonl`)
 
-Outside the job folder: every `Job.open` (a run, `langslice-job FOLDER init`,
+Outside the job folder: every `Job.open` (a run, `langslice job FOLDER init`,
 `create_job`, an MCP `start_job` that makes or resumes a job) appends one line
 with `folder` (the job folder), `image_folder`, `atlas` and `at` (UTC, ISO
 8601), so the GUI can list the jobs opened on this computer. Past 256 KB the
@@ -525,7 +525,7 @@ Written only on request, by the window's **Export ‣ ABBA project** or the
 library's `job.export_abba(warps=, landmarks=)` (`tools/bookkeeping/abba_export.py`): an ABBA 0.25
 state file, which ABBA's File ‣ Load State opens on its Allen Brain Adult
 Mouse Brain CCF 2017 (v3p1) atlas, started coronal (x RL, y SI, z AP). It is
-a zip of the three files ABBA's own save writes (`job/exports/abba_project.py`):
+a zip of the three files ABBA's own save writes (`core/exports/abba_project.py`):
 
 | File | Holds |
 |---|---|
@@ -609,7 +609,7 @@ null for a model without a known price); `note`.
 
 ## Importing a registration
 
-Use `langslice-job FOLDER init --registration FILE`, `langslice linear run
+Use `langslice job FOLDER init --registration FILE`, `langslice linear run
 FOLDER --registration FILE`, or `langslice.create_job(FOLDER,
 registration=FILE)`. The file's linear placement becomes supplied positions,
 cutting angles, orientation and affine transforms. Tasks default to

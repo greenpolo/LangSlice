@@ -164,19 +164,23 @@ class Writes:
             call.begin()
         try:
             with job.writing():
-                mark = job.pushed
+                mark = job.undo.pushed
                 if outer and call.step is not None and self._caller.merge_calls:
                     start, pushed, top = call.step
-                    if job.pushed == pushed and job.undo_stack and job.undo_stack[-1].step == top:
+                    if (
+                        job.undo.pushed == pushed
+                        and job.undo.steps
+                        and job.undo.steps[-1].step == top
+                    ):
                         mark = start
                 call.depth += 1
                 try:
                     yield self
                 finally:
                     call.depth -= 1
-                    job.merge_steps(mark)
-                    if outer and job.pushed > mark and job.undo_stack:
-                        call.step = (mark, job.pushed, job.undo_stack[-1].step)
+                    job.undo.merge(mark)
+                    if outer and job.undo.pushed > mark and job.undo.steps:
+                        call.step = (mark, job.undo.pushed, job.undo.steps[-1].step)
         finally:
             if outer:
                 call.settle()

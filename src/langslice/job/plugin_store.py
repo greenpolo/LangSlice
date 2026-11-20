@@ -22,11 +22,11 @@ from typing import Any
 
 from langslice.core.pictures.plugin_layers import save_layer
 from langslice.core.plugins import Layer
+from langslice.core.shared_files import write_json_atomic
 from langslice.core.stack.images import LayerRef
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.job.folder.layout import JobLayout
-from langslice.job.state_file import write_json_atomic
 
 MANIFEST_FILE = "layers.json"
 LAYERS_SUBDIR = "layers"

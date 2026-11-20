@@ -11,7 +11,7 @@ which DMC-BrainMap reads as the animal id):
   8-bit gray, resized to the atlas plane (``<name>`` the section folder's
   name);
 - ``sharpy_track/<channel>/registration.json``: each placed section's plane
-  and point pairs (:mod:`langslice.job.exports.dmc_brainmap`);
+  and point pairs (:mod:`langslice.core.exports.dmc_brainmap`);
 - ``langslice_export.json``: what was written, the sections left
   unregistered and why, and the sections whose deformation was left out.
 
@@ -33,11 +33,7 @@ import tifffile
 from PIL import Image
 
 import langslice
-from langslice.core.maps.section_maps import placement_problem, section_frame
-from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.sections.images import image_plane
-from langslice.core.space import atlas_space_context
-from langslice.job.exports.dmc_brainmap import (
+from langslice.core.exports.dmc_brainmap import (
     DMC_CHANNELS,
     DmcFrame,
     DmcPlacement,
@@ -45,9 +41,13 @@ from langslice.job.exports.dmc_brainmap import (
     dmc_placement,
     natural_key,
 )
+from langslice.core.maps.section_maps import placement_problem, section_frame
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.sections.images import image_plane
+from langslice.core.shared_files import write_json_atomic
+from langslice.core.space import atlas_space_context
 from langslice.job.exports.public_files import applied_deformation
 from langslice.job.folder.layout import section_dirname
-from langslice.job.state_file import write_json_atomic
 
 if TYPE_CHECKING:
     from langslice.core.stack.section import Section

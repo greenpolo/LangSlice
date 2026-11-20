@@ -42,8 +42,8 @@ Keep this absolute path for steps 2 and 3.
 
 ## 2. Put LangSlice's folder on PATH
 
-Apps and LangSlice's agents run `langslice` and `langslice-job` by name, so
-the folder that holds them must be on PATH everywhere, not only in a terminal
+Apps and LangSlice's agents run `langslice` by name, so
+the folder that holds it must be on PATH everywhere, not only in a terminal
 where the LangSlice environment is active. That folder is the one holding the
 path from step 1 (the environment's `bin`, or `Scripts` on Windows). Add it
 to the end of PATH and change nothing else: no `conda activate`.
@@ -58,7 +58,7 @@ macOS and Linux:
   comment line.
 
   ```sh
-  # Added by LangSlice setup: lets apps find langslice and langslice-job
+  # Added by LangSlice setup: lets apps find langslice
   case ":$PATH:" in *":FOLDER:"*) ;; *) export PATH="$PATH:FOLDER" ;; esac
   ```
 
@@ -135,7 +135,7 @@ Read the file (it may be missing or empty) and keep everything in it as it is.
 
   ```text
   mcp(langslice_mcp/*)
-  command(langslice-job)
+  command(langslice job)
   read_url(*)
   read_file(FOLDER)      one rule for each folder from step 3
   ```
@@ -146,8 +146,8 @@ Read the file (it may be missing or empty) and keep everything in it as it is.
 - Write the file back and read it again: it must parse as JSON.
 
 What the rules do: `mcp(langslice_mcp/*)` lets an agent call LangSlice's tools
-without asking, all the `register` agent needs. `command(langslice-job)` lets
-`langslice-job` run outside the sandbox, where it can read the atlas and the
+without asking, all the `register` agent needs. `command(langslice job)` lets
+`langslice job` run outside the sandbox, where it can read the atlas and the
 images; the main session sets jobs up and checks them through it. `read_url(*)` gives
 commands in the sandbox the web. The `read_file` rules let a script in the
 sandbox import LangSlice and read the atlases.

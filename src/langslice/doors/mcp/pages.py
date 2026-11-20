@@ -20,6 +20,7 @@ from langslice.core.pictures.opening import (
 )
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.job.job import Job
+from langslice.job.pictures import view_number
 from langslice.tools.reply import (
     REPLY_BYTES,
     Item,
@@ -111,7 +112,7 @@ def result_blocks(result: Any, *, job: Job | None = None) -> list[ContentBlock]:
                     pictures=[(delivered, held)],
                     arguments={"transport_source_picture": old.seq},
                 )
-                replacements[old.seq] = int(names[0].split("_", 1)[0])
+                replacements[old.seq] = view_number(names[0])
 
             def picture_entries(
                 entries: list[dict[str, Any]],

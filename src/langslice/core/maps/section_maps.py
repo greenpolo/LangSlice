@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
+from langslice.core.fits.deformable.fields import remap_field
 from langslice.core.fits.frame import linear_placement_matrix
 from langslice.core.geometry.affine import IDENTITY_PARAMS, pixel_center_map
 from langslice.core.sections.reading import prepared_size, working_size
@@ -205,6 +206,12 @@ def placement_problem(state: Stack, section: Section) -> str | None:
     if values.shape != (6,) or not np.isfinite(values).all():
         return "the stored transform has no six numbers"
     return None
+
+
+def placed_sections(state: Stack) -> list[Section]:
+    """The sections that have a linear map (:func:`placement_problem`), in
+    the stack's order."""
+    return [section for section in state.in_order() if placement_problem(state, section) is None]
 
 
 SCALE_UNKNOWN = (
@@ -393,27 +400,12 @@ def native_points(
     replicated, as its pictures sample it), then its placement undone."""
     if warp is None:
         return apply(frame.file_to_native(), x, y)
-    import cv2
-
     to_fit = file_to_fit(frame, (int(warp.section_size[0]), int(warp.section_size[1])))
     qx, qy = apply(to_fit, x, y)
     map_x = np.ascontiguousarray(qx, dtype=np.float32)
     map_y = np.ascontiguousarray(qy, dtype=np.float32)
     scale = 1.0 / warp.mm_per_px
-    dx = cv2.remap(
-        np.ascontiguousarray(warp.field_mm[..., 0], dtype=np.float32),
-        map_x,
-        map_y,
-        cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
-    dy = cv2.remap(
-        np.ascontiguousarray(warp.field_mm[..., 1], dtype=np.float32),
-        map_x,
-        map_y,
-        cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
+    dx, dy = remap_field(warp.field_mm, map_x, map_y)
     px = qx + dx.astype(np.float64) * scale
     py = qy + dy.astype(np.float64) * scale
     return apply(np.linalg.inv(warp.placement.atlas_to_section), px, py)
@@ -458,8 +450,6 @@ def file_points(
         return apply(np.linalg.inv(frame.file_to_native()), x, y)
     if warp.inverse_field_mm is None:
         raise ValueError("the applied deformation has no inverse field")
-    import cv2
-
     shape, count = np.shape(x), int(np.size(x))
     px, py = apply(
         warp.placement.atlas_to_section,
@@ -470,20 +460,7 @@ def file_points(
     map_y = np.ascontiguousarray(point_rows(py), dtype=np.float32)
     scale = 1.0 / warp.mm_per_px
     inverse = warp.inverse_field_mm
-    dx = cv2.remap(
-        np.ascontiguousarray(inverse[..., 0], dtype=np.float32),
-        map_x,
-        map_y,
-        cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    ).ravel()[:count]
-    dy = cv2.remap(
-        np.ascontiguousarray(inverse[..., 1], dtype=np.float32),
-        map_x,
-        map_y,
-        cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    ).ravel()[:count]
+    dx, dy = (shift.ravel()[:count] for shift in remap_field(inverse, map_x, map_y))
     qx = np.reshape(px, shape) + dx.reshape(shape).astype(np.float64) * scale
     qy = np.reshape(py, shape) + dy.reshape(shape).astype(np.float64) * scale
     to_file = np.linalg.inv(

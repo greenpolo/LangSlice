@@ -81,7 +81,6 @@ OUTSIZED_MAX_FRACTION = 0.1
 OUTSIZED_MEDIAN_MM = 0.6
 
 RECORD_VERSION = 3
-READ_VERSIONS = (2, 3)
 _RECORD_KEYS = (
     "version",
     "step",
@@ -442,11 +441,10 @@ class DeformableRecord:
             unknown = sorted(set(meta) - set(_RECORD_KEYS))
             if unknown:
                 raise ValueError(f"Unknown record key(s) {unknown}")
-            if meta.get("version") not in READ_VERSIONS:
+            if meta.get("version") != RECORD_VERSION:
                 raise ValueError(
                     f"record format {meta.get('version')!r}, which "
-                    "this LangSlice does not read (it reads "
-                    f"{' or '.join(map(str, READ_VERSIONS))})"
+                    f"this LangSlice does not read (it reads {RECORD_VERSION})"
                 )
             if "parent" not in meta:
                 raise KeyError("parent")
@@ -464,10 +462,9 @@ def _read_fields(
 
     Returns the forward and inverse fields on the section grid at storage
     precision (the inverse None for a record saved without one) and the
-    step they were rebuilt from (None for fields saved whole, as format 2
-    has only).
+    step they were rebuilt from (None for fields saved whole).
     """
-    kind = optional_at(meta, "fields", text_at) or FIELDS_WHOLE
+    kind = text_at(meta, "fields")
     if kind == FIELDS_WHOLE:
         return _present(arrays["field_mm"]), arrays["inverse_field_mm"], None
     width, height = (int(v) for v in numbers_at(meta, "section_size"))

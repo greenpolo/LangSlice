@@ -46,7 +46,7 @@ from langslice.core.stack.section import Angles
 from langslice.core.stack.stack import Stack
 from langslice.tools.arguments import PicturePoint
 from langslice.tools.looking.look import not_shown, save_pictures, split_shown
-from langslice.tools.refusal import unknown_sections
+from langslice.tools.refusal import named_section
 from langslice.tools.run import as_list
 
 if TYPE_CHECKING:
@@ -127,9 +127,7 @@ def _grep_regions(job: Job, workspace: Workspace, text: str, section: object) ->
     state = job.state
     present: set[int] | None = None
     if section != "":
-        record = state.resolve(section)
-        if record is None:
-            raise unknown_sections(state, [section])
+        record = named_section(state, section)
         present = plane_structure_ids(state, workspace, record.position_mm, record.angles)
     rows, total = grep_structures(entries, text, present, limit=GREP_ATLAS_LIMIT)
     result: dict[str, Any] = {"query": text, "matches": total, "rows": rows}

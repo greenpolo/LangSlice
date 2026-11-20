@@ -1,6 +1,6 @@
 """``langslice linear run``: the registration run of an agent LangSlice drives
 itself, and the job spec every command that opens a stack makes from the job
-flags (``linear run``, ``mcp``, ``langslice-job FOLDER init``; the flags are
+flags (``linear run``, ``mcp``, ``langslice job FOLDER init``; the flags are
 :mod:`langslice.doors.commands.flags`)."""
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core.stack.section import INITIAL
 from langslice.doors import credentials
-from langslice.doors.agent_cli.background import DETACHED
 from langslice.doors.commands.flags import add_flags, load_json_arg, values_from_args
+from langslice.doors.commands.job.background import DETACHED
 from langslice.job.settings.defaults import choose_provider, default_tasks
 
 if TYPE_CHECKING:

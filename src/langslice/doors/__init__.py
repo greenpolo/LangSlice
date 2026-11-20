@@ -2,7 +2,7 @@
 
 :mod:`langslice.tools.descriptions.render` is every verb's one declaration
 (arguments and description); the agent tools and the MCP server are built from
-it, and so is the agent CLI (:mod:`langslice.doors.agent_cli.main`), the
+it, and so is the job commands (:mod:`langslice.doors.commands.job.calls`), the
 library's job handle (:mod:`langslice.doors.library.handle`) and the job
 folder's reference card (:mod:`langslice.doors.reference_card`). The native
 agent tools are :mod:`langslice.doors.tools`, the MCP server

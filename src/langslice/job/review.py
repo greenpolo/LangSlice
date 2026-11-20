@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from langslice.core.pictures.look import snapshot
-from langslice.job.state_file import write_json_atomic
+from langslice.core.shared_files import write_json_atomic
 
 if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack

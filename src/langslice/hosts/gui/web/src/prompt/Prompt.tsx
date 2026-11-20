@@ -1,5 +1,5 @@
 // The Prompt generator tab: a form that makes one message to paste into an agent app (a
-// short request and the job's `langslice-job FOLDER init` command, which the
+// short request and the job's `langslice job FOLDER init` command, which the
 // register-brain skill runs). What the form offers comes from GET generator
 // (hosts/gui/generator.py); the message is built by static/generator-logic.js, the same
 // pure functions tests/test_gui_generator.py runs under node. The form on the left in

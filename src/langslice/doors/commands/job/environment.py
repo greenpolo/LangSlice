@@ -1,4 +1,4 @@
-"""``langslice-job FOLDER env``: the job's own Python environment.
+"""``langslice job FOLDER env``: the job's own Python environment.
 
 A coding agent that wants a package LangSlice does not ship installs it here,
 never into LangSlice's environment: ``env/`` in the job folder, a virtual
@@ -18,7 +18,7 @@ Subcommands: ``env`` (make it when missing; its paths and packages),
 ``env install PACKAGE [PACKAGE ...]`` (pip requirement strings) and
 ``env remove``.
 
-``langslice-job FOLDER python SCRIPT [ARGS ...]`` (:func:`python`) runs the
+``langslice job FOLDER python SCRIPT [ARGS ...]`` (:func:`python`) runs the
 agent's script with the environment's python (made first when missing).
 """
 
@@ -35,7 +35,7 @@ from typing import Any
 
 from langslice.core.refusal import RefusalCode
 from langslice.core.shared_files import remove_tree
-from langslice.doors.agent_cli.envelope import Envelope
+from langslice.doors.commands.job.envelope import Envelope
 from langslice.job.folder.layout import ENV_DIR, JobLayout
 
 REQUIREMENTS = Path("scripts") / "requirements.txt"
@@ -169,8 +169,8 @@ def describe(layout: JobLayout) -> dict[str, Any]:
     python = python_of(folder)
     return {
         "python": str(python),
-        "run": f"langslice-job {layout.folder} python scripts/<script>.py [ARGS ...]",
-        "install": f"langslice-job {layout.folder} env install PACKAGE [PACKAGE ...]",
+        "run": f"langslice job {layout.folder} python scripts/<script>.py [ARGS ...]",
+        "install": f"langslice job {layout.folder} env install PACKAGE [PACKAGE ...]",
         "packages": [f"{name}=={version}" for name, version in installed(folder)],
         "requirements": str(layout.folder / REQUIREMENTS),
     }
@@ -236,7 +236,7 @@ def _parent_sites() -> list[str]:
     return [path for path in site.getsitepackages() if Path(path).is_dir()]
 
 
-PYTHON_USAGE = "langslice-job FOLDER python SCRIPT [ARGS ...]"
+PYTHON_USAGE = "langslice job FOLDER python SCRIPT [ARGS ...]"
 
 
 def script_path(layout: JobLayout, script: str) -> str:
@@ -252,7 +252,7 @@ def script_path(layout: JobLayout, script: str) -> str:
 
 
 def python(folder: str, rest: list[str]) -> int:
-    """``langslice-job FOLDER python SCRIPT [ARGS ...]``: *rest* (the script
+    """``langslice job FOLDER python SCRIPT [ARGS ...]``: *rest* (the script
     and its arguments, verbatim) run by the job's environment's python, the
     environment made first when missing (:func:`ensure`). A relative SCRIPT
     the working folder does not hold is read from the job folder
@@ -261,8 +261,8 @@ def python(folder: str, rest: list[str]) -> int:
     them: this process becomes that python. A call that cannot start the
     script prints the envelope of its refusal (``NOT_FOUND``, ``BAD_ARGUMENT``,
     ``IO_ERROR``) and returns its exit code."""
-    from langslice.doors.agent_cli.envelope import emit
     from langslice.doors.call_log import log_call
+    from langslice.doors.commands.job.envelope import emit
     from langslice.doors.jobs import NoJob, find
 
     try:

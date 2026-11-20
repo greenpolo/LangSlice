@@ -213,7 +213,7 @@ class EventLog:
             status = reply_status(event.get("response"))
             views = cast("list[str]", event.get("views") or [])
             fields.update(
-                step=len(job.undo_stack),
+                step=len(job.undo.steps),
                 views=[job.layout.relative(path) for path in views],
                 failed=bool(event.get("failed")),
                 status="ok" if status is None else str(status),

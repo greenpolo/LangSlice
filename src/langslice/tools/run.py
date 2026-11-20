@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
-from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import compact_rows
 from langslice.core.workspace import Workspace
@@ -84,18 +83,6 @@ class Run:
     def answered(self, *touched: str) -> dict[str, Any]:
         """A write's answer: ``ok`` and the rows it changed."""
         return {"status": "ok", **self.changed(list(touched))}
-
-    def resolve_many(self, refs: Sequence[Any]) -> tuple[list[Section], list[str]]:
-        """The sections *refs* name (each once, in order) and the refs that name none."""
-        known: list[Section] = []
-        unknown: list[str] = []
-        for ref in refs:
-            record = self.state.resolve(ref)
-            if record is None:
-                unknown.append(str(ref))
-            elif all(held.id != record.id for held in known):
-                known.append(record)
-        return known, unknown
 
 
 def pictured(result: dict[str, Any], looked: Looked) -> dict[str, Any]:

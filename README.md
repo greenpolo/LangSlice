@@ -54,7 +54,7 @@ Atlases are downloaded by BrainGlobe on first use into the user's
   connect the AI app you already use (Codex, Antigravity or Claude Code) and
   [register a brain](https://github.com/greenpolo/LangSlice/blob/main/docs/register.md).
 - **[Agents, CLI and MCP](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/index.md):** Claude Code, Antigravity or Codex
-  through `langslice-job`, Claude Desktop through MCP, or the built-in agent with
+  through `langslice job`, Claude Desktop through MCP, or the built-in agent with
   `langslice linear run sections/`.
 - **[ABBA](https://github.com/greenpolo/LangSlice/blob/main/docs/abba.md):** export a registration as an ABBA project
   and open it with ABBA's Load State.

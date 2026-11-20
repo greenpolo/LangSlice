@@ -42,6 +42,8 @@ const WALL_REACH_MM = 0.25;
 const WALL_SPANS = 24;
 const WALL_SHADE = 0.2;
 const FAR_SHADE = 0.34;
+const FAR_PALE = 0.4;
+const WALL_INK = 0.22;
 const ROOM_MM = 0.15;
 const ROOM_BINS = 96;
 const COVER_W = 256;
@@ -102,6 +104,8 @@ const FRAGMENT = /* glsl */ `
   uniform float see;
   uniform float shown;
   uniform vec3 accent;
+  uniform vec3 ground;
+  uniform float paper;
   uniform vec2 depth;
   varying vec2 vUv;
   varying float vEdge;
@@ -123,7 +127,8 @@ const FRAGMENT = /* glsl */ `
     vec3 col = mix(t.rgb * (1.0 + 0.12 * lit), vec3(lum) * 0.62, 0.55 * see);
     float rim = (1.0 - smoothstep(0.6, 0.92, t.a)) * lit;
     float far = clamp((vFar - depth.x) / max(depth.y - depth.x, 0.001), 0.0, 1.0);
-    gl_FragColor = vec4(mix(col * (1.0 - ${FAR_SHADE.toFixed(2)} * far), accent, 0.9 * rim), cover);
+    vec3 receded = mix(col * (1.0 - ${FAR_SHADE.toFixed(2)} * far), mix(col, ground, ${FAR_PALE.toFixed(2)} * far), paper);
+    gl_FragColor = vec4(mix(receded, accent, 0.9 * rim), cover);
   }
 `;
 
@@ -181,6 +186,8 @@ const WALL_VERTEX = /* glsl */ `
 
 const WALL_FRAGMENT = /* glsl */ `
   uniform vec3 tint;
+  uniform vec3 ground;
+  uniform float paper;
   uniform vec2 spans[${WALL_SPANS}];
   varying vec3 vNormal;
   varying float vZ;
@@ -189,7 +196,9 @@ const WALL_FRAGMENT = /* glsl */ `
     for (int i = 0; i < ${WALL_SPANS}; i++) if (vZ >= spans[i].x && vZ <= spans[i].y) inside = true;
     if (!inside) discard;
     float light = 0.85 + 0.15 * abs(dot(normalize(vNormal), normalize(vec3(-0.4, 0.8, 0.6))));
-    gl_FragColor = vec4(tint * light * ${WALL_SHADE.toFixed(2)}, 1.0);
+    vec3 shaded = tint * light * ${WALL_SHADE.toFixed(2)};
+    vec3 inked = mix(ground, tint, ${WALL_INK.toFixed(2)}) * (0.97 + 0.03 * light);
+    gl_FragColor = vec4(mix(shaded, inked, paper), 1.0);
   }
 `;
 
@@ -345,6 +354,8 @@ export class Space {
   private fitted = false;
   private textures = new Map<string, THREE.Texture>();
   private accent = token('--lavender', '#a4addf');
+  private ground = token('--stage', '#121213');
+  private paper = { value: document.documentElement.dataset.theme === 'light' ? 1 : 0 };
   private depth = new THREE.Vector2(0, 1);
   private room = roomTexture(new Float32Array([-1e6, 1e6, -1e6, 1e6]));
   private roomSpan = new THREE.Vector2(-1e6, 1e6);
@@ -448,7 +459,7 @@ export class Space {
     this.brain = new THREE.Group();
     this.wall = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
       vertexShader: WALL_VERTEX, fragmentShader: WALL_FRAGMENT, side: THREE.BackSide, depthWrite: false,
-      uniforms: { tint: { value: this.tint }, spans: { value: this.spans } },
+      uniforms: { tint: { value: this.tint }, ground: { value: this.ground }, paper: this.paper, spans: { value: this.spans } },
     }));
     this.wall.renderOrder = -1;
     this.wall.visible = this.tints.size > 0;
@@ -551,7 +562,7 @@ export class Space {
   private make(id: string): Slab {
     const material = new THREE.ShaderMaterial({
       vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: false, depthWrite: true, side: THREE.DoubleSide,
-      uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 }, accent: { value: this.accent }, depth: { value: this.depth },
+      uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 }, accent: { value: this.accent }, ground: { value: this.ground }, paper: this.paper, depth: { value: this.depth },
         room: { value: this.room }, roomSpan: { value: this.roomSpan }, rise: { value: 0 } },
     });
     material.alphaToCoverage = true;
