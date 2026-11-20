@@ -185,7 +185,7 @@ SimpleITK object, an array of pixel displacements) as the full map
 `ctx.fits.fit_fireants(id, restrict_to=, exclude=, section_image=, atlas_image=,
 mask=, smoothness_um=, metric=, edges=, detail=, start=, marked=)` and
 `ctx.fits.fit_elastix(id, restrict_to=, exclude=, section_image=, atlas_image=,
-mask=, edges=, marked=)` run the native engines with settings and a section
+mask=, edges=, marked=, position_mm=, angles=)` run the native engines with settings and a section
 mask of the caller's own, by the tools' names and with their defaults, and
 return a `DeformationProposal` / `TransformProposal`, not written
 ([the native engines](library.md#the-native-engines-with-settings-of-your-own)).

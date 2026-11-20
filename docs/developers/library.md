@@ -322,10 +322,15 @@ of the applied deformation and the written step keeps the chain; `marked=False`
 keeps the section's marked damage regions in the fit. The proposal's provenance
 holds the fit's `inputs` and `estimated` blocks, as a tool's reply does.
 `c.fits.fit_elastix(id, restrict_to=(), exclude=(), section_image="preprocessed",
-atlas_image="nissl", mask="none", edges=True, marked=True, note="")` runs the
-Elastix affine `elastix_affine` runs, with its names and defaults, from the
-current placement, and returns a `TransformProposal` (refused
-`PRECONDITION` on a section that holds a deformation).
+atlas_image="nissl", mask="none", edges=True, marked=True, note="", position_mm=None,
+angles=None)` runs the Elastix affine `elastix_affine` runs, with its names and
+defaults, from the current placement, and returns a `TransformProposal` (refused
+`PRECONDITION` on a section that holds a deformation). With `position_mm` and/or
+`angles` (`(pitch_deg, yaw_deg)`) it fits at that candidate plane instead, from
+the section's current transform with its deformation left out, writing nothing:
+draw each candidate with `c.pictures.overlay_picture(id, proposal={"transform":
+p.record, "position_mm": mm, "angles": a})`, and keep one by writing its position,
+then its transform. The record's `fit` holds the plane it was made at.
 `set_deformations` / `set_transforms` write them as the script's: the
 FireANTs call's settings as the deformation step's `settings` (what `status`
 and the registration list show) and in the record's provenance, the engine's

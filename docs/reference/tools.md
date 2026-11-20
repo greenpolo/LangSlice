@@ -354,7 +354,7 @@ read, in gray.
 | `clahe_tiles` | 8 | CLAHE tiles per side, 1 to 32. |
 | `n4` | false | Correct uneven illumination (N4). |
 | `contrast` | none | `[low, high]`, fractions of the blended image's range, stretched to the full range. |
-| `gamma` | 0 (linear) | 0.1 to 10. |
+| `gamma` | 0 (linear) | 0.1 to 10: each value (0 to 1) raised to this power, so below 1 brightens the mid-tones and above 1 darkens them. |
 | `invert` | false | Bright as dark. |
 | `delete` | false | Remove the image. `preprocessed` cannot be deleted. |
 | `view` | true | Return up to 4 sections drawn as `look`'s `section` mode draws the image. |

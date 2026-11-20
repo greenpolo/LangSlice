@@ -370,11 +370,22 @@ class Fits:
         edges: bool = True,
         marked: bool = True,
         note: str = "",
+        position_mm: float | None = None,
+        angles: tuple[float, float] | None = None,
     ) -> TransformProposal:
         """Run the Elastix affine (the engine ``elastix_affine`` runs) on the
         section from its current placement and return the result as a
         :class:`TransformProposal`, NOT written (``ctx.writes.set_transforms``
         writes it; its record keeps the call's settings under ``fit``).
+
+        With *position_mm* and/or *angles* ``(pitch_deg, yaw_deg)`` the fit
+        is made at that candidate plane instead (from the section's current
+        transform, its deformation left out), still writing nothing: compare
+        candidates with ``ctx.pictures.overlay_picture(section,
+        proposal={"transform": p.record, "position_mm": mm, "angles": a})``,
+        and keep one by writing its position (``set_positions`` or
+        ``position_sections``) and then the transform. The record's ``fit``
+        holds the ``position_mm`` and ``angles`` it was made at.
         The settings are ``elastix_affine``'s, by its names and with its
         defaults: *restrict_to* (region entries, ``"CTX:left"`` for one side),
         *section_image*, *atlas_image* (as for :meth:`fit_fireants`), *mask*
@@ -397,6 +408,8 @@ class Fits:
             marked=bool(marked),
             section_image=str(section_image),
             edges=bool(edges),
+            position_mm=position_mm,
+            angles=angles,
         )
         proposal = self._proposals.transform_from_params(
             record.id, fitted.params, note=note or "Elastix affine, settings of the caller's"
@@ -417,6 +430,8 @@ class Fits:
                 "marked": bool(marked),
                 "mask": label,
                 "inputs": inputs,
+                "position_mm": record.position_mm if position_mm is None else float(position_mm),
+                "angles": list(record.angles if angles is None else angles),
             },
         }
         return replace(proposal, record=stored)
