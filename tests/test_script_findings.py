@@ -171,3 +171,18 @@ def test_a_collapsed_affine_fit_is_flagged() -> None:
     )
     codes = {flag["code"] for flag in plausibility_flags(None, squashed)}
     assert FitFlag.ANISOTROPIC in codes
+
+
+def test_a_scripting_agent_is_told_it_may_use_any_method() -> None:
+    from langslice.doors.mcp.server import INSTRUCTIONS
+    from langslice.tools.descriptions.door_text import SCRIPTING
+
+    connectors = Path(__file__).resolve().parents[1] / "connectors"
+    agents = [
+        connectors / "claude-code" / "agents" / "register-scripting.md",
+        connectors / "antigravity" / "agents" / "register-scripting.md",
+        connectors / "codex" / "agents" / "register_scripting.toml",
+    ]
+    assert "not limited to LangSlice's tools" in SCRIPTING
+    assert "only" not in INSTRUCTIONS
+    assert all("any software you judge best" in path.read_text(encoding="utf-8") for path in agents)
