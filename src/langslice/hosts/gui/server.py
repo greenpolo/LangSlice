@@ -235,7 +235,7 @@ class GuiServer:
                 self.end_headers()
                 try:
                     self.wfile.write(body)
-                except (BrokenPipeError, ConnectionResetError):
+                except ConnectionError:
                     pass
 
         self.http = ThreadingHTTPServer(("127.0.0.1", port), Handler)

@@ -14,6 +14,9 @@ import { cached, newestOf, picture, type Part, type PartUrls } from '../data/pic
 // A redraw is a symmetric crossfade, so the settling is seen.
 const REDRAW = { duration: DUR.morph, ease: EASE_IN_OUT } as const;
 const PARTS: Part[] = ['tissue', 'borders', 'marks'];
+// A picture the server could not hand over yet (busy past the loader's tries) is asked
+// for again after this long, so a large tile never stays on a small picture scaled up.
+const RETRY_MS = 1500;
 
 type Images = Partial<Record<Part, HTMLImageElement>>;
 type Drawn = { key: string; images: Images; n: number };
@@ -39,17 +42,20 @@ export function Picture({ id, urls, rank, label, reveal = false }: {
     return any ? [{ key: '', images: { tissue: any }, n: 0 }] : [];
   });
   const count = useRef(1);
+  const [attempt, setAttempt] = useState(0);
   const key = urls.tissue;
   useEffect(() => {
     if (sets.at(-1)?.key === key) return;
     let alive = true;
+    let again = 0;
     Promise.all(PARTS.map(part => picture(urls[part], rank))).then(([tissue, borders, marks]) => {
-      if (!alive || !tissue) return;
+      if (!alive) return;
+      if (!tissue) { again = window.setTimeout(() => setAttempt(n => n + 1), RETRY_MS); return; }
       const images: Images = { tissue, borders: borders ?? undefined, marks: marks ?? undefined };
       setSets(old => (old.at(-1)?.key === key ? old : [...old.slice(-1), { key, images, n: count.current++ }]));
     });
-    return () => { alive = false; };
-  }, [key, rank, sets]);
+    return () => { alive = false; clearTimeout(again); };
+  }, [key, rank, sets, attempt]);
   return (
     <div className="picture" role="img" aria-label={label}>
       {sets.map((set, i) => {
@@ -58,6 +64,7 @@ export function Picture({ id, urls, rank, label, reveal = false }: {
           <motion.div
             key={set.n}
             className="picture-set"
+            data-src={set.key}
             initial={fresh ? { opacity: 0, filter: 'blur(2px)' } : false}
             animate={{ opacity: 1, filter: 'blur(0px)' }}
             transition={REDRAW}

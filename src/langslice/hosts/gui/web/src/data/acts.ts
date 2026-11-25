@@ -42,7 +42,15 @@ export const LINGER_MS = 1600;
 // How long a family's act stays after its call: a made image needs time to be drawn and
 // swept, a damage mark to be drawn in.
 const LINGER: Partial<Record<Family, number>> = { prep: 3600, damage: 2600, fit: 1800, look: 1500 };
-const lingerOf = (call: Call) => LINGER[kindOf(call.name).family] ?? LINGER_MS;
+const ZOOM_LINGER_MS = 3200;
+const lingerOf = (call: Call) => (call.name === 'zoom' ? ZOOM_LINGER_MS : LINGER[kindOf(call.name).family] ?? LINGER_MS);
+
+// The few words a call's own arguments add to its title (regions marked, a recipe, the
+// regions looked up), for the line under the bubble.
+export function callDetail(call: Call): string {
+  const args = (call.args && typeof call.args === 'object' ? call.args : {}) as Record<string, unknown>;
+  return detail(call.name, args);
+}
 
 export type Act = {
   key: string;

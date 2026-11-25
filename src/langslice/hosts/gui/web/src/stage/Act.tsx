@@ -9,7 +9,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT } from '../ui/motion';
 import type { Act as ActData } from '../data/acts';
-import { cached, partUrls, picture } from '../data/pictures';
+import { cached, partUrls, picture, type PartUrls } from '../data/pictures';
 import { Canvas } from './Picture';
 import './act.css';
 
@@ -71,7 +71,7 @@ export function Act({ act, job, id, edge, renderKey, tiles }: {
           </AnimatePresence>
           <AnimatePresence>
             {act?.family === 'look' && !zoom && few && <Viewfinder key={act.key} />}
-            {zoom && <Zoom key={act!.key} box={zoom} frame={rect} />}
+            {zoom && <Zoom key={act!.key} box={zoom} frame={rect} sharp={partUrls(job, id, SHARP_EDGE, renderKey)} />}
           </AnimatePresence>
           <AnimatePresence>
             {act && act.family !== 'books' && few && <Chip key={act.key} act={act} />}
@@ -152,40 +152,77 @@ function MadeImage({ url }: { url: string }) {
   );
 }
 
-// A zoom: the corner marks close in on the window the agent asked for (fractions of the
-// section's picture), then the picture is pushed in until that window fills the tile,
-// held while the act lingers, and let back.
-const PUSH_MS = 620;
-function Zoom({ box, frame }: { box: number[]; frame: Rect }) {
+// A zoom, on one timeline (ZOOM_MS): the corner marks close in on the window the agent
+// asked for (fractions of the section's picture), the picture is pushed in until that
+// window fills the tile, held, and let back. The picture always comes back by itself, and
+// at once when the act is cut short.
+const ZOOM_MS = 2800;
+// The pushed-in picture is laid over with the window drawn again at this edge, so it is
+// sharp, not the small picture scaled up.
+const SHARP_EDGE = 2048;
+const ZOOM_EASE = 'cubic-bezier(0.77, 0, 0.175, 1)';
+function Zoom({ box, frame, sharp }: { box: number[]; frame: Rect; sharp: PartUrls }) {
   const ref = useRef<HTMLDivElement>(null);
+  const lens = useRef<HTMLCanvasElement>(null);
   const r = { x: box[0] * frame.w, y: box[1] * frame.h, w: (box[2] - box[0]) * frame.w, h: (box[3] - box[1]) * frame.h };
   useEffect(() => {
-    const layer = ref.current?.closest<HTMLElement>('.act-layer');
+    const marks = ref.current;
+    const layer = marks?.closest<HTMLElement>('.act-layer');
     const pictureEl = layer?.parentElement?.querySelector<HTMLElement>('.picture');
-    if (!layer || !pictureEl || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const W = layer.clientWidth, H = layer.clientHeight;
-    const k = Math.min(W / r.w, H / r.h, 6);
-    const cx = frame.x + r.x + r.w / 2, cy = frame.y + r.y + r.h / 2;
-    const to = `translate(${W / 2 - cx * k}px, ${H / 2 - cy * k}px) scale(${k})`;
-    pictureEl.style.transformOrigin = '0 0';
-    const ease = 'cubic-bezier(0.77, 0, 0.175, 1)';
-    const push = pictureEl.animate([{ transform: 'none' }, { transform: to }], { duration: PUSH_MS, delay: 420, easing: ease, fill: 'forwards' });
-    return () => {
-      push.cancel();
-      pictureEl.animate([{ transform: to }, { transform: 'none' }], { duration: PUSH_MS * 0.8, easing: ease });
-    };
+    if (!marks || !layer || !pictureEl) return;
+    const whole = { left: '0px', top: '0px', width: `${frame.w}px`, height: `${frame.h}px` };
+    const asked = { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` };
+    const closing = marks.animate([
+      { ...whole, opacity: 0, offset: 0 },
+      { ...whole, opacity: 1, offset: 0.06 },
+      { ...asked, opacity: 1, offset: 0.24, easing: ZOOM_EASE },
+      { ...asked, opacity: 0, offset: 0.36 },
+      { ...asked, opacity: 0, offset: 1 },
+    ], { duration: ZOOM_MS, easing: 'linear' });
+    let push: Animation | null = null;
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const W = layer.clientWidth, H = layer.clientHeight;
+      const k = Math.min(W / r.w, H / r.h, 6);
+      const cx = frame.x + r.x + r.w / 2, cy = frame.y + r.y + r.h / 2;
+      const to = `translate(${W / 2 - cx * k}px, ${H / 2 - cy * k}px) scale(${k})`;
+      pictureEl.style.transformOrigin = '0 0';
+      push = pictureEl.animate([
+        { transform: 'none', offset: 0 },
+        { transform: 'none', offset: 0.22, easing: ZOOM_EASE },
+        { transform: to, offset: 0.44 },
+        { transform: to, offset: 0.78, easing: ZOOM_EASE },
+        { transform: 'none', offset: 1 },
+      ], { duration: ZOOM_MS });
+    }
+    let alive = true, shown: Animation | null = null;
+    const started = performance.now();
+    Promise.all([picture(sharp.tissue, 0), picture(sharp.borders, 0)]).then(([tissue, borders]) => {
+      const canvas = lens.current;
+      const left = ZOOM_MS * 0.74 - (performance.now() - started);
+      if (!alive || !tissue || !canvas || left < 300 || !push) return;
+      const W = layer.clientWidth, H = layer.clientHeight;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+      canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+      const k = Math.min(W / r.w, H / r.h, 6);
+      const ctx = canvas.getContext('2d')!;
+      const sx = tissue.naturalWidth / frame.w, sy = tissue.naturalHeight / frame.h;
+      const cw = W / k, ch = H / k;
+      const x0 = r.x + r.w / 2 - cw / 2, y0 = r.y + r.h / 2 - ch / 2;
+      ctx.imageSmoothingQuality = 'high';
+      for (const img of [tissue, borders]) {
+        if (img) ctx.drawImage(img, x0 * sx, y0 * sy, cw * sx, ch * sy, 0, 0, canvas.width, canvas.height);
+      }
+      const at = Math.max(0, ZOOM_MS * 0.44 - (performance.now() - started));
+      shown = canvas.animate([{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }],
+        { duration: ZOOM_MS * 0.36, delay: at, easing: 'linear' });
+    });
+    return () => { alive = false; closing.cancel(); push?.cancel(); shown?.cancel(); };
   }, []);
   return (
-    <motion.div
-      ref={ref}
-      className="viewfinder zoomed"
-      aria-hidden="true"
-      initial={{ left: 0, top: 0, width: frame.w, height: frame.h, opacity: 0 }}
-      animate={{ left: r.x, top: r.y, width: r.w, height: r.h, opacity: [0, 1, 1, 0] }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.5, ease: EASE_IN_OUT, opacity: { duration: 1.0, times: [0, 0.2, 0.6, 1] } }}
-    >
-      <i /><i /><i /><i />
-    </motion.div>
+    <>
+      <canvas ref={lens} className="zoom-lens" aria-hidden="true" style={{ left: -frame.x, top: -frame.y }} />
+      <div ref={ref} className="viewfinder zoomed" aria-hidden="true"><i /><i /><i /><i /></div>
+    </>
   );
 }

@@ -132,6 +132,7 @@ a { color: inherit; text-decoration: none; }
 .doing { grid-area: 1 / 1; margin: 0; padding-left: 29px; min-height: 1.5em; font-size: var(--size-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .doing-lead { color: var(--text); }
 .doing-what { color: var(--text); }
+.doing-detail { color: var(--text); }
 .doing.running .doing-lead { color: var(--lavender); }
 .doing.running .doing-what { color: var(--name); }
 .doing.running::before {

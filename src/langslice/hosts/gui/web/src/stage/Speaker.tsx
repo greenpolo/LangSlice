@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DUR, EASE_OUT } from '../ui/motion';
 import type { Call, Words } from '../data/run';
+import { callDetail } from '../data/acts';
 
 const STATE_WORDS: Record<string, string> = { Running: 'Working', Submitted: 'Done', Waiting: 'Waiting', Idle: 'Idle', Failed: 'Stopped' };
 
@@ -57,6 +58,7 @@ export function Speaker({ model, status, words, call, focusCount }: {
               <>
                 <span className="doing-lead">{working ? 'Now:' : 'Last step:'}</span>{' '}
                 <span className="doing-what">{call.title}</span>
+                {callDetail(call) && <span className="doing-detail">: {callDetail(call)}</span>}
                 <span className="doing-on">{onWords(call.sections, focusCount)}</span>
               </>
             )}

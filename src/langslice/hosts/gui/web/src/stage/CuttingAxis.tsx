@@ -105,7 +105,8 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
 
   const [tip, setTip] = useState<{ id: string; x: number } | null>(null);
   // The acts the ruler shows: a search for the stack's plane sweeps it while it runs; a
-  // look at the atlas or a region lookup marks the places it asked for.
+  // look at the atlas or a region lookup marks the places it asked for (the line under the
+  // bubble names the regions).
   const acts = useActs();
   const stageAct = useStageAct();
   const searching = [...acts.values()].find(a => a.family === 'place' && a.running) ?? (stageAct?.family === 'place' && stageAct.running ? stageAct : null);
@@ -147,15 +148,6 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
             initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
             transition={{ duration: DUR.quick, ease: EASE_OUT, delay: Math.min(0.4, i * 0.03) }} />
         ))}
-      </AnimatePresence>
-      <AnimatePresence>
-        {view && asked.length > 0 && stageAct && (
-          <motion.span key={stageAct.key} className="cut-asked-label" style={{ top: axisY - 30, left: toX(Math.min(...asked.filter(mm => mm >= view.lo && mm <= view.hi), view.hi)) }}
-            initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
-            transition={{ duration: DUR.quick, ease: EASE_OUT }}>
-            <b>{stageAct.family === 'lookup' ? 'atlas' : 'looking at the atlas'}</b>{stageAct.family === 'lookup' && stageAct.what ? ' ' + stageAct.what : ''}
-          </motion.span>
-        )}
       </AnimatePresence>
       {ticks.map(t => (
         <span key={t.mm} className={'cut-tick' + (t.label ? ' major' : '')} style={{ transform: `translateX(${toX(t.mm)}px)`, top: axisY }}>
