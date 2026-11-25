@@ -1,12 +1,12 @@
 // The Prompt generator tab: a form that makes one message to paste into an agent app (a
 // short request and the job's `langslice job FOLDER init` command, which the
-// register-brain skill runs). What the form offers comes from GET generator
-// (hosts/gui/generator.py); the message is built by static/generator-logic.js, the same
-// pure functions tests/test_gui_generator.py runs under node. The form on the left in
-// numbered steps, the message on the right, sticky, with Copy.
+// register-brain skill runs). What the form offers and the form to start from come from
+// GET generator; the message, its problems and how each tool stands come from the server
+// on every change (form.ts). The form on the left in numbered steps, the message on the
+// right, sticky, with Copy.
 import { motion } from 'motion/react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import Generator, { type Data, type Form, type Tool } from '../../../static/generator-logic.js';
+import { useMade, type Data, type Form, type Made, type Tool, type ToolStand } from './form';
 import { Check, Disclosure, Field, Select, Switch, Tick } from '../controls';
 import { DUR, EASE_IN_OUT } from '../motion';
 import { Message } from './Message';
@@ -28,7 +28,7 @@ export function Prompt() {
     const job = startJob();
     fetch(job === null ? 'generator' : `generator?job=${job}`, { cache: 'no-store' })
       .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then((d: Data) => { setData(d); setForm(Generator.prefilled(d, d.prefill || null)); })
+      .then((d: Data) => { setData(d); setForm(d.form); })
       .catch(error => { console.error(error); setFailed(true); });
   }, []);
   if (failed) return <div className="page prompt"><p className="lead">The prompt generator could not load its choices from LangSlice. Close the window and open it again.</p></div>;
@@ -40,7 +40,7 @@ function PromptForm({ data, form, setForm }: { data: Data; form: Form; setForm: 
   const up = (patch: Partial<Form>) => setForm({ ...form, ...patch });
   const abba = form.abba;
   const fixedHelp = abba ? 'Set by ABBA.' : undefined;
-  const made = Generator.message(data, form);
+  const made = useMade(form);
   const ids = useId();
   const id = (name: string) => `${ids}-${name}`;
   return (
@@ -51,7 +51,7 @@ function PromptForm({ data, form, setForm }: { data: Data; form: Form; setForm: 
             ? 'ABBA prepared this job: its snapshots, positions and cutting angles are in it. Add what you know, copy the message, and paste it into your agent app.'
             : 'Fill in what you know, copy the message, and paste it into your agent app. Only the image folder is needed: anything left blank, the agent decides or asks you about.'}
         </p>
-        {abba && <AbbaBlock data={data} form={form} up={up} />}
+        {abba && <AbbaBlock form={form} up={up} />}
 
         <Step n={1} title="Images">
           <Field label="Folder of section images (required)" id={id('folder')} help={fixedHelp}>
@@ -151,7 +151,7 @@ function PromptForm({ data, form, setForm }: { data: Data; form: Form; setForm: 
         )}
 
         <Disclosure className="step advanced" summary={<span className="step-title">Advanced: the tools the registration agent may use</span>}>
-          <Tools data={data} form={form} up={up} />
+          <Tools data={data} form={form} made={made} up={up} />
         </Disclosure>
       </div>
       <Message made={made} />
@@ -252,7 +252,7 @@ function Unit({ id, unit, placeholder, mode, value, onChange, disabled }: {
 
 // A job prepared in ABBA: what ABBA fixed, the snapshots' slice names, and whether the
 // sections ABBA already registered stay as they are.
-function AbbaBlock({ form, up }: { data: Data; form: Form; up: (p: Partial<Form>) => void }) {
+function AbbaBlock({ form, up }: { form: Form; up: (p: Partial<Form>) => void }) {
   const abba = form.abba!;
   const registered = abba.registered || [];
   const names = Object.entries(abba.sections || {});
@@ -271,7 +271,9 @@ function AbbaBlock({ form, up }: { data: Data; form: Form; up: (p: Partial<Form>
       {n > 0 && Object.keys(form.frozen).length > 0 && (
         <Check checked={!!form.keepRegistrations} onChange={on => up({ keepRegistrations: on })}
           help={n === 1 ? 'Untick to let the agent redo its alignment and warp too.' : 'Untick to let the agent redo their alignment and warps too.'}>
-          {Generator.keepLabel(n)}
+          {n === 1
+            ? 'Keep the 1 section’s existing ABBA registrations (its position may still move)'
+            : `Keep the ${n} sections’ existing ABBA registrations (their positions may still move)`}
         </Check>
       )}
       {names.length > 0 && (
@@ -298,8 +300,8 @@ function AbbaBlock({ form, up }: { data: Data; form: Form; up: (p: Partial<Form>
 
 // The tools table: a switch per tool, each greyed row saying why; the image
 // model after the warp's tools.
-function Tools({ data, form, up }: { data: Data; form: Form; up: (p: Partial<Form>) => void }) {
-  const here = Generator.present(data, form), keptOff = Generator.keptOff(data, form);
+function Tools({ data, form, made, up }: { data: Data; form: Form; made: Made | null; up: (p: Partial<Form>) => void }) {
+  const stands = made?.tools ?? {};
   const noImageModel = form.imageProvider === 'none';
   const setOff = (name: string, isOff: boolean) => {
     const tool = data.tools.find(t => t.name === name);
@@ -315,7 +317,7 @@ function Tools({ data, form, up }: { data: Data; form: Form; up: (p: Partial<For
   };
   let imageShown = false;
   const groups = data.groups.map(group => {
-    const inRun = data.tools.some(t => t.group === group.name && here.has(t.name));
+    const inRun = data.tools.some(t => t.group === group.name && stands[t.name]?.present);
     const task = data.tasks.find(t => t.name === group.task);
     const showImage = group.task === 'nonlinear' && !imageShown;
     if (showImage) imageShown = true;
@@ -323,10 +325,10 @@ function Tools({ data, form, up }: { data: Data; form: Form; up: (p: Partial<For
       <div key={group.name}>
         <ToolGroup title={group.label} note={inRun || !task ? '' : `Not in this run: “${task.label}” is not chosen above.`} absent={!inRun}>
           {data.tools.filter(t => t.group === group.name).map(tool => (
-            <ToolRows key={tool.name} data={data} form={form} tool={tool} here={here} keptOff={keptOff} noImageModel={noImageModel} setOff={setOff} />
+            <ToolRows key={tool.name} tool={tool} stand={stands[tool.name]} noImageModel={noImageModel} setOff={setOff} />
           ))}
         </ToolGroup>
-        {showImage && <ImageModel data={data} form={form} up={up} />}
+        {showImage && <ImageModel data={data} form={form} applies={!!made?.image_model_applies} up={up} />}
       </div>
     );
   });
@@ -334,7 +336,7 @@ function Tools({ data, form, up }: { data: Data; form: Form; up: (p: Partial<For
     <>
       <p className="help measure">Every tool is on unless you turn it off, except DeepSlice, Brainways and the image model’s border trace, which start off. A task’s tools apply only when that task is chosen above. The violet name is the tool’s own name, as the Agent viewer shows it.</p>
       {groups}
-      {!imageShown && <ImageModel data={data} form={form} up={up} />}
+      {!imageShown && <ImageModel data={data} form={form} applies={!!made?.image_model_applies} up={up} />}
     </>
   );
 }
@@ -349,15 +351,13 @@ function ToolGroup({ title, note, absent, children }: { title: string; note: str
   );
 }
 
-function ToolRows({ data, form, tool, here, keptOff, noImageModel, setOff }: {
-  data: Data; form: Form; tool: Tool; here: Set<string>; keptOff: Set<string>;
-  noImageModel: boolean; setOff: (name: string, off: boolean) => void;
+function ToolRows({ tool, stand, noImageModel, setOff }: {
+  tool: Tool; stand: ToolStand | undefined; noImageModel: boolean; setOff: (name: string, off: boolean) => void;
 }) {
-  void data;
-  const inRun = here.has(tool.name), held = keptOff.has(tool.name);
+  const inRun = !!stand?.present, held = !!stand?.held;
   const noModel = !inRun && noImageModel && tool.image_model;
   const note = !tool.disableable ? 'always on' : noModel ? 'not in this run: you chose no image model' : held ? 'off: you said this stays as it is' : '';
-  const checked = tool.disableable ? !held && !Generator.toolOff(form, tool) : true;
+  const checked = stand ? stand.on : !tool.default_off;
   return (
     <>
       <label className={'tool' + (inRun ? '' : ' absent') + (tool.disableable ? '' : ' fixed')}
@@ -373,9 +373,9 @@ function ToolRows({ data, form, tool, here, keptOff, noImageModel, setOff }: {
 
 // The image model the warp's border tracing asks (`--nonlinear-provider`,
 // `--nonlinear-image-model`): the providers and models LangSlice lists.
-function ImageModel({ data, form, up }: { data: Data; form: Form; up: (p: Partial<Form>) => void }) {
+function ImageModel({ data, form, applies, up }: { data: Data; form: Form; applies: boolean; up: (p: Partial<Form>) => void }) {
   const ids = useId();
-  const on = Generator.imageModelApplies(data, form);
+  const on = applies;
   const offWords = 'Not in this run: warping to fit is not chosen, or its border tracing is off.';
   const tracer = data.tools.find(t => t.image_model);
   const fallback = data.image_models.find(p => p.default);

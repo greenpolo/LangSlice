@@ -15,7 +15,7 @@ const SPACE_MS = 1500;
 const THUMB_EDGE = 512;
 const THUMB_RANK = 500;
 
-type SpaceAnswer = { thickness_um: number; given_thickness: boolean; plane_axis: number; sections: Placed[] };
+type SpaceAnswer = { thickness_um: number; given_thickness: boolean; sections: Placed[] };
 
 export function thumbUrl(job: number, id: string, key: string) {
   return `jobs/${job}/render/cutout/${encodeURIComponent(id)}?edge=${THUMB_EDGE}&key=${encodeURIComponent(key)}&style=${pictureStyle()}`;
@@ -93,7 +93,7 @@ export function Volume({ job, rows, strip, focus, onPick }: {
   const focusKey = focus.join('|');
   useEffect(() => { space.current?.setFocus(focus); }, [focusKey]);
 
-  const placed = facts ? facts.sections.filter(s => s.corners_um).length : 0;
+  const placed = facts ? facts.sections.filter(s => s.corners_mm).length : 0;
   const row = hover ? rows.find(r => r.id === hover.id) : undefined;
   return (
     <div className="volume" ref={host}>

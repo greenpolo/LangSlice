@@ -3,8 +3,8 @@
 // its picture, exactly where its current linear placement puts it.
 //
 // Scene axes are millimetres centred on the atlas: anterior +z, superior +y, the animal's
-// right at -x, read from the atlas's orientation letters (BrainGlobe: each letter names the
-// side an axis starts from). A placed section's slab is the parallelogram its thumbnail's
+// right at -x. The server sends every point in that frame (hosts/gui/space.py), so the scene
+// knows no atlas's axis order. A placed section's slab is the parallelogram its thumbnail's
 // corners span, as thick as the job's sections; a section without a position is not drawn.
 // Nothing moves but what the registration moves: when a section's placement changes, its
 // slab glides from the old placement to the new one (position, rotation, size, on
@@ -19,14 +19,15 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 export type Corners = [number[], number[], number[]];
-export type Placed = { id: string; order: number; corners_um: Corners | null };
+export type Placed = { id: string; order: number; corners_mm: Corners | null };
 export type Shell = {
-  orientation: string;
-  extent_um: [number, number, number];
+  size_mm: [number, number, number];
   vertices: number;
   triangles: number;
   positions: string;
   indices: string;
+  room: string;
+  room_span: [number, number];
 };
 
 const FOV = 30;
@@ -44,8 +45,6 @@ const WALL_SHADE = 0.2;
 const FAR_SHADE = 0.34;
 const FAR_PALE = 0.4;
 const WALL_INK = 0.22;
-const ROOM_MM = 0.15;
-const ROOM_BINS = 96;
 const COVER_W = 256;
 const HALF_ALPHA = 128;
 const FILL = 0.66;
@@ -95,7 +94,7 @@ const VERTEX = /* glsl */ `
 // farther from the viewer (`depth`: the near and far ends of the brain) is a little darker,
 // so the stack reads in depth. Nothing is drawn outside the atlas's own cross-section at
 // the fragment's place along the brain (`room`: the brain's extent to the sides and up and
-// down in `ROOM_BINS` steps from front to back, `ROOM_MM` wider): a section not yet aligned
+// down in steps from back to front, as the server measured it): a section not yet aligned
 // keeps its true size, and what of it would hang outside the atlas is left out.
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
@@ -264,55 +263,12 @@ async function cutImage(img: HTMLImageElement): Promise<{ texture: THREE.Texture
   return { texture, tissue: { mask, w, h }, colour };
 }
 
-// The brain's extent at each of `ROOM_BINS` steps from *back* to *front* (scene z): the
-// least and greatest x and y of the mesh's vertices there, `ROOM_MM` wider, as left, right,
-// bottom, top; a step with no vertex takes its neighbour's.
-function crossSections(positions: Float32Array, back: number, front: number): Float32Array {
-  const out = new Float32Array(4 * ROOM_BINS);
-  for (let b = 0; b < ROOM_BINS; b++) out.set([Infinity, -Infinity, Infinity, -Infinity], 4 * b);
-  for (let i = 0; i < positions.length; i += 3) {
-    const at = Math.floor(((positions[i + 2] - back) / (front - back)) * ROOM_BINS);
-    for (const b of [at - 1, at, at + 1]) {
-      if (b < 0 || b >= ROOM_BINS) continue;
-      out[4 * b] = Math.min(out[4 * b], positions[i] - ROOM_MM);
-      out[4 * b + 1] = Math.max(out[4 * b + 1], positions[i] + ROOM_MM);
-      out[4 * b + 2] = Math.min(out[4 * b + 2], positions[i + 1] - ROOM_MM);
-      out[4 * b + 3] = Math.max(out[4 * b + 3], positions[i + 1] + ROOM_MM);
-    }
-  }
-  for (const order of [[...Array(ROOM_BINS).keys()], [...Array(ROOM_BINS).keys()].reverse()]) {
-    let last = -1;
-    for (const b of order) {
-      if (Number.isFinite(out[4 * b])) last = b;
-      else if (last >= 0) out.set(out.subarray(4 * last, 4 * last + 4), 4 * b);
-    }
-  }
-  return out;
-}
-
 function roomTexture(sides: Float32Array): THREE.DataTexture {
   const tex = new THREE.DataTexture(sides, sides.length / 4, 1, THREE.RGBAFormat, THREE.FloatType);
   tex.minFilter = THREE.NearestFilter;
   tex.magFilter = THREE.NearestFilter;
   tex.needsUpdate = true;
   return tex;
-}
-
-// Faces wound so their normals point away from the mesh's centre, on the whole.
-function outward(p: Float32Array, idx: Uint32Array) {
-  let cx = 0, cy = 0, cz = 0;
-  const n = p.length / 3;
-  for (let i = 0; i < p.length; i += 3) { cx += p[i]; cy += p[i + 1]; cz += p[i + 2]; }
-  cx /= n; cy /= n; cz /= n;
-  let sum = 0;
-  for (let t = 0; t < idx.length; t += 3) {
-    const a = 3 * idx[t], b = 3 * idx[t + 1], c = 3 * idx[t + 2];
-    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
-    const vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
-    sum += (uy * vz - uz * vy) * (p[a] - cx) + (uz * vx - ux * vz) * (p[a + 1] - cy) + (ux * vy - uy * vx) * (p[a + 2] - cz);
-  }
-  if (sum >= 0) return;
-  for (let t = 0; t < idx.length; t += 3) { const s = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = s; }
 }
 
 function bytes(b64: string): ArrayBuffer {
@@ -331,7 +287,7 @@ export class Space {
   private slabs = new Map<string, Slab>();
   private brain: THREE.Group | null = null;
   private axes: { el: HTMLElement; at: THREE.Vector3 }[] = [];
-  private map: ((um: number[]) => THREE.Vector3) | null = null;
+  private shaped = false;
   private size = new THREE.Vector3(11, 8, 13);
   private bounds = new THREE.Box3(new THREE.Vector3(-5.5, -4, -6.5), new THREE.Vector3(5.5, 4, 6.5));
   private thickness = 0.01;
@@ -417,28 +373,10 @@ export class Space {
 
   // The atlas: its axes and size, and BrainGlobe's root mesh, matte and see-through.
   setShell(shell: Shell) {
-    const extent = shell.extent_um;
-    const rule = shell.orientation.toLowerCase().split('').map(l => (
-      l === 'a' ? { axis: 2, sign: -1 } : l === 'p' ? { axis: 2, sign: 1 }
-        : l === 's' ? { axis: 1, sign: -1 } : l === 'i' ? { axis: 1, sign: 1 }
-          : l === 'r' ? { axis: 0, sign: 1 } : { axis: 0, sign: -1 }
-    ));
-    this.map = (um: number[]) => {
-      const out = [0, 0, 0];
-      for (let k = 0; k < 3; k++) out[rule[k].axis] = rule[k].sign * (um[k] - extent[k] / 2) / 1000;
-      return new THREE.Vector3(out[0], out[1], out[2]);
-    };
-    const size = [0, 0, 0];
-    for (let k = 0; k < 3; k++) size[rule[k].axis] = extent[k] / 1000;
-    this.size.set(size[0], size[1], size[2]);
-    const raw = new Float32Array(bytes(shell.positions));
-    const positions = new Float32Array(raw.length);
-    for (let i = 0; i < raw.length; i += 3) {
-      const v = this.map([raw[i], raw[i + 1], raw[i + 2]]);
-      positions[i] = v.x; positions[i + 1] = v.y; positions[i + 2] = v.z;
-    }
+    this.shaped = true;
+    this.size.set(...shell.size_mm);
+    const positions = new Float32Array(bytes(shell.positions));
     const index = new Uint32Array(bytes(shell.indices));
-    outward(positions, index);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setIndex(new THREE.BufferAttribute(index, 1));
@@ -469,8 +407,8 @@ export class Space {
     const box = geometry.boundingBox!;
     this.bounds.copy(box);
     this.room.dispose();
-    this.room = roomTexture(crossSections(positions, box.min.z - ROOM_MM, box.max.z + ROOM_MM));
-    this.roomSpan.set(box.min.z - ROOM_MM, box.max.z + ROOM_MM);
+    this.room = roomTexture(new Float32Array(bytes(shell.room)));
+    this.roomSpan.set(...shell.room_span);
     for (const slab of this.slabs.values()) slab.mesh.material.uniforms.room.value = this.room;
     this.axes[0].at.set(0, box.min.y, box.max.z + 0.9);
     this.axes[1].at.set(0, box.min.y, box.min.z - 0.9);
@@ -496,7 +434,7 @@ export class Space {
       s.order = item.order;
       const was = s.placed;
       const before = s.goal.pos.clone();
-      if (item.corners_um && this.map) this.place(s, item.corners_um);
+      if (item.corners_mm && this.shaped) this.place(s, item.corners_mm);
       else s.placed = false;
       if (s.placed && (!was || this.reduced)) this.snap(s);
       if (s.placed && (!was || before.distanceToSquared(s.goal.pos) > 1e-8)) changed.push(s);
@@ -584,7 +522,7 @@ export class Space {
   }
 
   private place(s: Slab, corners: Corners) {
-    const [tl, tr, bl] = corners.map(c => this.map!(c));
+    const [tl, tr, bl] = corners.map(c => new THREE.Vector3(c[0], c[1], c[2]));
     const u = tr.clone().sub(tl), v = bl.clone().sub(tl);
     const n = u.clone().cross(v).normalize().multiplyScalar(this.thickness);
     const centre = tl.clone().addScaledVector(u, 0.5).addScaledVector(v, 0.5);
@@ -629,7 +567,7 @@ export class Space {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    if (this.map) this.fit();
+    if (this.shaped) this.fit();
   }
 
   private tick = () => {
@@ -717,7 +655,7 @@ export class Space {
     for (const a of this.axes) {
       const p = a.at.clone().project(this.camera);
       const behind = this.camera.position.distanceTo(a.at) > away && Math.hypot((p.x - middle.x) * this.camera.aspect, p.y - middle.y) < radius;
-      const off = p.z > 1 || !this.map || behind;
+      const off = p.z > 1 || !this.shaped || behind;
       a.el.classList.toggle('off', off);
       if (!off) a.el.style.transform = `translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * h}px) translate(-50%, -50%)`;
     }

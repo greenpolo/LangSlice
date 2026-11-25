@@ -1,6 +1,6 @@
-// The Export menu in the top bar: the shown job's registration as an ABBA project, a
-// QuickNII file or a VisuAlign file, written by the server under the job's exports/
-// folder (hosts/gui/export.py). It starts an export, polls its state while it runs, then
+// The Export menu in the top bar: the shown job's registration as a file for another
+// program, in the formats the server lists (GET exports, the export registry), written by
+// the server under the job's exports/ folder (hosts/gui/export.py). It starts an export, polls its state while it runs, then
 // says where the file is, with Open folder and Copy path.
 //
 // The menu is a WAI-ARIA menu button: Enter, Space or the down arrow open it on its first
@@ -10,15 +10,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useRun } from '../run';
 import './export.css';
 
-const FORMATS = [
-  { kind: 'abba', name: 'ABBA project (.abba)',
-    about: 'Open in ABBA with File > Load State: each section with its affine and its warp.' },
-  { kind: 'quicknii', name: 'QuickNII (.json)',
-    about: 'The linear placement of each section, with its image.' },
-  { kind: 'visualign', name: 'VisuAlign (.json)',
-    about: 'The placement and each warp as VisuAlign markers.' },
-];
-const NAMES: Record<string, string> = Object.fromEntries(FORMATS.map(f => [f.kind, f.name]));
+type Format = { name: string; label: string; about: string; slow: string };
 const POLL_MS = 700;
 
 type State = {
@@ -50,6 +42,14 @@ export function Export() {
   const firstFocus = useRef(0);
   const menuId = useId();
   const currentJob = useRef<number | null>(job);
+  const [formats, setFormats] = useState<Format[]>([]);
+  useEffect(() => {
+    fetch('exports', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : { formats: [] }))
+      .then(answer => setFormats(answer.formats || []))
+      .catch(() => setFormats([]));
+  }, []);
+  const count = formats.length;
 
   const shown = (path: string) => (home && path.toLowerCase().startsWith(home.toLowerCase()) ? '~' + path.slice(home.length) : path);
 
@@ -105,9 +105,9 @@ export function Export() {
   // Focus the item asked for once the menu is drawn.
   useEffect(() => {
     if (!open) return;
-    const at = firstFocus.current < 0 ? FORMATS.length - 1 : firstFocus.current;
+    const at = firstFocus.current < 0 ? count - 1 : firstFocus.current;
     items.current[at]?.focus();
-  }, [open]);
+  }, [open, count]);
 
   // A click outside closes the menu (and leaves a note open: it is closed by its own button).
   useEffect(() => {
@@ -131,17 +131,18 @@ export function Export() {
   }
   function onMenuKey(e: React.KeyboardEvent) {
     const at = items.current.indexOf(document.activeElement as HTMLButtonElement);
-    const go = (i: number) => { e.preventDefault(); items.current[(i + FORMATS.length) % FORMATS.length]?.focus(); };
+    const go = (i: number) => { e.preventDefault(); items.current[(i + count) % count]?.focus(); };
     if (e.key === 'ArrowDown') go(at + 1);
     else if (e.key === 'ArrowUp') go(at - 1);
     else if (e.key === 'Home') go(0);
-    else if (e.key === 'End') go(FORMATS.length - 1);
+    else if (e.key === 'End') go(count - 1);
     else if (e.key === 'Escape') { e.preventDefault(); close(true); }
     else if (e.key === 'Tab') setOpen(false);
   }
 
   const running = note?.state === 'running';
-  const name = (note?.format && NAMES[note.format]) || 'export';
+  const format = formats.find(f => f.name === note?.format);
+  const name = format?.label || 'export';
   return (
     <div className={'export' + (job === null ? ' off' : '')} ref={root}>
       <button
@@ -151,7 +152,7 @@ export function Export() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        disabled={running || job === null}
+        disabled={running || job === null || count === 0}
         title="Write this job's registration as a file for another program"
         onClick={() => (open ? close(false) : openMenu(0))}
         onKeyDown={onButtonKey}
@@ -163,17 +164,17 @@ export function Export() {
       {/* Always drawn, so it can leave as it came: CSS moves it (see export.css). */}
       <div id={menuId} className="pop menu" role="menu" aria-label="Export as" data-open={open || undefined}
         inert={!open} onKeyDown={onMenuKey}>
-            {FORMATS.map((f, i) => (
+            {formats.map((f, i) => (
               <button
-                key={f.kind}
+                key={f.name}
                 ref={el => { items.current[i] = el; }}
                 type="button"
                 role="menuitem"
                 tabIndex={-1}
                 className="menu-item"
-                onClick={() => start(f.kind)}
+                onClick={() => start(f.name)}
               >
-                <span className="menu-item-name">{f.name}</span>
+                <span className="menu-item-name">{f.label}</span>
                 <span className="menu-item-about">{f.about}</span>
               </button>
         ))}
@@ -183,7 +184,7 @@ export function Export() {
             {note.state === 'running' && (
               <>
                 <p className="note-title">Writing the {name}…</p>
-                {note.format === 'abba' && <p className="note-message">Each warp becomes landmark pairs; this can take a few minutes.</p>}
+                {format?.slow && <p className="note-message">{format.slow}</p>}
                 <span className="note-progress" aria-hidden="true"><span /></span>
               </>
             )}

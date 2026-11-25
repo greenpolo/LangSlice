@@ -199,6 +199,14 @@ class Exports:
             self._states[folder] = replace(done, started=began, seconds=seconds)
 
 
+def export_menu() -> list[dict[str, str]]:
+    """The Export menu's items (``GET exports``), in the registry's order."""
+    return [
+        {"name": item.name, "label": item.label, "about": item.about, "slow": item.slow}
+        for item in EXPORT_FORMATS.values()
+    ]
+
+
 def reveal(folder: Path) -> None:
     """Open the job's ``exports/`` folder in the system's file browser.
 

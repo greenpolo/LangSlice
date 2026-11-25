@@ -14,12 +14,19 @@ the 3D view sits exactly where its pictures say it does:
   or a tool has given it a position (the job's initial spacing is not a
   placement): the top-left,
   top-right and bottom-left corners of its thumbnail (the section turned and
-  flipped as it is kept, as ``render/thumb`` draws it) in atlas micrometres,
-  in the atlas's own axis order, the fourth corner the parallelogram's;
+  flipped as it is kept, as ``render/thumb`` draws it), the fourth corner the
+  parallelogram's;
+- the brain's cross-section at each step from back to front
+  (:func:`cross_sections`), which a section's picture is clipped to, so a
+  section not yet aligned keeps its true size and nothing of it hangs
+  outside the atlas;
 - the section thickness the job was given, else 10 micrometres.
 
 Atlas micrometres follow BrainGlobe: voxel ``i``'s centre at
 ``i * resolution``, axes as the atlas's ``orientation`` letters name them.
+The page gets every point in the view's frame instead (:func:`view_frame`):
+millimetres centred on the atlas, anterior +z, superior +y and the animal's
+right at -x, so it holds no axis convention of its own.
 """
 
 from __future__ import annotations
@@ -32,13 +39,11 @@ from typing import Protocol, cast
 import numpy as np
 import numpy.typing as npt
 
-from langslice.core.atlas.load import BrainGlobeAtlas
 from langslice.core.maps.section_maps import (
     orientation_matrix,
     placement_problem,
     section_frame,
 )
-from langslice.core.space import atlas_space_context, slice_axis_index
 from langslice.core.stack.section import INITIAL, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
@@ -47,6 +52,31 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_THICKNESS_UM = 10.0
 ROOT_STRUCTURE = "root"
+VIEW_AXES: dict[str, tuple[int, float]] = {
+    "a": (2, -1.0),
+    "p": (2, 1.0),
+    "s": (1, -1.0),
+    "i": (1, 1.0),
+    "r": (0, 1.0),
+    "l": (0, -1.0),
+}
+
+
+@dataclass(frozen=True)
+class Room:
+    """How finely the brain's cross-section is kept for the 3D view's clip.
+
+    ``bins`` steps from the brain's back to its front, each the extent of
+    the mesh's vertices within a step of it, ``margin_mm`` wider on every
+    side and beyond both ends, so a section on the brain's surface is never
+    cut.
+    """
+
+    margin_mm: float = 0.15
+    bins: int = 96
+
+
+ROOM = Room()
 
 Corners = tuple[
     tuple[float, float, float],
@@ -87,23 +117,31 @@ class _MeshAtlas(Protocol):
 
 @dataclass(frozen=True)
 class AtlasShell:
-    """The atlas brain's surface: BrainGlobe's root mesh in atlas um."""
+    """The atlas brain's surface: BrainGlobe's root mesh in the view's frame.
 
-    orientation: str
-    extent_um: tuple[float, float, float]
+    ``positions`` float32 x, y, z per vertex and ``indices`` uint32 per
+    triangle, wound so each face looks out, base64 encoded; ``size_mm`` the
+    atlas volume's size along x, y and z; ``room`` float32 left, right,
+    bottom and top of the brain per :data:`ROOM` step from ``room_span``'s
+    back to its front (:func:`cross_sections`).
+    """
+
+    size_mm: tuple[float, float, float]
     vertices: int
     triangles: int
     positions: str
     indices: str
+    room: str
+    room_span: tuple[float, float]
 
 
 @dataclass(frozen=True)
 class SpaceSection:
-    """One section in 3D: its thumbnail's corners, None while unplaced."""
+    """One section in 3D: its thumbnail's corners in the view's frame, None while unplaced."""
 
     id: str
     order: int
-    corners_um: Corners | None
+    corners_mm: Corners | None
 
 
 @dataclass(frozen=True)
@@ -112,8 +150,94 @@ class Space:
 
     thickness_um: float
     given_thickness: bool
-    plane_axis: int
     sections: tuple[SpaceSection, ...]
+
+
+def view_frame(orientation: str, extent_um: tuple[float, float, float]) -> npt.NDArray[np.float64]:
+    """Make the 3x4 map from atlas micrometres to the 3D view's frame.
+
+    Parameters
+    ----------
+    orientation
+        The atlas's orientation letters (BrainGlobe: each names the side its
+        axis starts from).
+    extent_um
+        The atlas volume's size along its three axes.
+
+    Returns
+    -------
+    numpy.ndarray
+        On ``[x, y, z, 1]`` in atlas micrometres: millimetres centred on the
+        atlas, anterior +z, superior +y, the animal's right at -x.
+    """
+    frame = np.zeros((3, 4))
+    for k, letter in enumerate(orientation.lower()):
+        axis, sign = VIEW_AXES[letter]
+        frame[axis, k] = sign / 1000.0
+        frame[axis, 3] = -sign * extent_um[k] / 2000.0
+    return frame
+
+
+def _atlas_frame(
+    atlas: _MeshAtlas,
+) -> tuple[npt.NDArray[np.float64], tuple[float, float, float]]:
+    """The atlas's view frame, and its volume's size along x, y and z in millimetres."""
+    r, n = atlas.resolution, atlas.shape
+    extent = (float(r[0]) * n[0], float(r[1]) * n[1], float(r[2]) * n[2])
+    frame = view_frame(str(atlas.orientation), extent)
+    size = np.abs(frame[:, :3]) @ np.array(extent)
+    return frame, (float(size[0]), float(size[1]), float(size[2]))
+
+
+def outward(points: npt.NDArray[np.float64], faces: npt.NDArray[np.int64]) -> npt.NDArray[np.int64]:
+    """Wind *faces* so their normals point away from the mesh's centre, on the whole."""
+    centred = points - points.mean(axis=0)
+    a, b, c = (points[faces[:, k]] for k in range(3))
+    normals = np.cross(b - a, c - a)
+    if float(np.einsum("ij,ij->", normals, centred[faces[:, 0]])) >= 0:
+        return faces
+    return faces[:, [0, 2, 1]]
+
+
+def cross_sections(
+    points: npt.NDArray[np.float64],
+) -> tuple[npt.NDArray[np.float64], tuple[float, float]]:
+    """Find the brain's extent at each :data:`ROOM` step from back to front.
+
+    Parameters
+    ----------
+    points
+        The mesh's vertices in the view's frame.
+
+    Returns
+    -------
+    tuple
+        Per step the least and greatest x and y of the vertices within a
+        step of it, :data:`ROOM`'s margin wider, as left, right, bottom, top
+        (a step with no vertex takes its nearest filled neighbour's), and
+        the steps' back and front along z.
+    """
+    margin, bins = ROOM.margin_mm, ROOM.bins
+    back = float(points[:, 2].min()) - margin
+    front = float(points[:, 2].max()) + margin
+    at = np.floor((points[:, 2] - back) / (front - back) * bins).astype(np.int64)
+    sides = np.tile(np.array([np.inf, -np.inf, np.inf, -np.inf]), (bins, 1))
+    for shift in (-1, 0, 1):
+        step = at + shift
+        inside = (step >= 0) & (step < bins)
+        rows, x, y = step[inside], points[inside, 0], points[inside, 1]
+        np.minimum.at(sides[:, 0], rows, x - margin)
+        np.maximum.at(sides[:, 1], rows, x + margin)
+        np.minimum.at(sides[:, 2], rows, y - margin)
+        np.maximum.at(sides[:, 3], rows, y + margin)
+    for order in (range(bins), range(bins - 1, -1, -1)):
+        last = -1
+        for row in order:
+            if np.isfinite(sides[row, 0]):
+                last = row
+            elif last >= 0:
+                sides[row] = sides[last]
+    return sides, (back, front)
 
 
 def atlas_shell(workspace: Workspace) -> AtlasShell:
@@ -127,8 +251,8 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
     Returns
     -------
     AtlasShell
-        The mesh's vertices (x, y, z in atlas micrometres, the atlas's axis
-        order, the frame of :func:`section_corners`) and triangles.
+        The mesh's vertices and outward-wound triangles in the view's frame
+        (:func:`view_frame`), and the brain's cross-sections.
 
     Raises
     ------
@@ -143,23 +267,24 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
     triangles = [c.data for c in mesh.cells if c.type == "triangle"]
     if not triangles:
         raise ShellError("This atlas's brain mesh has no triangles.")
-    points = np.ascontiguousarray(mesh.points, dtype="<f4")
-    faces = np.ascontiguousarray(np.concatenate(triangles), dtype="<u4")
-    resolution = tuple(float(value) for value in atlas.resolution)
-    full = tuple(int(value) for value in atlas.shape)
-    extent_um = (
-        resolution[0] * full[0],
-        resolution[1] * full[1],
-        resolution[2] * full[2],
-    )
+    frame, size = _atlas_frame(atlas)
+    points = np.asarray(mesh.points, dtype=np.float64) @ frame[:, :3].T + frame[:, 3]
+    faces = outward(points, np.concatenate(triangles).astype(np.int64))
+    sides, span = cross_sections(points)
     return AtlasShell(
-        str(atlas.orientation),
-        extent_um,
+        size,
         len(points),
         len(faces),
-        base64.b64encode(points.tobytes()).decode("ascii"),
-        base64.b64encode(faces.tobytes()).decode("ascii"),
+        _b64(np.ascontiguousarray(points, dtype="<f4")),
+        _b64(np.ascontiguousarray(faces, dtype="<u4")),
+        _b64(np.ascontiguousarray(sides, dtype="<f4")),
+        span,
     )
+
+
+def _b64(values: npt.NDArray[np.generic]) -> str:
+    """Base64 of an array's bytes, as the page decodes it."""
+    return base64.b64encode(values.tobytes()).decode("ascii")
 
 
 def job_space(workspace: Workspace, state: Stack, *, thickness_um: float | None) -> Space:
@@ -177,10 +302,12 @@ def job_space(workspace: Workspace, state: Stack, *, thickness_um: float | None)
     Returns
     -------
     Space
-        The sections in stack order, each with its corners or None.
+        The sections in stack order, each with its corners in the view's
+        frame (:func:`view_frame`) or None.
     """
+    frame, _size = _atlas_frame(cast(_MeshAtlas, workspace.atlas))
     sections = tuple(
-        SpaceSection(section.id, order, section_corners(workspace, state, section))
+        SpaceSection(section.id, order, _in_view(frame, section_corners(workspace, state, section)))
         for order, section in enumerate(state.in_order(), 1)
     )
     given = thickness_um is not None and thickness_um > 0
@@ -189,9 +316,15 @@ def job_space(workspace: Workspace, state: Stack, *, thickness_um: float | None)
         if thickness_um is not None and thickness_um > 0
         else DEFAULT_THICKNESS_UM
     )
-    context = atlas_space_context(cast(BrainGlobeAtlas, workspace.atlas))
-    plane_axis = slice_axis_index(context, workspace.settings.plane)
-    return Space(thickness, given, plane_axis, sections)
+    return Space(thickness, given, sections)
+
+
+def _in_view(frame: npt.NDArray[np.float64], corners: Corners | None) -> Corners | None:
+    """Corners in atlas micrometres, taken to the view's frame in millimetres."""
+    if corners is None:
+        return None
+    view = frame @ np.vstack([np.array(corners, dtype=np.float64).T, np.ones(3)])
+    return _as_corners(view, digits=5)
 
 
 def section_corners(workspace: Workspace, state: Stack, section: Section) -> Corners | None:
@@ -260,8 +393,8 @@ def turned_corners(file_size: tuple[int, int], rotation_deg: int) -> npt.NDArray
     )
 
 
-def _as_corners(atlas_um: npt.NDArray[np.float64]) -> Corners:
+def _as_corners(columns3: npt.NDArray[np.float64], digits: int = 2) -> Corners:
     """Round a 3x3 of corner columns to the corners' tuples."""
-    columns = cast(list[list[float]], atlas_um.T.tolist())
-    points = [(round(x, 2), round(y, 2), round(z, 2)) for x, y, z in columns]
+    columns = cast(list[list[float]], columns3.T.tolist())
+    points = [(round(x, digits), round(y, digits), round(z, digits)) for x, y, z in columns]
     return (points[0], points[1], points[2])

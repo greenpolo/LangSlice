@@ -2,12 +2,12 @@
 // is copied (the request in the window's face, the command block in the monospace face,
 // its fences dim), and Copy, which says Copied for two seconds.
 import { useEffect, useRef, useState } from 'react';
-import type { Message as Made } from '../../../static/generator-logic.js';
+import type { Made } from './form';
 
 const OPEN = '\n\n```bash\n';
 
-export function Message({ made }: { made: Made }) {
-  const text = made.text;
+export function Message({ made }: { made: Made | null }) {
+  const text = made?.text ?? '';
   const [copied, setCopied] = useState(false);
   const timer = useRef(0);
   const out = useRef<HTMLPreElement>(null);
@@ -43,10 +43,10 @@ export function Message({ made }: { made: Made }) {
           </span>
         </button>
       </div>
-      {made.problems.length > 0 && (
+      {made && made.problems.length > 0 && (
         <ul className="problems" role="alert">{made.problems.map(p => <li key={p}>{p}</li>)}</ul>
       )}
-      {made.warnings.length > 0 && (
+      {made && made.warnings.length > 0 && (
         <ul className="warnings">{made.warnings.map(w => <li key={w}>{w}</li>)}</ul>
       )}
       {text ? (
