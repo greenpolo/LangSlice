@@ -70,6 +70,7 @@ from langslice.hosts.gui.forms import generator, message
 from langslice.hosts.gui.forms.export import ExportError, Exports, export_menu, reveal
 from langslice.hosts.gui.forms.settings import POSTS, Settings, SettingsError
 from langslice.hosts.gui.pictures.drawing import Style
+from langslice.hosts.gui.pictures.parts import Part
 from langslice.hosts.gui.pictures.render import (
     CUTOUT_TYPE,
     DEFAULT_EDGE_PX,
@@ -332,9 +333,26 @@ class GuiServer:
     def _render(
         self, watcher: JobWatcher, match: re.Match[str], query: dict[str, list[str]]
     ) -> Answer:
-        """Draw a section's overlay, thumbnail or cutout, named by its filename."""
+        """Draw a section's overlay (or one of its parts, ``part``), thumbnail or
+        cutout, named by its filename."""
         draw, kind = _SECTION_PICTURES[match[2]]
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
+        asked = query.get("part", [""])[0]
+        if match[2] == "overlay" and asked:
+            part = Part(asked)
+            kind = "image/jpeg" if part == Part.TISSUE else CUTOUT_TYPE
+            renderer = self._renderer(watcher)
+            return self._drawn(
+                partial(
+                    renderer.part,
+                    unquote(match[3]),
+                    edge,
+                    style=_style(query),
+                    part=part,
+                    image=query.get("image", [""])[0],
+                ),
+                kind,
+            )
         return self._drawn(
             partial(draw, self._renderer(watcher), unquote(match[3]), edge, style=_style(query)),
             kind,

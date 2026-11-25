@@ -1,0 +1,83 @@
+/* What the agent is doing to a section, over its picture (Act.tsx). */
+.picture-set { position: absolute; inset: 0; }
+.act-layer { position: absolute; inset: 0; pointer-events: none; }
+.act-frame { position: absolute; }
+
+.act-chip {
+  position: absolute; top: 6px; left: 6px; max-width: calc(100% - 12px);
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent); backdrop-filter: blur(6px);
+  font: 400 var(--size-xs)/1.3 var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden;
+}
+.act-engine { color: var(--name); font-weight: var(--weight-strong); }
+.act-what { overflow: hidden; text-overflow: ellipsis; }
+.act-glyph { display: inline-grid; place-items: center; width: 10px; height: 10px; flex: none; }
+.act-glyph i { width: 6px; height: 6px; border-radius: 50%; background: var(--running); animation: act-pulse 1.1s var(--ease-in-out) infinite alternate; }
+.act-glyph svg { width: 10px; height: 10px; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.act-chip-done .act-glyph svg { stroke: var(--submitted); }
+.act-chip-failed .act-glyph svg { stroke: var(--failed); }
+@keyframes act-pulse { from { opacity: 1; scale: 1; } to { opacity: 0.35; scale: 0.7; } }
+
+/* A fit running: the atlas borders breathe over the still tissue, and a light travels
+   along the picture's foot. */
+.tile.act-fit.act-running .picture-borders,
+.tile.act-landmarks.act-running .picture-borders { animation: act-breathe 1.6s var(--ease-in-out) infinite alternate; }
+@keyframes act-breathe { from { opacity: 1; } to { opacity: 0.22; } }
+.act-travel {
+  position: absolute; left: 0; bottom: -6px; height: 2px; width: 32%;
+  background: linear-gradient(90deg, transparent, var(--running), transparent);
+  animation: act-travel 1.5s var(--ease-in-out) infinite;
+}
+@keyframes act-travel { from { translate: -100% 0; } to { translate: 320% 0; } }
+
+/* A look: four corner marks close in on the picture. */
+.viewfinder { position: absolute; inset: -6px; }
+.viewfinder i { position: absolute; width: 18px; height: 18px; border: 0 solid var(--focus); }
+.viewfinder i:nth-child(1) { top: 0; left: 0; border-top-width: 2px; border-left-width: 2px; }
+.viewfinder i:nth-child(2) { top: 0; right: 0; border-top-width: 2px; border-right-width: 2px; }
+.viewfinder i:nth-child(3) { bottom: 0; left: 0; border-bottom-width: 2px; border-left-width: 2px; }
+.viewfinder i:nth-child(4) { bottom: 0; right: 0; border-bottom-width: 2px; border-right-width: 2px; }
+
+/* A zoom: the marks close on the asked window (placed in pixels by Act.tsx). */
+.viewfinder.zoomed { inset: auto; }
+
+/* A made image, uncovered by a scan line. */
+.made, .made-image { position: absolute; inset: 0; }
+.made-image { background: var(--stage); }
+.scanline {
+  position: absolute; left: 0; right: 0; height: 2px; translate: 0 -1px;
+  background: var(--focus); box-shadow: 0 0 14px 2px color-mix(in srgb, var(--focus) 55%, transparent);
+}
+
+/* A damage mark just made is drawn in from the top-left corner. */
+.picture-marks.reveal { animation: act-wipe 0.9s var(--ease-in-out) both; }
+@keyframes act-wipe {
+  from { clip-path: polygon(0 0, 0 0, 0 0); }
+  to { clip-path: polygon(0 0, 200% 0, 0 200%); }
+}
+
+/* On the cutting axis: a plane search sweeps the ruler; the places a look or lookup
+   asked for are marked on it. */
+.cut-sweep {
+  position: absolute; height: 18px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--focus) 45%, transparent), transparent) no-repeat;
+  background-size: 18% 100%; animation: cut-sweep 1.8s var(--ease-in-out) infinite alternate;
+  mask: linear-gradient(transparent, #000 45%, #000 55%, transparent);
+}
+@keyframes cut-sweep { from { background-position: -20% 0; } to { background-position: 120% 0; } }
+.cut-asked {
+  position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; rotate: 45deg;
+  background: var(--focus); box-shadow: 0 0 0 2px var(--ground); pointer-events: none;
+}
+.cut-asked-label {
+  position: absolute; translate: -50% 0; white-space: nowrap; pointer-events: none;
+  font-size: var(--size-xs); color: var(--muted);
+}
+.cut-asked-label b { color: var(--focus); font-weight: var(--weight-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cut-sweep { animation: none; }
+  .tile.act-running .picture-borders, .act-glyph i, .picture-marks.reveal { animation: none; }
+  .act-travel { display: none; }
+}

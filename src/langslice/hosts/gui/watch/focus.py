@@ -12,7 +12,9 @@ every section, in stack order.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 from langslice.core.jsonable import JsonObject
 from langslice.job.settings.tool_table import TOOLS
@@ -84,3 +86,47 @@ def started_focus(record: JsonObject) -> Focus | None:
     call_id = None if call is None else str(call)
     started = at if isinstance(at, str) else None
     return Focus(sections, name, call_id, started)
+
+
+def shown_focus(record: JsonObject, section_ids: Sequence[str]) -> Focus | None:
+    """Return the focus a followed read sets when it ends having named no section.
+
+    A ``zoom`` names an earlier picture, not sections; the sections its new
+    pictures show (``sections/<stem>/views/...`` in the ``tool_end`` event's
+    ``views``) are the ones the agent is looking at.
+
+    Parameters
+    ----------
+    record
+        The ``tool_end`` event as ``logs/events.jsonl`` holds it.
+    section_ids
+        The job's sections, in stack order.
+
+    Returns
+    -------
+    Focus or None
+        Those sections, when the tool is followed, named no target and its
+        pictures show any; None otherwise.
+    """
+    name = record.get("name")
+    if not isinstance(name, str) or not is_followed(name) or record.get("target_ids"):
+        return None
+    views = record.get("views")
+    if not isinstance(views, list):
+        return None
+    by_stem = {PurePosixPath(sid).stem: sid for sid in section_ids}
+    shown: list[str] = []
+    for view in views:
+        parts = PurePosixPath(str(view).replace("\\", "/")).parts
+        if len(parts) > 2 and parts[0] == "sections" and parts[1] in by_stem:
+            shown.append(by_stem[parts[1]])
+    if not shown:
+        return None
+    call = record.get("execution_id")
+    at = record.get("at")
+    return Focus(
+        tuple(dict.fromkeys(shown)),
+        name,
+        None if call is None else str(call),
+        at if isinstance(at, str) else None,
+    )

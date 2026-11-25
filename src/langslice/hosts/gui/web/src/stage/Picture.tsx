@@ -1,50 +1,80 @@
-// One section's picture under its current registration. Each new drawing of it (the agent
-// moved the section) is laid over the one before and fades in while the old one stays,
-// so the tissue is seen settling into its outline; then the old layer goes. The images
-// are drawn on canvases, contained and centred, again whenever the box changes size.
+// One section's picture under its current registration, as three parts laid over one
+// another (data/pictures.ts partUrls): the tissue, the atlas borders, and what the job
+// marked on it. Each new drawing of it (the agent moved or marked the section) is laid
+// over the one before and fades in while the old one stays, so the tissue is seen
+// settling into its outline; then the old set goes. A damage mark the agent has just made
+// is drawn in by a diagonal wipe. The parts are drawn on canvases, contained and centred,
+// again whenever the box changes size; the borders are a canvas of their own so a fit can
+// make them breathe over still tissue (stage/Act.tsx sets the class).
 import { motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DUR, EASE_IN_OUT } from '../ui/motion';
-import { cached, newestOf, picture } from '../data/pictures';
+import { cached, newestOf, picture, type Part, type PartUrls } from '../data/pictures';
 
 // A redraw is a symmetric crossfade, so the settling is seen.
 const REDRAW = { duration: DUR.morph, ease: EASE_IN_OUT } as const;
+const PARTS: Part[] = ['tissue', 'borders', 'marks'];
 
-type Layer = { url: string; img: HTMLImageElement; n: number };
+type Images = Partial<Record<Part, HTMLImageElement>>;
+type Drawn = { key: string; images: Images; n: number };
 
-export function Picture({ id, url, rank, label }: { id: string; url: string; rank: number; label: string }) {
-  // The exact picture if it is ready, else the section's newest one until it is.
-  const [layers, setLayers] = useState<Layer[]>(() => {
-    const exact = cached(url);
-    if (exact) return [{ url, img: exact, n: 0 }];
+function ready(urls: PartUrls): Images | null {
+  const images: Images = {};
+  for (const part of PARTS) {
+    const img = cached(urls[part]);
+    if (!img) return null;
+    images[part] = img;
+  }
+  return images;
+}
+
+export function Picture({ id, urls, rank, label, reveal = false }: {
+  id: string; urls: PartUrls; rank: number; label: string; reveal?: boolean;
+}) {
+  // The exact parts if they are ready, else the section's newest tissue until they are.
+  const [sets, setSets] = useState<Drawn[]>(() => {
+    const exact = ready(urls);
+    if (exact) return [{ key: urls.tissue, images: exact, n: 0 }];
     const any = newestOf(id);
-    return any ? [{ url: '', img: any, n: 0 }] : [];
+    return any ? [{ key: '', images: { tissue: any }, n: 0 }] : [];
   });
   const count = useRef(1);
+  const key = urls.tissue;
   useEffect(() => {
-    if (layers.at(-1)?.url === url) return;
+    if (sets.at(-1)?.key === key) return;
     let alive = true;
-    picture(url, rank).then(img => {
-      if (!alive || !img) return;
-      setLayers(old => (old.at(-1)?.url === url ? old : [...old.slice(-1), { url, img, n: count.current++ }]));
+    Promise.all(PARTS.map(part => picture(urls[part], rank))).then(([tissue, borders, marks]) => {
+      if (!alive || !tissue) return;
+      const images: Images = { tissue, borders: borders ?? undefined, marks: marks ?? undefined };
+      setSets(old => (old.at(-1)?.key === key ? old : [...old.slice(-1), { key, images, n: count.current++ }]));
     });
     return () => { alive = false; };
-  }, [url, rank, layers]);
+  }, [key, rank, sets]);
   return (
     <div className="picture" role="img" aria-label={label}>
-      {layers.map((layer, i) => (
-        <Canvas
-          key={layer.n}
-          img={layer.img}
-          fresh={layers.length > 1 && i === layers.length - 1}
-          onShown={() => setLayers(old => old.slice(-1))}
-        />
-      ))}
+      {sets.map((set, i) => {
+        const fresh = sets.length > 1 && i === sets.length - 1;
+        return (
+          <motion.div
+            key={set.n}
+            className="picture-set"
+            initial={fresh ? { opacity: 0, filter: 'blur(2px)' } : false}
+            animate={{ opacity: 1, filter: 'blur(0px)' }}
+            transition={REDRAW}
+            onAnimationComplete={() => { if (fresh) setSets(old => old.slice(-1)); }}
+          >
+            {PARTS.map(part => set.images[part] && (
+              <Canvas key={part} img={set.images[part]!}
+                className={`picture-layer picture-${part}` + (part === 'marks' && fresh && reveal ? ' reveal' : '')} />
+            ))}
+          </motion.div>
+        );
+      })}
     </div>
   );
 }
 
-function Canvas({ img, fresh, onShown }: { img: HTMLImageElement; fresh: boolean; onShown: () => void }) {
+export function Canvas({ img, className }: { img: HTMLImageElement; className: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useLayoutEffect(() => {
     const canvas = ref.current!;
@@ -65,14 +95,5 @@ function Canvas({ img, fresh, onShown }: { img: HTMLImageElement; fresh: boolean
     observer.observe(canvas.parentElement!);
     return () => observer.disconnect();
   }, [img]);
-  return (
-    <motion.canvas
-      ref={ref}
-      className="picture-layer"
-      initial={fresh ? { opacity: 0, filter: 'blur(2px)' } : false}
-      animate={{ opacity: 1, filter: 'blur(0px)' }}
-      transition={REDRAW}
-      onAnimationComplete={() => { if (fresh) onShown(); }}
-    />
-  );
+  return <canvas ref={ref} className={className} />;
 }

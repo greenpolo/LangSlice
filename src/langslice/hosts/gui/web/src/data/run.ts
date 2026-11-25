@@ -25,6 +25,9 @@ export type Call = {
   running: boolean; ended: boolean; failed: boolean;
   args?: unknown; step?: number | null; door?: string | null; at?: string; status?: string | null;
   pictures: number[];        // the pictures the agent looked at in this call
+  seen?: string[];           // the sections its pictures show, for a call that named none
+  zooms?: Record<string, number[]>; // a zoom's window on each section, fractions x0 y0 x1 y1
+  endedAt?: number;          // when the window saw it end (Date.now()); 0 for one already over when it opened
 };
 export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number };
 export type Axis = { low: string; high: string; min_mm: number; max_mm: number };
@@ -73,8 +76,16 @@ type Item = {
   sections?: string[]; failed?: boolean; text?: string; at?: string;
   number?: number; call?: string; caption?: string; tool?: string; error?: boolean;
   args?: unknown; step?: number | null; door?: string | null; status?: string | null;
-  views?: string[]; path?: string;
+  views?: string[]; path?: string; zoom?: number[] | null;
 };
+
+// What a picture adds to the call that drew it: its number, its sections when the call
+// named none (a zoom names a picture, not sections), and the window a zoom shows of each.
+function seen(call: Call, shown: { number: number; sections: string[]; zoom: number[] | null }): Partial<Call> {
+  const sections = call.sections.length ? call.sections : [...new Set([...(call.seen ?? []), ...shown.sections])];
+  const zooms = shown.zoom ? { ...call.zooms, ...Object.fromEntries(shown.sections.map(id => [id, shown.zoom!])) } : call.zooms;
+  return { pictures: [...call.pictures, shown.number], seen: sections, zooms };
+}
 
 let state: RunState = {
   connected: false, jobs: null, home: '', job: null, status: '', sentence: '', model: '',
@@ -98,7 +109,8 @@ export function useRun<T>(select?: (s: RunState) => T) {
 let watch = { cursor: 0, gen: 0, sv: -1 };
 // A view folder a call's end names -> that call; a picture no call has named yet.
 let claims = new Map<string, string>();
-let loose = new Map<string, number>();
+type Loose = { number: number; sections: string[]; zoom: number[] | null };
+let loose = new Map<string, Loose>();
 let said = 0;
 let named: number | null = (() => {
   const n = Number(new URLSearchParams(location.hash.slice(1)).get('job'));
@@ -172,6 +184,7 @@ function take(snap: any) {
   let log = state.log;
   if (snap.reset && watch.gen !== 0) { calls = []; log = []; patch.words = null; }
   const added: Entry[] = [];
+  const catchingUp = watch.cursor === 0;
   watch.gen = snap.generation;
   watch.cursor = snap.cursor;
   const items: Item[] = snap.items || [];
@@ -193,12 +206,12 @@ function take(snap: any) {
         // The pictures a call's end names are its own, whether they came before or after.
         for (const path of item.views || []) {
           claims.set(path, call.key);
-          const number = loose.get(path);
-          if (number !== undefined && !call.pictures.includes(number)) { call.pictures = [...call.pictures, number]; loose.delete(path); }
+          const held = loose.get(path);
+          if (held && !call.pictures.includes(held.number)) { Object.assign(call, seen(call, held)); loose.delete(path); }
         }
         // A call's end may come in the same round as its start, or before it.
         if (item.phase === 'start') call.running = !call.ended;
-        else { call.running = false; call.ended = true; call.failed = Boolean(item.failed); }
+        else { call.running = false; call.ended = true; call.failed = Boolean(item.failed); call.endedAt ??= catchingUp ? 0 : Date.now(); }
         byKey.set(item.key, call);
         if (!old) { calls = [...calls, call]; added.push({ kind: 'call', key: call.key }); }
         else calls = calls.map(c => (c.key === call.key ? call : c));
@@ -211,9 +224,10 @@ function take(snap: any) {
       } else if (item.kind === 'picture' && typeof item.number === 'number') {
         const key = item.path ? claims.get(item.path) : undefined;
         const owner = key ? calls.find(c => c.key === key) : undefined;
-        if (!owner && item.path) loose.set(item.path, item.number);
+        const shown: Loose = { number: item.number, sections: item.sections || [], zoom: item.zoom ?? null };
+        if (!owner && item.path) loose.set(item.path, shown);
         if (owner) {
-          const updated = { ...owner, pictures: [...owner.pictures, item.number] };
+          const updated = { ...owner, ...seen(owner, shown) };
           calls = calls.map(c => (c === owner ? updated : c));
           changed = true;
         }

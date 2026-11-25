@@ -12,6 +12,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT } from '../ui/motion';
+import { useActs, useStageAct } from '../data/acts';
 import { cached, newestOf, picture, pictureStyle } from '../data/pictures';
 import { short, type Axis, type Row, type Strip } from '../data/run';
 import { justSwitched, STAGE_IN, STAGE_SHOWN } from './space/mode';
@@ -103,6 +104,13 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
   };
 
   const [tip, setTip] = useState<{ id: string; x: number } | null>(null);
+  // The acts the ruler shows: a search for the stack's plane sweeps it while it runs; a
+  // look at the atlas or a region lookup marks the places it asked for.
+  const acts = useActs();
+  const stageAct = useStageAct();
+  const searching = [...acts.values()].find(a => a.family === 'place' && a.running) ?? (stageAct?.family === 'place' && stageAct.running ? stageAct : null);
+  const asked = stageAct && (stageAct.family === 'look' || stageAct.family === 'lookup') && Array.isArray(stageAct.args.positions_mm)
+    ? (stageAct.args.positions_mm as unknown[]).map(Number).filter(Number.isFinite) : [];
   const ticks = view ? tickMarks(view, inner) : [];
   const glide = { duration: DUR.glide, ease: EASE_IN_OUT };
   return (
@@ -131,6 +139,24 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
         );
       })}
       <div className="cut-ruler" style={{ top: axisY, left: PAD, right: PAD }} />
+      {searching && <i key={searching.key} className="cut-sweep" style={{ top: axisY - 9, left: PAD, right: PAD }} aria-hidden="true" />}
+      <AnimatePresence>
+        {view && asked.filter(mm => mm >= view.lo && mm <= view.hi).map((mm, i) => (
+          <motion.i key={stageAct!.key + ':' + mm} className="cut-asked" aria-hidden="true"
+            style={{ top: axisY, left: toX(mm) }}
+            initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+            transition={{ duration: DUR.quick, ease: EASE_OUT, delay: Math.min(0.4, i * 0.03) }} />
+        ))}
+      </AnimatePresence>
+      <AnimatePresence>
+        {view && asked.length > 0 && stageAct && (
+          <motion.span key={stageAct.key} className="cut-asked-label" style={{ top: axisY - 30, left: toX(Math.min(...asked.filter(mm => mm >= view.lo && mm <= view.hi), view.hi)) }}
+            initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+            transition={{ duration: DUR.quick, ease: EASE_OUT }}>
+            <b>{stageAct.family === 'lookup' ? 'atlas' : 'looking at the atlas'}</b>{stageAct.family === 'lookup' && stageAct.what ? ' ' + stageAct.what : ''}
+          </motion.span>
+        )}
+      </AnimatePresence>
       {ticks.map(t => (
         <span key={t.mm} className={'cut-tick' + (t.label ? ' major' : '')} style={{ transform: `translateX(${toX(t.mm)}px)`, top: axisY }}>
           {t.label && <span className="cut-tick-label">{fmt(t.mm)}</span>}

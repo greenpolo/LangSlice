@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { EASE_OUT } from '../ui/motion';
-import { overlayUrl, warm } from '../data/pictures';
+import { partUrls, warm } from '../data/pictures';
 import { useRun } from '../data/run';
 import type { Focus } from './focus';
 import { justSwitched, STAGE_IN, STAGE_SHOWN, useStageMode } from '../stage/space/mode';
@@ -28,7 +28,7 @@ export function SimpleView({ focus, review, ring }: { focus: Focus; review: Reac
   useEffect(() => {
     if (job === null || !box || !run.rows.length) return;
     const edge = geometry(run.rows.length, box).edge;
-    warm(run.rows.map(r => overlayUrl(job, r.id, edge, r.render_key)));
+    warm(run.rows.flatMap(r => Object.values(partUrls(job, r.id, edge, r.render_key))));
   }, [job, rowKeys, box]);
   return (
     <main className={'simple' + (space ? ' space' : '')}>

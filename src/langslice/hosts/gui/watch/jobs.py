@@ -31,7 +31,7 @@ from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import stack_angles_entry, status_rows
 from langslice.hosts.gui.pictures.render import render_key
-from langslice.hosts.gui.watch.focus import Focus, started_focus
+from langslice.hosts.gui.watch.focus import Focus, shown_focus, started_focus
 from langslice.hosts.gui.watch.transcripts import TranscriptWords, projects_root
 from langslice.job.folder.layout import (
     EVENTS_FILE,
@@ -358,6 +358,7 @@ class JobWatcher:
                 self.followed = started_focus(record) or self.followed
             else:
                 self.open_tools.pop(key, None)
+                self.followed = self._shown_focus(record) or self.followed
             self._append(item)
         elif kind == "open":
             self._append(
@@ -433,6 +434,13 @@ class JobWatcher:
         elif kind == "spend" and record.get("message"):
             self._append({"kind": "note", "at": at, "text": _short(str(record["message"]), 500)})
 
+    def _shown_focus(self, record: dict[str, Any]) -> Focus | None:
+        """The focus a followed read that named no section sets when it ends: the
+        sections its pictures show (:func:`.focus.shown_focus`)."""
+        if self.stack is None:
+            return None
+        return shown_focus(record, [section.id for section in self.stack.in_order()])
+
     def _add_view(self, record: dict[str, Any]) -> None:
         number, path = record.get("seq"), record.get("path")
         if not isinstance(number, int) or not isinstance(path, str):
@@ -443,10 +451,11 @@ class JobWatcher:
         except ValueError:
             return
         self.pictures[number] = Picture(number, folder)
-        caption = ""
+        caption, zoom = "", None
         try:
             view = json.loads((folder / "view.json").read_text(encoding="utf-8"))
             caption = str(view.get("caption") or "")
+            zoom = _zoom_window(view)
         except (OSError, ValueError, AttributeError):
             pass
         self._append(
@@ -461,6 +470,7 @@ class JobWatcher:
                 "sections": [str(s) for s in record.get("sections") or []],
                 "mode": record.get("mode"),
                 "caption": _short(caption, 4000),
+                "zoom": zoom,
             }
         )
 
@@ -775,3 +785,15 @@ class JobList:
                 }
             )
         return out
+
+
+def _zoom_window(view: dict[str, Any]) -> list[float] | None:
+    """The part of its section's overlay a picture shows, as ``[x0, y0, x1,
+    y1]`` fractions of the whole (its recipe's ``zoom``); None for a whole
+    picture."""
+    recipe = view.get("recipe")
+    args = recipe.get("args") if isinstance(recipe, dict) else None
+    window = args.get("zoom") if isinstance(args, dict) else None
+    if not isinstance(window, list) or len(window) != 4:
+        return None
+    return [float(v) for v in window]
