@@ -3,11 +3,11 @@
 The viewer shows what the agent does to a section by moving one part of its
 picture and not the others: the atlas borders breathe while a fit runs over
 still tissue, a damage mark is drawn over both. So the window's overlay is
-also served as parts, drawn once from the core's layers
-(:func:`.drawing.placed_layers`) in the window's look (:mod:`.calm` or
-:mod:`.paper`):
+served as parts, drawn once from the core's layers
+(:func:`.drawing.placed_layers`):
 
-- ``tissue``: the section on the stage or the paper, no borders;
+- ``tissue``: the section as its file holds it, clear where the image does
+  not reach;
 - ``borders``: the atlas borders alone, their ink at their coverage, the rest
   clear;
 - ``marks``: what the job has marked on the section, the rest clear: the
@@ -29,17 +29,15 @@ from PIL import Image
 from scipy.ndimage import binary_erosion
 
 from langslice.core.sections.damage import marked_area
-from langslice.core.sections.images import raw_names
-from langslice.core.sections.tissue import is_brightfield
-from langslice.hosts.gui.pictures.calm import STAGE, calm
+from langslice.core.sections.tissue import SLIDE
+from langslice.hosts.gui.pictures.calm import STAGE
 from langslice.hosts.gui.pictures.drawing import (
     Style,
     border_lines,
-    main_channel,
     placed_layers,
     raw_channels,
 )
-from langslice.hosts.gui.pictures.paper import PAGE, paper
+from langslice.hosts.gui.pictures.paper import PAGE
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -84,7 +82,7 @@ PAPER_HATCH = Hatch((190, 64, 44))
 
 @dataclass(frozen=True)
 class Parts:
-    """A section's overlay in parts: RGB tissue, RGBA borders and marks."""
+    """A section's overlay in parts, each RGBA on one pixel grid."""
 
     tissue: Image.Image
     borders: Image.Image
@@ -100,6 +98,14 @@ def draw_parts(
 ) -> Parts:
     """Draw a section under its current registration, in parts.
 
+    The tissue is the section as its file holds it (its raw channels in their
+    own colours, or a made image), nothing cut away and no tone curve, as ABBA
+    shows a section: only the canvas the image does not cover (the scanner's
+    black, :data:`langslice.core.sections.tissue.SLIDE`'s unscanned level) is
+    clear, so the window's ground (the job's slide ground,
+    :func:`slide_ground`) shows there. The borders' ink is dark on a bright
+    slide and light on a dark one.
+
     Parameters
     ----------
     opened
@@ -111,35 +117,46 @@ def draw_parts(
     edge
         The picture's long edge in pixels.
     style
-        ``paper`` for the light look, else the dark (``calm``) one.
+        Unused: the pictures are the same in both looks (kept for the cache).
     image
         A made image of the section (``make_image``'s name) to draw the
-        tissue from, in grey; blank for its raw channels.
+        tissue from; blank for its raw channels.
 
     Returns
     -------
     Parts
         The tissue, the borders and the marks on one pixel grid.
     """
-    main = (image or main_channel(raw_names(opened.workspace, section.id)),)
-    if style == Style.PAPER and image:
-        layers = placed_layers(opened, state, section, edge, main)
-        tissue = paper(layers.section, None, brightfield=False)
-        ink, hatch = PAGE.lines, PAPER_HATCH
-    elif style == Style.PAPER:
-        layers = placed_layers(opened, state, section, edge, raw_channels(opened, section))
-        bright = is_brightfield(layers.section)
-        if not bright:
-            layers = placed_layers(opened, state, section, edge, main)
-        tissue = paper(layers.section, None, brightfield=bright)
-        ink, hatch = PAGE.lines, PAPER_HATCH
-    else:
-        layers = placed_layers(opened, state, section, edge, main)
-        tissue = calm(layers.section, None)
-        ink, hatch = STAGE.ink, DARK_HATCH
+    channels = (image,) if image else raw_channels(opened, section)
+    layers = placed_layers(opened, state, section, edge, channels)
+    rgb = np.asarray(layers.section.convert("RGB"))
+    ground = slide_ground(rgb)
+    bright = sum(ground) / 3 > SLIDE.bright_median
+    scanned = rgb.max(axis=2) > SLIDE.unscanned_level
+    tissue = Image.fromarray(np.dstack([rgb, np.where(scanned, 255, 0)]).astype(np.uint8), "RGBA")
+    ink, hatch = (PAGE.lines, PAPER_HATCH) if bright else (STAGE.ink, DARK_HATCH)
     borders = border_layer(border_lines(layers), ink)
     marks = mark_layer(_marked(opened, state, section, layers), hatch)
     return Parts(tissue, borders, marks)
+
+
+def slide_ground(rgb: npt.NDArray[np.uint8]) -> Rgb:
+    """The ground of a section's picture as its file holds it: what lies along
+    the picture's outer edge (the median of its outermost :data:`SLIDE`
+    ``rim_px`` pixels), the glass of a brightfield slide, the dark glass of a
+    darkfield one, or the black a file was saved on.
+    """
+    rim = SLIDE.rim_px
+    edge = np.concatenate(
+        [
+            rgb[:rim].reshape(-1, 3),
+            rgb[-rim:].reshape(-1, 3),
+            rgb[:, :rim].reshape(-1, 3),
+            rgb[:, -rim:].reshape(-1, 3),
+        ]
+    )
+    ground = np.median(edge, axis=0)
+    return (int(ground[0]), int(ground[1]), int(ground[2]))
 
 
 def border_layer(lines: npt.NDArray[np.float32], ink: BorderInk) -> Image.Image:

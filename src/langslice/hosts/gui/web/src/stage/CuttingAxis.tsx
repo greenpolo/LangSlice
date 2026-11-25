@@ -13,7 +13,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT } from '../ui/motion';
 import { useActs, useStageAct } from '../data/acts';
-import { cached, newestOf, picture, pictureStyle } from '../data/pictures';
+import { cached, newestOf, picture } from '../data/pictures';
 import { short, type Axis, type Row, type Strip } from '../data/run';
 import { justSwitched, STAGE_IN, STAGE_SHOWN } from './space/mode';
 
@@ -199,7 +199,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
               onPointerLeave={() => setTip(t => (t?.id === p.id ? null : t))}
               aria-label={short(p.id)}
             >
-              <Thumb url={`jobs/${job}/render/thumb/${encodeURIComponent(p.id)}?edge=128&key=${encodeURIComponent(thumbKey.get(p.id) ?? '')}&style=${pictureStyle()}`} rank={600} id={p.id} />
+              <Thumb url={`jobs/${job}/render/thumb/${encodeURIComponent(p.id)}?edge=128&key=${encodeURIComponent(thumbKey.get(p.id) ?? '')}&style=raw`} rank={600} id={p.id} />
             </motion.button>
           );
         })}

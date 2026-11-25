@@ -41,6 +41,7 @@ from functools import partial
 from pathlib import Path
 from typing import TypeVar
 
+import numpy as np
 from PIL import Image
 
 from langslice.core.fits.deformation import RecordStore
@@ -65,7 +66,7 @@ from langslice.hosts.gui.pictures.paper import (
     draw_paper_overlay,
     draw_paper_thumb,
 )
-from langslice.hosts.gui.pictures.parts import Part, Parts, draw_parts
+from langslice.hosts.gui.pictures.parts import Part, Parts, draw_parts, slide_ground
 from langslice.hosts.gui.pictures.space import (
     AtlasShell,
     ShellError,
@@ -98,6 +99,7 @@ KEPT_PLANES = 16
 KEPT_RENDERS = 64
 KEPT_JOBS = 3
 KEPT_PARTS = 24
+GROUND_EDGE_PX = 256
 NO_STATE = "This job has no state this LangSlice reads yet, so there is nothing to draw."
 ATLAS_FAILED = "The atlas {atlas} could not be loaded: {reason}"
 DRAWING_FAILED = "The picture could not be drawn: {reason}"
@@ -162,6 +164,7 @@ class Strip:
     atlas: tuple[AtlasThumb, ...]
     angles: str
     sections: tuple[StripSection, ...]
+    ground: tuple[int, int, int] = (0, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -361,6 +364,7 @@ class JobRenderer:
         self._flying: dict[_Key, Future[bytes]] = {}
         self._shell: tuple[_Opened, AtlasShell] | None = None
         self._parts: OrderedDict[_Key, Parts] = OrderedDict()
+        self._slide: tuple[_Opened, tuple[int, int, int]] | None = None
 
     def strip(self) -> Strip:
         """Describe the positioning strip of the job as it stands.
@@ -395,7 +399,26 @@ class JobRenderer:
         )
         angles = state.view_angles
         words = view_angles_label(angles, median=state.drawn_at_median(angles))
-        return Strip(opened.axis, opened.step_mm, thumbs, words.strip(), sections)
+        ground = self._ground(opened, state)
+        return Strip(opened.axis, opened.step_mm, thumbs, words.strip(), sections, ground)
+
+    def _ground(self, opened: _Opened, state: Stack) -> tuple[int, int, int]:
+        """The job's slide ground (:func:`.parts.slide_ground`), read once from
+        its middle section's raw thumbnail; black when it cannot be read."""
+        held = self._slide
+        if held is not None and held[0] is opened:
+            return held[1]
+        sections = list(state.in_order())
+        ground = (0, 0, 0)
+        if sections:
+            try:
+                with self._drawing:
+                    thumb = _thumb_picture(opened, sections[len(sections) // 2], GROUND_EDGE_PX)
+                ground = slide_ground(np.asarray(thumb.convert("RGB")))
+            except (OSError, ValueError, Refused):
+                logger.warning("No slide ground for %s", self.folder, exc_info=True)
+        self._slide = (opened, ground)
+        return ground
 
     def overlay(self, section_id: str, edge: int, *, style: Style = Style.RAW) -> bytes:
         """Draw a section under its current registration.
@@ -461,8 +484,8 @@ class JobRenderer:
         style
             ``paper`` for the light look, else the dark one.
         part
-            ``tissue`` (a JPEG), ``borders`` or ``marks`` (WebP with alpha,
-            :data:`CUTOUT_TYPE`).
+            ``tissue``, ``borders`` or ``marks``, each a WebP with alpha
+            (:data:`CUTOUT_TYPE`).
         image
             A made image to draw the tissue from (:func:`.parts.draw_parts`);
             blank for the raw channels.
@@ -491,8 +514,7 @@ class JobRenderer:
         key = (f"{look}-{part}-{image}", section_id, edge, digest)
         draw = partial(self._part_of, whole, part, opened, state, section, edge, look, image)
         still = self._still(render_key, section_id, digest)
-        encode = encode_jpeg if part == Part.TISSUE else encode_cutout
-        return self._picture(key, opened, draw, current=still, encode=encode)
+        return self._picture(key, opened, draw, current=still, encode=encode_cutout)
 
     def _part_of(
         self,

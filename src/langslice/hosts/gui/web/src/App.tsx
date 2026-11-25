@@ -10,6 +10,7 @@ import { Prompt } from './panels/prompt/Prompt';
 import { chooseJob, start, useRun } from './data/run';
 import { landOnSettingsIfUnset, Settings } from './panels/settings/Settings';
 import { Viewer } from './views/Viewer';
+import { groundOf } from './data/ground';
 
 
 export function App() {
@@ -19,13 +20,22 @@ export function App() {
   const connected = useRun(s => s.connected);
   const done = useRun(s => s.status === 'Submitted');
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set([nav.tab]));
+  // The look follows the slides: a brightfield job's window is light, a darkfield job's
+  // dark, and its ground is the slides' own glass (data/ground.ts).
   const [theme, setTheme] = useState(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'));
-  const flipTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('langslice.theme', next); } catch { /* not kept */ }
-    setTheme(next);
-  };
+  const ground = groundOf(useRun(s => s.strip?.ground ?? null));
+  useEffect(() => {
+    if (!ground) return;
+    const root = document.documentElement;
+    const next = ground.bright ? 'light' : 'dark';
+    const rgb = `rgb(${ground.rgb.join(' ')})`;
+    for (const name of ['--ground', '--stage', '--picture']) root.style.setProperty(name, rgb);
+    if (next !== theme) {
+      root.dataset.theme = next;
+      try { localStorage.setItem('langslice.theme', next); } catch { /* not kept */ }
+      setTheme(next);
+    }
+  }, [ground?.key]);
   const shownJob = jobs?.find(j => j.index === job);
   useEffect(() => { start(); landOnSettingsIfUnset(); }, []);
   useEffect(() => { document.documentElement.classList.toggle('run-done', done); }, [done]);
@@ -40,9 +50,6 @@ export function App() {
             <TabButton tab="prompt" current={nav.tab}>Prompt generator</TabButton>
           </nav>
           <div className="bar-end">
-            <button type="button" className="bar-quiet" onClick={flipTheme} title="Switch between the dark and the light look">
-              {theme === 'dark' ? 'Light' : 'Dark'}
-            </button>
             {jobs && jobs.length > 1 ? (
               <select className="job" value={job ?? ''} onChange={e => chooseJob(Number(e.target.value))} aria-label="Job">
                 {jobs.map(j => <option key={j.index} value={j.index}>{j.name}</option>)}

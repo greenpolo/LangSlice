@@ -9,7 +9,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DUR, EASE_OUT } from '../ui/motion';
-import { overlayUrl, picture, snapEdge } from '../data/pictures';
+import { partUrls, picture, snapEdge } from '../data/pictures';
 import { sendComment, useRun, type Comment } from '../data/run';
 import { short } from '../data/run';
 
@@ -59,6 +59,7 @@ function ReviewPicture({ job, id, renderKey, comments }: { job: number; id: stri
   const canvas = useRef<HTMLCanvasElement>(null);
   const ghost = useRef<HTMLCanvasElement>(null);
   const shown = useRef<HTMLImageElement | null>(null);
+  const extra = useRef<HTMLImageElement[]>([]);
   const shownKey = useRef<string | null | undefined>(undefined);
   const [rect, setRect] = useState<Rect | null>(null);
   const [view, setView] = useState<View>({ s: 1, x: 0, y: 0 });
@@ -91,13 +92,15 @@ function ReviewPicture({ job, id, renderKey, comments }: { job: number; id: stri
       const ctx = c.getContext('2d')!;
       ctx.imageSmoothingQuality = 'high';
       ctx.clearRect(0, 0, c.width, c.height);
-      ctx.drawImage(image, r.left * dpr, r.top * dpr, r.width * dpr, r.height * dpr);
+      for (const layer of [image, ...extra.current]) ctx.drawImage(layer, r.left * dpr, r.top * dpr, r.width * dpr, r.height * dpr);
       setRect(r);
     };
     const load = () => {
       const box = el.getBoundingClientRect();
-      picture(overlayUrl(job, id, snapEdge(Math.max(box.width, box.height)), renderKey), 0).then(image => {
+      const urls = partUrls(job, id, snapEdge(Math.max(box.width, box.height)), renderKey);
+      Promise.all([picture(urls.tissue, 0), picture(urls.borders, 0), picture(urls.marks, 0)]).then(([image, borders, marks]) => {
         if (!alive || !image) return;
+        extra.current = [borders, marks].filter((x): x is HTMLImageElement => !!x);
         draw(image);
       });
     };

@@ -340,7 +340,7 @@ class GuiServer:
         asked = query.get("part", [""])[0]
         if match[2] == "overlay" and asked:
             part = Part(asked)
-            kind = "image/jpeg" if part == Part.TISSUE else CUTOUT_TYPE
+            kind = CUTOUT_TYPE
             renderer = self._renderer(watcher)
             return self._drawn(
                 partial(

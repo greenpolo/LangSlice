@@ -37,6 +37,7 @@ export type Strip = {
   atlas: { k: number; position_mm: number }[];
   angles: string;
   sections: { id: string; order: number; position_mm: number; position_source: string; thumb_key: string }[];
+  ground: [number, number, number];   // the slides' own glass, which the window takes for its ground
 };
 export type Job = { index: number; name: string; path: string; changed_at?: number; status?: string };
 // A review comment: its box as [x0, y0, x1, y1] fractions of the section's picture as
@@ -288,7 +289,7 @@ async function fetchStrip() {
       const patch: Partial<RunState> = {};
       if (a && JSON.stringify(a) !== JSON.stringify(state.axis)) patch.axis = a;
       if (info && Array.isArray(info.atlas)) {
-        const strip: Strip = { step_mm: info.step_mm, atlas: info.atlas, angles: info.angles || '', sections: info.sections || [] };
+        const strip: Strip = { step_mm: info.step_mm, atlas: info.atlas, angles: info.angles || '', sections: info.sections || [], ground: info.ground || [0, 0, 0] };
         if (JSON.stringify(strip) !== JSON.stringify(state.strip)) patch.strip = strip;
       }
       if (Object.keys(patch).length) set(patch);
