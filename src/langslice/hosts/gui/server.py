@@ -66,11 +66,11 @@ from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from langslice.core.maps.abba import MAX_POINTS
-from langslice.hosts.gui import generator, message
-from langslice.hosts.gui.comments import CommentRow, CommentWatch
-from langslice.hosts.gui.drawing import Style
-from langslice.hosts.gui.export import ExportError, Exports, export_menu, reveal
-from langslice.hosts.gui.render import (
+from langslice.hosts.gui.forms import generator, message
+from langslice.hosts.gui.forms.export import ExportError, Exports, export_menu, reveal
+from langslice.hosts.gui.forms.settings import POSTS, Settings, SettingsError
+from langslice.hosts.gui.pictures.drawing import Style
+from langslice.hosts.gui.pictures.render import (
     CUTOUT_TYPE,
     DEFAULT_EDGE_PX,
     JobRenderer,
@@ -80,8 +80,8 @@ from langslice.hosts.gui.render import (
     UnknownSection,
     edge_px,
 )
-from langslice.hosts.gui.settings import POSTS, Settings, SettingsError
-from langslice.hosts.gui.watch import JobList, JobWatcher
+from langslice.hosts.gui.watch.comments import CommentRow, CommentWatch
+from langslice.hosts.gui.watch.jobs import JobList, JobWatcher
 from langslice.job.folder.layout import JobLayout
 from langslice.job.review import ReviewError, add_comment, remove_comment
 

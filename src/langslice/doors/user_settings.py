@@ -2,7 +2,7 @@
 registration runs (``~/.langslice/settings.json``).
 
 Only a person sets it, in the LangSlice window's Settings tab
-(``hosts/gui/settings.py``); no agent tool reads or writes it. Keys and
+(``hosts/gui/forms/settings.py``); no agent tool reads or writes it. Keys and
 logins are not in it: they stay where :mod:`langslice.doors.credentials` keeps
 them. ``LANGSLICE_SETTINGS`` (:data:`SETTINGS_ENV`) names another file, or
 ``off`` (also ``0``, ``false``, ``no``, ``none``, empty) for none; the test

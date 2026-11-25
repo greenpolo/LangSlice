@@ -1,6 +1,6 @@
 """Short plain-language names of the tools and the tasks, for people.
 
-The LangSlice window's prompt generator (``hosts/gui/generator.py``) shows
+The LangSlice window's prompt generator (``hosts/gui/forms/generator.py``) shows
 these beside each tool's own name. They are never model-facing: nothing a
 model reads is made from this table (``tests/test_gui_generator.py`` checks
 that no label appears in the pinned model-facing text and that only the
