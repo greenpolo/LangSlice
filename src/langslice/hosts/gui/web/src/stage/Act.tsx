@@ -72,7 +72,7 @@ export function Act({ act, job, id, edge, renderKey, tiles, pointed = false }: {
           </AnimatePresence>
           <AnimatePresence>
             {act?.family === 'look' && !zoom && few && <Viewfinder key={act.key} />}
-            {zoom && <Zoom key={act!.key} box={zoom} frame={rect} sharp={partUrls(job, id, SHARP_EDGE, renderKey)} />}
+            {zoom && <Zoom key={act!.key} box={zoom} frame={rect} hold={act!.hold} sharp={partUrls(job, id, SHARP_EDGE, renderKey)} />}
           </AnimatePresence>
           <AnimatePresence>
             {act && act.family !== 'books' && few && <Chip key={act.key} act={act} />}
@@ -168,15 +168,21 @@ function MadeImage({ url }: { url: string }) {
 
 // A zoom, on one timeline (ZOOM_MS): the corner marks close in on the window the agent
 // asked for (fractions of the section's picture), the picture is pushed in until that
-// window fills the tile, held, and let back. The picture always comes back by itself, and
-// at once when the act is cut short.
+// window fills the tile, held, and let back. While its batch is still being read (`hold`)
+// the timeline waits at HOLD_AT, pushed in, so the batch's zooms are seen together. The
+// picture always comes back by itself, and at once when the act is cut short.
 const ZOOM_MS = 2800;
+const HOLD_AT = 0.6;
+const PUSHED_UNTIL = 0.78;
 // The pushed-in picture is laid over with the window drawn again at this edge, so it is
 // sharp, not the small picture scaled up.
 const SHARP_EDGE = 2048;
 const ZOOM_EASE = 'cubic-bezier(0.77, 0, 0.175, 1)';
-function Zoom({ box, frame, sharp }: { box: number[]; frame: Rect; sharp: PartUrls }) {
+function Zoom({ box, frame, sharp, hold }: { box: number[]; frame: Rect; sharp: PartUrls; hold: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const holding = useRef(hold);
+  holding.current = hold;
+  const timeline = useRef<Animation[]>([]);
   const lens = useRef<HTMLCanvasElement>(null);
   const r = { x: box[0] * frame.w, y: box[1] * frame.h, w: (box[2] - box[0]) * frame.w, h: (box[3] - box[1]) * frame.h };
   useEffect(() => {
@@ -204,7 +210,7 @@ function Zoom({ box, frame, sharp }: { box: number[]; frame: Rect; sharp: PartUr
         { transform: 'none', offset: 0 },
         { transform: 'none', offset: 0.22, easing: ZOOM_EASE },
         { transform: to, offset: 0.44 },
-        { transform: to, offset: 0.78, easing: ZOOM_EASE },
+        { transform: to, offset: PUSHED_UNTIL, easing: ZOOM_EASE },
         { transform: 'none', offset: 1 },
       ], { duration: ZOOM_MS });
     }
@@ -213,7 +219,7 @@ function Zoom({ box, frame, sharp }: { box: number[]; frame: Rect; sharp: PartUr
     Promise.all([picture(sharp.tissue, 0), picture(sharp.borders, 0)]).then(([tissue, borders]) => {
       const canvas = lens.current;
       const left = ZOOM_MS * 0.74 - (performance.now() - started);
-      if (!alive || !tissue || !canvas || left < 300 || !push) return;
+      if (!alive || !tissue || !canvas || !push || (left < 300 && !holding.current)) return;
       const W = layer.clientWidth, H = layer.clientHeight;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
@@ -227,12 +233,26 @@ function Zoom({ box, frame, sharp }: { box: number[]; frame: Rect; sharp: PartUr
       for (const img of [tissue, borders]) {
         if (img) ctx.drawImage(img, x0 * sx, y0 * sy, cw * sx, ch * sy, 0, 0, canvas.width, canvas.height);
       }
-      const at = Math.max(0, ZOOM_MS * 0.44 - (performance.now() - started));
-      shown = canvas.animate([{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }],
-        { duration: ZOOM_MS * 0.36, delay: at, easing: 'linear' });
+      shown = canvas.animate([{ opacity: 0, offset: 0 }, { opacity: 0, offset: 0.44 }, { opacity: 1, offset: 0.53 },
+        { opacity: 1, offset: 0.74 }, { opacity: 0, offset: 0.8 }, { opacity: 0, offset: 1 }],
+        { duration: ZOOM_MS, easing: 'linear' });
+      shown.currentTime = push.currentTime;
+      if (push.playState === 'paused') shown.pause();
+      timeline.current.push(shown);
     });
-    return () => { alive = false; closing.cancel(); push?.cancel(); shown?.cancel(); };
+    timeline.current = [closing, ...(push ? [push] : [])];
+    const pause = window.setTimeout(() => {
+      if (holding.current) for (const a of timeline.current) { a.currentTime = ZOOM_MS * HOLD_AT; a.pause(); }
+    }, ZOOM_MS * HOLD_AT);
+    return () => { alive = false; clearTimeout(pause); closing.cancel(); push?.cancel(); shown?.cancel(); };
   }, []);
+  useEffect(() => {
+    for (const a of timeline.current) {
+      const t = Number(a.currentTime ?? 0);
+      if (!hold && a.playState === 'paused') a.play();
+      else if (hold && a.playState === 'running' && t >= ZOOM_MS * HOLD_AT && t < ZOOM_MS * PUSHED_UNTIL) a.pause();
+    }
+  }, [hold]);
   return (
     <>
       <canvas ref={lens} className="zoom-lens" aria-hidden="true" style={{ left: -frame.x, top: -frame.y }} />

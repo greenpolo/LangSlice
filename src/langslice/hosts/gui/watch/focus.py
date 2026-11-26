@@ -8,6 +8,12 @@ a followed tool (every write, and the two reads that look at sections,
 targets keeps the focus it found. The watcher keeps the latest focus and
 puts it in every snapshot; before the first followed call the focus is
 every section, in stack order.
+
+An agent often asks for several looks or zooms in one turn; a door runs them
+one after another, each starting as the one before ends, and the agent reads
+all their pictures together. Such a batch is one focus (:func:`joined`): the
+reads that start within :attr:`Batch.gap_s` of the previous read's end add
+their sections to it instead of replacing it.
 """
 
 from __future__ import annotations
@@ -21,6 +27,21 @@ from langslice.job.settings.tool_table import TOOLS
 
 FOLLOWED_READS = frozenset({"look", "zoom"})
 _KIND_MOVES = {"read": False, "write": True}
+
+
+@dataclass(frozen=True)
+class Batch:
+    """When followed reads belong to one turn of the agent.
+
+    A door runs the calls of one turn back to back, so the next starts within
+    a second of the last one's end (events are stamped to the second); a new
+    turn waits at least for the model to read and answer.
+    """
+
+    gap_s: float = 1.0
+
+
+BATCH = Batch()
 
 
 @dataclass(frozen=True)
@@ -129,4 +150,38 @@ def shown_focus(record: JsonObject, section_ids: Sequence[str]) -> Focus | None:
         name,
         None if call is None else str(call),
         at if isinstance(at, str) else None,
+    )
+
+
+def joined(before: Focus | None, new: Focus, gap_s: float | None) -> Focus:
+    """Return the focus after *new*, joining it to a batch of reads.
+
+    Parameters
+    ----------
+    before
+        The focus so far.
+    new
+        The focus the latest call sets.
+    gap_s
+        Seconds from the end of the latest followed read before this call to
+        this call's start, or None when there was none.
+
+    Returns
+    -------
+    Focus
+        *before*'s sections followed by *new*'s, without repeats, when both
+        come from followed reads and the gap is within :attr:`Batch.gap_s`;
+        *new* otherwise.
+    """
+    batched = (
+        before is not None
+        and before.tool in FOLLOWED_READS
+        and new.tool in FOLLOWED_READS
+        and gap_s is not None
+        and gap_s <= BATCH.gap_s
+    )
+    if not batched or before is None:
+        return new
+    return Focus(
+        tuple(dict.fromkeys(before.sections + new.sections)), new.tool, new.call, before.at
     )

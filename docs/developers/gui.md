@@ -96,7 +96,11 @@ the registration look like, and how did it get here.
   whenever that section's registration changes, with its name, position,
   how it was aligned, whether it is warped and whether it is damaged.
   **Follow the agent** (on to start with; `f`) keeps the pictures on the
-  agent's latest call. Clicking a section on the cutting axis, a picture or
+  agent's latest call. Looks and zooms the agent asked for in one turn (the
+  door runs them one after another, each starting within a second of the
+  last one's end) are shown together: their sections stay on the stage side
+  by side, and each zoom stays pushed in until the last of them has pushed
+  in too, then they let go together. Clicking a section on the cutting axis, a picture or
   a name in the journal shows it and stops following.
 - **3D.** **2D | 3D** at the top right (in both views, remembered) swaps
   the cutting axis for the atlas brain in three dimensions: the sections in

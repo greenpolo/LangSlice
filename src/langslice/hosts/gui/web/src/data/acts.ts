@@ -64,6 +64,7 @@ export type Act = {
   sections: string[];
   count: number;              // how many sections the call works on
   zooms: Record<string, number[]>; // a zoom's window on each section
+  hold: boolean;              // a read of a batch still being read: its zoom stays pushed in
 };
 
 // The sections a call acts on: those it named, else those its pictures show.
@@ -73,14 +74,41 @@ export function kindOf(tool: string): Kind {
   return TOOLS[tool] ?? { family: 'books', engine: tool.replace(/_/g, ' '), what: '' };
 }
 
-function actOf(call: Call): Act {
+function actOf(call: Call, hold = false): Act {
   const kind = kindOf(call.name);
   const args = (call.args && typeof call.args === 'object' ? call.args : {}) as Record<string, unknown>;
   return {
     key: call.key, family: kind.family, tool: call.name, engine: kind.engine, what: detail(call.name, args) || kind.what,
     running: call.running, failed: call.failed, args, sections: targets(call), count: targets(call).length,
-    zooms: call.zooms ?? {},
+    zooms: call.zooms ?? {}, hold,
   };
+}
+
+// An agent often asks for several looks or zooms in one turn; the door runs them one after
+// another, each starting as the one before ends, and the agent reads their pictures
+// together. Such a batch stays on the stage as one: each read lingers until the last one
+// has ended, and its zoom stays pushed in meanwhile (`hold`) and for HOLD_AFTER_MS after:
+// long enough for the next read of the batch to come, and for the last zoom, whose window
+// is known only when it ends, to push in beside the others before they all let go.
+const BATCH_GAP_MS = 1000;
+const HOLD_AFTER_MS = 2600;
+const isRead = (call: Call) => kindOf(call.name).family === 'look';
+function batches(calls: Call[]): Map<string, { running: boolean; endedAt: number }> {
+  const out = new Map<string, { running: boolean; endedAt: number }>();
+  let members: Call[] = [];
+  const close = () => {
+    const batch = { running: members.some(c => c.running), endedAt: Math.max(0, ...members.map(c => c.endedAt ?? 0)) };
+    for (const c of members) out.set(c.key, batch);
+    members = [];
+  };
+  for (const call of calls) {
+    const before = members.at(-1);
+    const joins = before && isRead(call) && Date.parse(call.at ?? '') - Date.parse(before.doneAt ?? '') <= BATCH_GAP_MS;
+    if (!joins && members.length) close();
+    if (isRead(call)) members.push(call);
+  }
+  if (members.length) close();
+  return out;
 }
 
 // The few words a chip adds for a call, from its own arguments.
@@ -113,12 +141,18 @@ export function useActs(): Map<string, Act> {
   const [now, setNow] = useState(() => Date.now());
   const acts = new Map<string, Act>();
   let wake = Infinity;
-  for (let i = calls.length - 1; i >= 0 && i >= calls.length - 40; i--) {
-    const call = calls[i];
-    const until = (call.endedAt ?? 0) + lingerOf(call);
-    if (!call.running && until <= now) continue;
-    if (!call.running) wake = Math.min(wake, until);
-    const act = actOf(call);
+  const recent = calls.slice(-40);
+  const batchOf = batches(recent);
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const call = recent[i];
+    const batch = batchOf.get(call.key);
+    const running = call.running || Boolean(batch?.running);
+    const until = Math.max(call.endedAt ?? 0, batch?.endedAt ?? 0) + lingerOf(call);
+    if (!running && until <= now) continue;
+    if (!running) wake = Math.min(wake, until);
+    const grace = (batch?.endedAt ?? 0) + HOLD_AFTER_MS;
+    if (!running && batch && grace > now) wake = Math.min(wake, grace);
+    const act = actOf(call, running || Boolean(batch && grace > now));
     for (const id of act.sections) if (!acts.has(id)) acts.set(id, act);
   }
   useEffect(() => {

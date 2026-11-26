@@ -31,7 +31,13 @@ from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import stack_angles_entry, status_rows
 from langslice.hosts.gui.pictures.render import render_key
-from langslice.hosts.gui.watch.focus import Focus, shown_focus, started_focus
+from langslice.hosts.gui.watch.focus import (
+    FOLLOWED_READS,
+    Focus,
+    joined,
+    shown_focus,
+    started_focus,
+)
 from langslice.hosts.gui.watch.transcripts import TranscriptWords, projects_root
 from langslice.job.folder.layout import (
     EVENTS_FILE,
@@ -271,6 +277,7 @@ class JobWatcher:
         self.rows_stale = False
         self.stack: Stack | None = None
         self.followed: Focus | None = None
+        self.read_ended: float | None = None
         self.polled_at = 0.0
         self._histories: SectionHistories | None = None
 
@@ -355,10 +362,12 @@ class JobWatcher:
             }
             if kind == "tool_start":
                 self.open_tools[key] = item
-                self.followed = started_focus(record) or self.followed
+                self._follow(started_focus(record), _when(record))
             else:
-                self.open_tools.pop(key, None)
-                self.followed = self._shown_focus(record) or self.followed
+                started = self.open_tools.pop(key, None)
+                self._follow(self._shown_focus(record), _when(started or record))
+                if item["name"] in FOLLOWED_READS:
+                    self.read_ended = _when(record)
             self._append(item)
         elif kind == "open":
             self._append(
@@ -433,6 +442,14 @@ class JobWatcher:
             )
         elif kind == "spend" and record.get("message"):
             self._append({"kind": "note", "at": at, "text": _short(str(record["message"]), 500)})
+
+    def _follow(self, focus: Focus | None, started: float | None) -> None:
+        """Take *focus* as the agent's, joined to the batch of reads it belongs to
+        (:func:`.focus.joined`); None keeps the focus as it was."""
+        if focus is None:
+            return
+        gap = None if started is None or self.read_ended is None else started - self.read_ended
+        self.followed = joined(self.followed, focus, gap)
 
     def _shown_focus(self, record: dict[str, Any]) -> Focus | None:
         """The focus a followed read that named no section sets when it ends: the
