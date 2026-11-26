@@ -1,8 +1,8 @@
 // The agent's margin: a column beside the pictures. At its head the model and its state
 // (Working, Thinking, Done); under it the agent's latest words, said one by one in the
 // serif face, in italic while it is only thinking; in the Extended view the whole log
-// takes the words' place. At its foot, what is happening now and for how long (Doing), so
-// a still screen is never a mystery.
+// takes the words' place. Under them, any slow call the agent is waiting on and for how
+// long (Doing), so a still screen is never a mystery.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -40,7 +40,7 @@ export function Speaker({ model, status, words, calls, children }: {
           </AnimatePresence>
         </div>
       )}
-      <Doing calls={calls} status={status} since={words?.seenAt ?? 0} />
+      <Doing calls={calls} />
     </aside>
   );
 }

@@ -123,27 +123,22 @@ main.simple > .stage, main.simple > .space-split { margin-top: 56px; }
 .word { display: inline-block; animation: say var(--dur-enter) var(--ease-out) both; }
 @keyframes say { from { opacity: 0; translate: 0 0.25em; filter: blur(2px); } }
 
-/* What is happening now: a card for each running call, with its clock and bar. */
-.doing-cards { flex-shrink: 0; display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); }
-.doing-card { margin: 0; padding: 10px 12px 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
-.doing-card.live { border-color: color-mix(in srgb, var(--lavender) 38%, var(--line)); }
-.doing-head { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--size-xs); color: var(--muted); }
-.doing-lead { letter-spacing: 0.02em; }
-.doing-card.live .doing-lead { color: var(--lavender); }
-.doing-clock { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
-.doing-title { margin: 4px 0 0; color: var(--name); font-size: var(--size-md); line-height: 1.35; }
-.doing-name { margin-left: var(--space-2); color: var(--faint); font-family: var(--mono); font-size: var(--size-xs); font-variant-ligatures: none; }
-.doing-detail { margin: 2px 0 0; color: var(--muted); font-size: var(--size-sm); line-height: 1.4; overflow-wrap: anywhere; }
-.doing-bar { position: relative; height: 3px; margin-top: 9px; border-radius: 2px; background: var(--line); overflow: hidden; }
-.doing-fill { position: absolute; inset: 0; border-radius: 2px; background: var(--lavender); transform-origin: left; transition: transform 1s linear; }
-.doing-bar.sweep::after {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--lavender), transparent);
-  animation: sweep 1.8s var(--ease-in-out) infinite;
+/* What the agent is waiting on: a quiet line per slow call, a hairline bar under it. */
+.doing { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
+.wait-line { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-3); font-size: var(--size-sm); line-height: 1.45; color: var(--muted); }
+.wait-what { grid-column: 1 / -1; color: var(--text); }
+.wait-detail { color: var(--muted); }
+.wait-clock { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.wait-usual { color: var(--faint); }
+.wait-bar { position: relative; height: 1px; margin-top: 5px; background: var(--line); overflow: hidden; }
+.wait-fill { position: absolute; inset: 0; background: var(--muted); transform-origin: left; transition: transform 1s linear; }
+.wait-bar.sweep::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%;
+  background: linear-gradient(90deg, transparent, var(--muted), transparent);
+  animation: sweep 2.4s var(--ease-in-out) infinite;
 }
-@keyframes sweep { from { translate: -100% 0; } to { translate: 300% 0; } }
-.doing-usual { margin: 5px 0 0; color: var(--faint); font-size: var(--size-xs); }
-.doing-more { margin: 0; color: var(--muted); font-size: var(--size-xs); }
+@keyframes sweep { from { translate: -100% 0; } to { translate: 340% 0; } }
+.doing-more { margin: 0; color: var(--faint); font-size: var(--size-xs); }
 
 /* The stage: the sections, centred, rows wrapping where the layout chose. */
 .stage { position: relative; flex: 1; min-height: 0; margin: var(--space-2) var(--space-6) 0; border-radius: var(--radius); }
@@ -217,7 +212,7 @@ main.extended {
 }
 .extended .speaker { padding: var(--space-5) 0 var(--space-4) 0; gap: var(--space-3); }
 .extended .speaker .who { padding: 0 var(--space-5); }
-.extended .speaker .doing-cards { margin: 0 var(--space-5); }
+.extended .speaker .doing { margin: 0 var(--space-5); }
 .extended .speaker .journal { flex: 1; --gutter: 34px; --text-left: 56px; border-left: 0; }
 .extended .speaker .journal-title { display: none; }
 .extended-main > .progress { margin: 56px var(--space-5) 0; }
@@ -329,7 +324,7 @@ main.extended {
 
 @media (prefers-reduced-motion: reduce) {
   .word,
-  .cut.done .cut-key, .dot.Running, .dot.Submitted, .doing-bar.sweep::after,
+  .cut.done .cut-key, .dot.Running, .dot.Submitted, .wait-bar.sweep::after,
   .state-glyph i, .state-done svg { animation: none; }
   .word { animation: fade var(--dur-quick) ease both; }
   .cut-key, .cut-fan { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }

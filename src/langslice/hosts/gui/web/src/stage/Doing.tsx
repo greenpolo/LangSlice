@@ -1,10 +1,11 @@
-// Why the screen is still: a card under the agent's words for each tool call that is
-// running, with a clock that counts up and a bar. When this job has run the same tool
-// before and it took at least MIN_USUAL_S, the bar fills towards the time it took then
-// (its median), and turns to a slow sweep once the call runs longer than that; any other
-// call sweeps from the start.
-// Between calls, while the run is going, the card says the agent is choosing its next step
-// and for how long; once the run stops, it names the last step and how long it took.
+// What the agent is waiting on: a quiet line under its words for each tool call that has
+// run longer than SHOW_AFTER_S, the calls that actually pause a run (fits, plane searches,
+// making images); quick calls never show. The line names the call in plain words, counts
+// up and carries a hairline bar. When this job has run the same tool before and it took at
+// least SHOW_AFTER_S, the bar fills towards the time it took then (its median) and turns to
+// a slow sweep once the call runs longer; any other call sweeps from the start. A call
+// still open after GIVEN_UP_S belongs to a run that stopped without closing it, and is
+// not shown.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { DUR, EASE_OUT } from '../ui/motion';
@@ -13,33 +14,23 @@ import { callDetail } from '../data/acts';
 
 const SHOWN_AT_ONCE = 2;
 const NEAR_FULL = 0.94;
-const MIN_USUAL_S = 5;
+const SHOW_AFTER_S = 4;
+const GIVEN_UP_S = 6 * 3600;
 
-export function Doing({ calls, status, since }: {
-  calls: Call[]; status: string; since: number;
-}) {
+export function Doing({ calls }: { calls: Call[] }) {
   const now = useNow();
-  const running = calls.filter(c => c.running);
-  const going = status === 'Running';
-  const last = calls.at(-1) ?? null;
+  const slow = calls.filter(c => {
+    const s = secondsSince(c.seenAt, now) ?? 0;
+    return c.running && s >= SHOW_AFTER_S && s < GIVEN_UP_S;
+  });
   return (
-    <div className="doing-cards" aria-live="polite">
-      <AnimatePresence initial={false} mode="popLayout">
-        {running.slice(-SHOWN_AT_ONCE).map(c => (
-          <Card key={c.key} lead="Running" title={c.title} name={c.name} detail={detailOf(c)}
-            elapsed={secondsSince(c.seenAt, now)} usual={usualSeconds(calls, c.name)} live />
+    <div className="doing" aria-live="polite">
+      <AnimatePresence initial={false}>
+        {slow.slice(-SHOWN_AT_ONCE).map(c => (
+          <Wait key={c.key} call={c} elapsed={secondsSince(c.seenAt, now) ?? 0} usual={usualSeconds(calls, c.name)} />
         ))}
-        {running.length > SHOWN_AT_ONCE && (
-          <motion.p key="more" className="doing-more" {...FADE}>and {running.length - SHOWN_AT_ONCE} more running</motion.p>
-        )}
-        {!running.length && going && (
-          <Card key={'between:' + (last?.key ?? '')} lead="Between steps"
-            title="Choosing its next step" detail={last ? `Last step: ${last.title}` : ''}
-            elapsed={secondsSince(Math.max(last?.endedAt || Date.parse(last?.doneAt ?? '') || 0, since || 0) || undefined, now)} live />
-        )}
-        {!running.length && !going && last && (
-          <Card key={'last:' + last.key} lead={last.failed ? 'Last step failed' : 'Last step'} title={last.title}
-            name={last.name} detail={detailOf(last)} took={tookSeconds(last)} />
+        {slow.length > SHOWN_AT_ONCE && (
+          <motion.p key="more" className="doing-more" {...FADE}>and {slow.length - SHOWN_AT_ONCE} more running</motion.p>
         )}
       </AnimatePresence>
     </div>
@@ -47,43 +38,34 @@ export function Doing({ calls, status, since }: {
 }
 
 const FADE = {
-  initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0, transition: { duration: DUR.enter, ease: EASE_OUT } },
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: DUR.enter, ease: EASE_OUT } },
   exit: { opacity: 0, transition: { duration: DUR.quick, ease: EASE_OUT } },
 };
 
-function Card({ lead, title, name, detail, elapsed, usual, took, live }: {
-  lead: string; title: string; name?: string; detail: string;
-  elapsed?: number | null; usual?: number | null; took?: number | null; live?: boolean;
-}) {
-  const over = usual != null && elapsed != null && elapsed > usual;
-  const share = usual && elapsed != null && !over ? Math.min(NEAR_FULL, elapsed / usual) : null;
+function Wait({ call, elapsed, usual }: { call: Call; elapsed: number; usual: number | null }) {
+  const over = usual != null && elapsed > usual;
+  const share = usual != null && !over ? Math.min(NEAR_FULL, elapsed / usual) : null;
+  const detail = detailOf(call);
   return (
-    <motion.section layout className={'doing-card' + (live ? ' live' : '')} {...FADE}>
-      <header className="doing-head">
-        <span className="doing-lead">{lead}</span>
-        {elapsed != null && <span className="doing-clock">{clock(elapsed)}</span>}
-        {took != null && <span className="doing-clock">took {clock(took)}</span>}
-      </header>
-      <p className="doing-title">{title}{name && name !== title && <code className="doing-name">{name}</code>}</p>
-      {detail && <p className="doing-detail">{detail}</p>}
-      {live && (
-        <div className={'doing-bar' + (share == null ? ' sweep' : '')} role="progressbar"
-          aria-valuenow={share == null ? undefined : Math.round(share * 100)}>
-          {share != null && <span className="doing-fill" style={{ transform: `scaleX(${share})` }} />}
-        </div>
-      )}
-      {live && usual != null && (
-        <p className="doing-usual">{over ? `longer than its usual ${clock(usual)}` : `usually about ${clock(usual)} in this run`}</p>
-      )}
-    </motion.section>
+    <motion.div className="wait" {...FADE}>
+      <p className="wait-line">
+        <span className="wait-what">{call.title}</span>
+        <span className="wait-detail">{detail}</span>
+        <span className="wait-clock">{clock(elapsed)}{usual != null && <span className="wait-usual">{over ? ` / usually ${clock(usual)}` : ` of about ${clock(usual)}`}</span>}</span>
+      </p>
+      <div className={'wait-bar' + (share == null ? ' sweep' : '')} role="progressbar"
+        aria-valuenow={share == null ? undefined : Math.round(share * 100)}>
+        {share != null && <span className="wait-fill" style={{ transform: `scaleX(${share})` }} />}
+      </div>
+    </motion.div>
   );
 }
 
 function detailOf(call: Call) {
   const detail = callDetail(call);
   const n = call.sections.length;
-  const on = !n ? '' : n === 1 ? 'on one section' : `on ${n} sections`;
+  const on = !n ? '' : n === 1 ? 'one section' : `${n} sections`;
   return [detail, on].filter(Boolean).join(', ');
 }
 
@@ -91,7 +73,7 @@ function usualSeconds(calls: Call[], name: string): number | null {
   const times = calls.filter(c => c.name === name && c.ended && !c.failed).map(tookSeconds)
     .filter((t): t is number => t != null).sort((a, b) => a - b);
   const median = times.length ? times[Math.floor(times.length / 2)] : null;
-  return median != null && median >= MIN_USUAL_S ? median : null;
+  return median != null && median >= SHOW_AFTER_S ? median : null;
 }
 
 function tookSeconds(call: Call): number | null {

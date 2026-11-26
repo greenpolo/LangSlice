@@ -47,14 +47,14 @@ agent has a margin of its own, a column left of the pictures: at its head
 the LangSlice mark, the model's name and its state (Working while a tool
 call runs, Thinking between calls, Done); under them the agent's latest
 words in a room of fixed height, a summary of its reasoning in italic, a
-message upright, coming in one word after another. At the margin's foot is
-what is happening now: a card for each tool call that is running, in plain
-words with the tool's own name, what it works on, a clock counting up and a
-bar. When the job has run the same tool before and it took at least 5 s, the
-bar fills towards its usual time in this run (the median) and says so,
-and sweeps once the call runs longer; otherwise it sweeps from the start.
-Between calls the card says the agent is choosing its next step and for how
-long; once the run has stopped it names the last step and how long it took.
+message upright, coming in one word after another. Under the words, a quiet line for each
+tool call the agent has been waiting on for more than 4 s (fits, plane
+searches, making images; quick calls never show): the call in plain words,
+what it works on, a clock and a hairline bar. When the job has run the same
+tool before and it took at least 4 s, the bar fills towards its usual time
+in this run (the median) and sweeps once the call runs longer; otherwise it
+sweeps from the start. A call still open after 6 hours belongs to a run that
+stopped without closing it, and is not shown.
 Up to three sections are shown large with their name and position; more are
 dealt out as a grid of small pictures, and the finished run shows every
 section. A picture shows the section as its file holds it (no background is
@@ -83,8 +83,8 @@ the registration look like, and how did it get here.
   file, or `off`), newest first. The window shows the most recently changed
   job until you pick one; the address then names it (`#job=<n>`).
 - **What the agent is doing now.** The same margin as Simple, with the
-  whole log (below) in the place of the latest words and the card of what is
-  running at its foot; over the pictures the progress meters: how many
+  whole log (below) in the place of the latest words and the line of any
+  slow call at its foot; over the pictures the progress meters: how many
   sections are placed in the atlas, aligned to it and warped to fit. A step
   the job did not ask for has no meter. A coding agent keeps its own words
   in its app, so for such a run the margin shows what the agent is doing in
