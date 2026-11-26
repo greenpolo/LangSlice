@@ -1,7 +1,8 @@
-// Who is speaking, and what it says. The LangSlice mark, the model's name and its state
-// under it (Working, Thinking, Done); beside them a
-// speech bubble of a fixed height with the agent's latest words, said one by one; under
-// the bubble, the call it is making in plain words.
+// Who is speaking, and what it says, as one column over the stage. A small line names the
+// model and its state (Working, Thinking, Done); under it the agent's latest words, said
+// one by one in the serif face on the window's own ground, behind a thin rule: the accent
+// when the agent speaks, a quiet grey and the words in italic while it is only thinking;
+// under them, the call it is making in plain words.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DUR, EASE_OUT } from '../ui/motion';
@@ -27,7 +28,7 @@ export function Speaker({ model, status, words, call, focusCount }: {
       </div>
       <div className="speaker-said">
         {/* The old line and the new share one cell: the old fades over as the new is said. */}
-        <div className="bubble">
+        <div className="voice">
           <AnimatePresence initial={false}>
             {words ? (
               <Said
