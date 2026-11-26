@@ -28,11 +28,13 @@ export type Call = {
   seen?: string[];           // the sections its pictures show, for a call that named none
   zooms?: Record<string, number[]>; // a zoom's window on each section, fractions x0 y0 x1 y1
   endedAt?: number;          // when the window saw it end (Date.now()); 0 for one already over when it opened
+  doneAt?: string;           // when the run says it ended
+  seenAt?: number;           // when it began on the window's clock: Date.now() when seen live, else its `at`
 };
 // What the agent's words point at, as the server reads them against the job (watch/
 // pointing.py): sections, atlas regions, places on the axis, the cutting angles.
 export type Pointed = { sections: string[]; regions: string[]; positions_mm: number[]; pitch: number | null; yaw: number | null; angled?: boolean };
-export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number; pointed?: Pointed };
+export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number; pointed?: Pointed; seenAt: number };
 export type Axis = { low: string; high: string; min_mm: number; max_mm: number };
 // The strip: the atlas thumbnails' places along the axis and each section's thumbnail key.
 export type Strip = {
@@ -207,6 +209,8 @@ function take(snap: any) {
         if (item.door) call.door = item.door;
         if (item.status) call.status = item.status;
         if (item.phase === 'start' && item.at) call.at = item.at;
+        if (item.phase === 'start') call.seenAt ??= catchingUp ? Date.parse(item.at ?? '') : Date.now();
+        if (item.phase === 'end' && item.at) call.doneAt = item.at;
         // The pictures a call's end names are its own, whether they came before or after.
         for (const path of item.views || []) {
           claims.set(path, call.key);
@@ -222,7 +226,7 @@ function take(snap: any) {
         changed = true;
       } else if ((item.kind === 'agent' || item.kind === 'reasoning') && item.text) {
         said += 1;
-        const words: Words = { kind: item.kind, text: firstParagraph(item.text), at: item.at || '', n: said, pointed: item.pointed };
+        const words: Words = { kind: item.kind, text: firstParagraph(item.text), at: item.at || '', n: said, pointed: item.pointed, seenAt: catchingUp ? Date.parse(item.at || '') : Date.now() };
         patch.words = words;
         added.push({ kind: 'words', n: said, words, full: item.text });
       } else if (item.kind === 'picture' && typeof item.number === 'number') {

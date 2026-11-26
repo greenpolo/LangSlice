@@ -35,8 +35,15 @@ a { color: inherit; text-decoration: none; }
 .viewer { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* Simple. */
-.simple { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: 30px; }
-.simple .speaker { padding-top: var(--space-2); }
+main.simple {
+  position: relative; flex: 1; min-height: 0; align-self: stretch; width: 100%;
+  display: grid; grid-template-columns: var(--margin-width) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  --margin-width: clamp(300px, 23vw, 380px);
+}
+main.simple > * { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; }
+main.simple > .speaker { grid-column: 1; }
+main.simple > .cut { grid-column: 1 / -1; grid-row: 2; }
+main.simple > .stage, main.simple > .space-split { margin-top: 56px; }
 .views-switch { display: flex; font-size: var(--size-xs); }
 .views-switch > * { padding: 3px 9px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; cursor: pointer; transition: scale var(--dur-press) var(--ease-out), color var(--dur-quick) ease, background-color var(--dur-quick) ease; }
 .views-switch > :active { scale: 0.97; }
@@ -46,19 +53,18 @@ a { color: inherit; text-decoration: none; }
 @media (hover: hover) and (pointer: fine) { .views-switch > :not(.on):hover { color: var(--name); background: var(--wash); } }
 
 /* Who is speaking. */
+/* The agent's margin: a column of its own left of the pictures, behind a thin rule. */
 .speaker {
-  flex-shrink: 0;
-  width: min(1080px, calc(100% - 2 * var(--space-6)));
-  margin: 0 auto;
-  padding: var(--space-4) 0 var(--space-2);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  --voice-indent: 24px;
-  --voice-lines: 3;
-  --voice-leading: 1.42;
+  min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 64px var(--space-5) var(--space-4) var(--space-6);
+  border-right: 1px solid var(--line);
+  --voice-indent: 0px;
+  --voice-lines: 9;
+  --voice-leading: 1.5;
+  --size-voice: 20px;
 }
-.who { display: flex; align-items: center; gap: 10px; padding-left: var(--voice-indent); }
+.who { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
 .logo-mark { width: 20px; height: 20px; }
 .who-name { margin: 0; color: var(--name); font-size: var(--size-sm); font-weight: var(--weight-strong); letter-spacing: 0.01em; }
 /* The state: a quiet word beside the name, its glyph moving the way the state does. */
@@ -92,32 +98,15 @@ a { color: inherit; text-decoration: none; }
 @keyframes done-dot { 30% { scale: 1.8; } }
 
 
-/* The agent's words: a fixed height of three lines on the window's own ground, behind a
-   thin rule. The rule is the accent while the agent speaks to the person and steps back to
-   a quiet grey, the words to italic, while it is only thinking. */
-.speaker-said { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+/* The agent's words: a fixed room in the margin, so what sits under them never jumps. In
+   italic and a step quieter while the agent is only thinking. */
 .voice {
   position: relative;
+  flex-shrink: 0;
   height: calc(var(--voice-lines) * var(--voice-leading) * var(--size-voice));
   display: grid;
   align-content: start;
-  padding-left: var(--voice-indent);
 }
-.voice::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.3em;
-  bottom: 0.3em;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--lavender);
-  transform-origin: top;
-  transition: background-color var(--dur-enter) var(--ease-out);
-}
-.thinking .voice::before { background: var(--tract); }
-.speaking .voice::before { animation: voice-rule var(--dur-enter) var(--ease-out); }
-@keyframes voice-rule { from { transform: scaleY(0.35); opacity: 0.4; } }
 .words {
   margin: 0;
   font-family: var(--serif);
@@ -133,24 +122,28 @@ a { color: inherit; text-decoration: none; }
 .thinking .words { color: var(--text); font-style: italic; }
 .word { display: inline-block; animation: say var(--dur-enter) var(--ease-out) both; }
 @keyframes say { from { opacity: 0; translate: 0 0.25em; filter: blur(2px); } }
-.doing-cell { display: grid; }
-.doing { grid-area: 1 / 1; margin: 0; padding-left: var(--voice-indent); min-height: 1.5em; font-size: var(--size-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.doing-lead { color: var(--text); }
-.doing-what { color: var(--text); }
-.doing-detail { color: var(--text); }
-.doing.running .doing-lead { color: var(--lavender); }
-.doing.running .doing-what { color: var(--name); }
-.doing.running::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: var(--space-2);
-  border-radius: 50%;
-  background: var(--lavender);
-  vertical-align: 2px;
-  animation: pulse 2.4s ease-in-out infinite;
+
+/* What is happening now: a card for each running call, with its clock and bar. */
+.doing-cards { flex-shrink: 0; display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.doing-card { margin: 0; padding: 10px 12px 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.doing-card.live { border-color: color-mix(in srgb, var(--lavender) 38%, var(--line)); }
+.doing-head { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--size-xs); color: var(--muted); }
+.doing-lead { letter-spacing: 0.02em; }
+.doing-card.live .doing-lead { color: var(--lavender); }
+.doing-clock { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+.doing-title { margin: 4px 0 0; color: var(--name); font-size: var(--size-md); line-height: 1.35; }
+.doing-name { margin-left: var(--space-2); color: var(--faint); font-family: var(--mono); font-size: var(--size-xs); font-variant-ligatures: none; }
+.doing-detail { margin: 2px 0 0; color: var(--muted); font-size: var(--size-sm); line-height: 1.4; overflow-wrap: anywhere; }
+.doing-bar { position: relative; height: 3px; margin-top: 9px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.doing-fill { position: absolute; inset: 0; border-radius: 2px; background: var(--lavender); transform-origin: left; transition: transform 1s linear; }
+.doing-bar.sweep::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--lavender), transparent);
+  animation: sweep 1.8s var(--ease-in-out) infinite;
 }
+@keyframes sweep { from { translate: -100% 0; } to { translate: 300% 0; } }
+.doing-usual { margin: 5px 0 0; color: var(--faint); font-size: var(--size-xs); }
+.doing-more { margin: 0; color: var(--muted); font-size: var(--size-xs); }
 
 /* The stage: the sections, centred, rows wrapping where the layout chose. */
 .stage { position: relative; flex: 1; min-height: 0; margin: var(--space-2) var(--space-6) 0; border-radius: var(--radius); }
@@ -217,10 +210,19 @@ a { color: inherit; text-decoration: none; }
 .composer-note { color: var(--muted); font-size: var(--size-xs); }
 
 /* Extended. */
-.extended { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.extended-head { flex-shrink: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: var(--space-5); padding: calc(var(--space-6) + var(--space-4)) var(--space-5) 0 0; }
-.extended .speaker { width: auto; margin: 0; padding: 0 0 0 var(--space-5); --size-voice: 18px; }
-.extended-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 560px); }
+main.extended {
+  flex: 1; min-height: 0; align-self: stretch; width: 100%;
+  display: grid; grid-template-columns: var(--margin-width) minmax(0, 1fr);
+  --margin-width: clamp(360px, 27vw, 500px);
+}
+.extended .speaker { padding: var(--space-5) 0 var(--space-4) 0; gap: var(--space-3); }
+.extended .speaker .who { padding: 0 var(--space-5); }
+.extended .speaker .doing-cards { margin: 0 var(--space-5); }
+.extended .speaker .journal { flex: 1; --gutter: 34px; --text-left: 56px; border-left: 0; }
+.extended .speaker .journal-title { display: none; }
+.extended-main > .progress { margin: 56px var(--space-5) 0; }
+.extended-main > .progress .progress-steps { flex-direction: row; gap: var(--space-5); }
+.extended-main > .progress .meter { flex: 1; }
 .extended-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .extended-tools { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-5) 0; font-size: var(--size-sm); color: var(--muted); }
 .extended-count b { color: var(--name); font-weight: var(--weight-strong); }
@@ -327,7 +329,7 @@ a { color: inherit; text-decoration: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .word,
-  .cut.done .cut-key, .dot.Running, .dot.Submitted, .doing.running::before,
+  .cut.done .cut-key, .dot.Running, .dot.Submitted, .doing-bar.sweep::after,
   .state-glyph i, .state-done svg { animation: none; }
   .word { animation: fade var(--dur-quick) ease both; }
   .cut-key, .cut-fan { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
@@ -339,8 +341,8 @@ a { color: inherit; text-decoration: none; }
 @keyframes fade { from { opacity: 0; } }
 
 /* Extended's 3D stage: the sections in focus in a narrow column, the atlas brain beside;
-   the journal gives up some of its width to it. */
-.extended.space .extended-body { grid-template-columns: minmax(0, 1fr) clamp(280px, 21vw, 380px); }
+   the margin gives up some of its width to it. */
+main.extended.space { --margin-width: clamp(300px, 22vw, 400px); }
 .space-split { display: grid; grid-template-columns: minmax(190px, 21%) minmax(0, 1fr); gap: var(--space-3); }
 .space-side { position: relative; min-width: 0; min-height: 0; }
 .space-side .tile-name { gap: var(--space-1); font-size: var(--size-xs); white-space: nowrap; overflow: hidden; }
