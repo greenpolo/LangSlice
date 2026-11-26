@@ -66,7 +66,7 @@ from langslice.hosts.gui.pictures.paper import (
     draw_paper_overlay,
     draw_paper_thumb,
 )
-from langslice.hosts.gui.pictures.parts import Part, Parts, draw_parts, slide_ground
+from langslice.hosts.gui.pictures.parts import Part, Parts, draw_parts, draw_regions, slide_ground
 from langslice.hosts.gui.pictures.space import (
     AtlasShell,
     ShellError,
@@ -366,6 +366,12 @@ class JobRenderer:
         self._parts: OrderedDict[_Key, Parts] = OrderedDict()
         self._slide: tuple[_Opened, tuple[int, int, int]] | None = None
 
+    def opened_atlas(self) -> object | None:
+        """The job's atlas when the job has been read for drawing already;
+        None before, so a caller that only wants it never waits for it."""
+        opened = self._opened
+        return None if opened is None else opened.workspace.atlas
+
     def strip(self) -> Strip:
         """Describe the positioning strip of the job as it stands.
 
@@ -472,6 +478,7 @@ class JobRenderer:
         style: Style = Style.CALM,
         part: Part = Part.TISSUE,
         image: str = "",
+        regions: tuple[str, ...] = (),
     ) -> bytes:
         """Draw one part of a section's overlay in the window's look (:mod:`.parts`).
 
@@ -484,11 +491,14 @@ class JobRenderer:
         style
             ``paper`` for the light look, else the dark one.
         part
-            ``tissue``, ``borders`` or ``marks``, each a WebP with alpha
-            (:data:`CUTOUT_TYPE`).
+            ``tissue``, ``borders``, ``marks`` or ``regions``, each a WebP
+            with alpha (:data:`CUTOUT_TYPE`).
         image
             A made image to draw the tissue from (:func:`.parts.draw_parts`);
             blank for the raw channels.
+        regions
+            For ``regions``: the atlas regions outlined
+            (:func:`.parts.draw_regions`).
 
         Returns
         -------
@@ -510,6 +520,11 @@ class JobRenderer:
         opened = self._open()
         look = Style.PAPER if style == Style.PAPER else Style.CALM
         digest = render_key(state, section_id)
+        if part == Part.REGIONS:
+            key = (f"regions-{','.join(regions)}", section_id, edge, digest)
+            outline = partial(draw_regions, opened, state, section, edge, regions)
+            still = self._still(render_key, section_id, digest)
+            return self._picture(key, opened, outline, current=still, encode=encode_cutout)
         whole = (f"{look}-parts-{image}", section_id, edge, digest)
         key = (f"{look}-{part}-{image}", section_id, edge, digest)
         draw = partial(self._part_of, whole, part, opened, state, section, edge, look, image)

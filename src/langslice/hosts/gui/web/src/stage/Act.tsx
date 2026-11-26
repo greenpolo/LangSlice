@@ -54,8 +54,9 @@ function useDrawnRect(tissue: string): [React.RefObject<HTMLDivElement | null>, 
 // on the pictures alone, and the line under the bubble names it once.
 const FEW = 4;
 
-export function Act({ act, job, id, edge, renderKey, tiles }: {
+export function Act({ act, job, id, edge, renderKey, tiles, pointed = false }: {
   act: ActData | undefined; job: number; id: string; edge: number; renderKey: string | null | undefined; tiles: number;
+  pointed?: boolean;
 }) {
   const tissue = partUrls(job, id, edge, renderKey).tissue;
   const [ref, rect] = useDrawnRect(tissue);
@@ -77,6 +78,19 @@ export function Act({ act, job, id, edge, renderKey, tiles }: {
             {act && act.family !== 'books' && few && <Chip key={act.key} act={act} />}
           </AnimatePresence>
           {act?.running && <i className="act-travel" />}
+          <AnimatePresence>
+            {pointed && (
+              <motion.i
+                key="ring"
+                className="pointer-ring"
+                aria-hidden="true"
+                initial={{ opacity: 0, scale: 1.03 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, transition: { duration: DUR.quick, ease: EASE_OUT } }}
+                transition={{ duration: DUR.enter, ease: EASE_OUT }}
+              />
+            )}
+          </AnimatePresence>
         </div>
       )}
     </div>

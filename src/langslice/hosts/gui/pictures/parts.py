@@ -55,6 +55,22 @@ class Part(StrEnum):
     TISSUE = "tissue"
     BORDERS = "borders"
     MARKS = "marks"
+    REGIONS = "regions"
+
+
+@dataclass(frozen=True)
+class RegionInk:
+    """The outline of regions the agent's words name: the window's accent
+    (``--lavender`` in each look, *dark* on a bright slide, *light* on a dark
+    one) at *strength*, full from *full_coverage* of a pixel."""
+
+    dark: Rgb = (79, 91, 181)
+    light: Rgb = (164, 173, 223)
+    strength: float = 0.95
+    full_coverage: float = 0.43
+
+
+REGION_INK = RegionInk()
 
 
 @dataclass(frozen=True)
@@ -138,6 +154,44 @@ def draw_parts(
     borders = border_layer(border_lines(layers), ink)
     marks = mark_layer(_marked(opened, state, section, layers), hatch)
     return Parts(tissue, borders, marks)
+
+
+def draw_regions(
+    opened: Opened, state: Stack, section: Section, edge: int, regions: tuple[str, ...]
+) -> Image.Image:
+    """Draw the outlines of atlas regions over a section, alone.
+
+    Parameters
+    ----------
+    opened
+        The job, read for drawing.
+    state
+        The job's stack as the viewer reads it.
+    section
+        The section the regions are outlined on.
+    edge
+        The picture's long edge in pixels, as its other parts.
+    regions
+        The regions' names or acronyms.
+
+    Returns
+    -------
+    Image.Image
+        RGBA on the parts' pixel grid: the regions' outlines where the section
+        meets them (the core's highlighted outlines, thicker than the borders),
+        in :data:`REGION_INK`, the rest clear.
+    """
+    layers = placed_layers(
+        opened, state, section, edge, raw_channels(opened, section), highlight=regions
+    )
+    ground = slide_ground(np.asarray(layers.section.convert("RGB")))
+    bright = sum(ground) / 3 > SLIDE.bright_median
+    coverage = np.asarray(layers.highlighted, np.float32)
+    alpha = np.clip(coverage / REGION_INK.full_coverage, 0, 1) * REGION_INK.strength
+    rgba = np.zeros((*coverage.shape[:2], 4), np.uint8)
+    rgba[..., :3] = REGION_INK.dark if bright else REGION_INK.light
+    rgba[..., 3] = np.round(alpha * 255).astype(np.uint8)
+    return Image.fromarray(rgba, "RGBA")
 
 
 def slide_ground(rgb: npt.NDArray[np.uint8]) -> Rgb:

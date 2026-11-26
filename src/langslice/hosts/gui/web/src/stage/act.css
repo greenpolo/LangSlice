@@ -77,3 +77,21 @@
   .tile.act-running .picture-borders, .act-glyph i, .picture-marks.reveal { animation: none; }
   .act-travel { display: none; }
 }
+
+/* What the agent's words point at: a ring around a section it names, and the outlines of
+   the regions it names (Regions.tsx). */
+.pointer-ring {
+  position: absolute; inset: 2px; border-radius: var(--radius);
+  box-shadow: 0 0 0 1.5px var(--focus), 0 0 18px 2px color-mix(in srgb, var(--focus) 30%, transparent);
+}
+.regions { position: absolute; inset: 0; pointer-events: none; }
+.cut-said {
+  position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; rotate: 45deg;
+  border: 1.5px solid var(--focus); background: var(--ground); pointer-events: none;
+}
+.cut-angles { position: absolute; white-space: nowrap; pointer-events: none; font-size: var(--size-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.cut-angles b { color: var(--focus); font-weight: var(--weight-strong); }
+.cut-thumb.named { border-color: var(--focus); opacity: 1; box-shadow: 0 0 10px color-mix(in srgb, var(--focus) 40%, transparent); }
+/* While the words name regions, the other borders step back so the named ones read. */
+.tile.has-regions .picture-borders { opacity: 0.35; transition: opacity var(--dur-enter) var(--ease-out); }
+.picture-borders { transition: opacity var(--dur-enter) var(--ease-out); }

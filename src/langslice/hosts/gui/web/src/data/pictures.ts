@@ -140,3 +140,9 @@ export function partUrls(job: number, id: string, edge: number, key: string | nu
   const made = image ? `&image=${encodeURIComponent(image)}` : '';
   return { tissue: `${base}&part=tissue${made}`, borders: `${base}&part=borders${made}`, marks: `${base}&part=marks${made}` };
 }
+
+// The outlines of the atlas regions the agent's words name, over a section's picture (the
+// same grid as its parts).
+export function regionUrl(job: number, id: string, edge: number, key: string | null | undefined, regions: string[]): string {
+  return `${overlayUrl(job, id, edge, key)}&part=regions&regions=${encodeURIComponent(regions.join(','))}`;
+}

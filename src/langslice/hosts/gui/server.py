@@ -83,6 +83,7 @@ from langslice.hosts.gui.pictures.render import (
 )
 from langslice.hosts.gui.watch.comments import CommentRow, CommentWatch
 from langslice.hosts.gui.watch.jobs import JobList, JobWatcher
+from langslice.hosts.gui.watch.pointing import first_paragraph, pointed
 from langslice.job.folder.layout import JobLayout
 from langslice.job.review import ReviewError, add_comment, remove_comment
 
@@ -98,6 +99,7 @@ STATIC_TYPES = {
     "ico": "image/x-icon",
 }
 MAX_BODY = 16 * 1024
+WORDS = frozenset({"agent", "reasoning"})
 MESSAGE = "generator/message"
 _SNAPSHOT = re.compile(r"jobs/(\d+)/snapshot")
 _COMMENTS = re.compile(r"jobs/(\d+)/comments")
@@ -296,7 +298,22 @@ class GuiServer:
         )
         rows = self._comment_rows(watcher)
         data["comments"] = [asdict(row) for row in rows]
+        self._point(watcher, data["items"])
         return self._json(data)
+
+    def _point(self, watcher: JobWatcher, items: list[dict[str, Any]]) -> None:
+        """Add to each of the agent's words what they point at
+        (:func:`.watch.pointing.pointed`), once: the sections, places and angles
+        always, the regions once the job's atlas has been read for its pictures."""
+        words = [i for i in items if i.get("kind") in WORDS and "pointed" not in i]
+        if not words:
+            return
+        stack = watcher.current_stack()
+        ids = [section.id for section in stack.in_order()] if stack is not None else []
+        atlas = self._renderer(watcher).opened_atlas()
+        for item in words:
+            found = pointed(first_paragraph(str(item.get("text") or "")), ids, atlas)
+            item["pointed"] = asdict(found)
 
     def _picture(
         self, watcher: JobWatcher, match: re.Match[str], _query: dict[str, list[str]]
@@ -350,6 +367,7 @@ class GuiServer:
                     style=_style(query),
                     part=part,
                     image=query.get("image", [""])[0],
+                    regions=tuple(r for r in query.get("regions", [""])[0].split(",") if r),
                 ),
                 kind,
             )

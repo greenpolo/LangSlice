@@ -29,7 +29,10 @@ export type Call = {
   zooms?: Record<string, number[]>; // a zoom's window on each section, fractions x0 y0 x1 y1
   endedAt?: number;          // when the window saw it end (Date.now()); 0 for one already over when it opened
 };
-export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number };
+// What the agent's words point at, as the server reads them against the job (watch/
+// pointing.py): sections, atlas regions, places on the axis, the cutting angles.
+export type Pointed = { sections: string[]; regions: string[]; positions_mm: number[]; pitch: number | null; yaw: number | null; angled?: boolean };
+export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number; pointed?: Pointed };
 export type Axis = { low: string; high: string; min_mm: number; max_mm: number };
 // The strip: the atlas thumbnails' places along the axis and each section's thumbnail key.
 export type Strip = {
@@ -77,7 +80,7 @@ type Item = {
   sections?: string[]; failed?: boolean; text?: string; at?: string;
   number?: number; call?: string; caption?: string; tool?: string; error?: boolean;
   args?: unknown; step?: number | null; door?: string | null; status?: string | null;
-  views?: string[]; path?: string; zoom?: number[] | null;
+  views?: string[]; path?: string; zoom?: number[] | null; pointed?: Pointed;
 };
 
 // What a picture adds to the call that drew it: its number, its sections when the call
@@ -219,7 +222,7 @@ function take(snap: any) {
         changed = true;
       } else if ((item.kind === 'agent' || item.kind === 'reasoning') && item.text) {
         said += 1;
-        const words: Words = { kind: item.kind, text: firstParagraph(item.text), at: item.at || '', n: said };
+        const words: Words = { kind: item.kind, text: firstParagraph(item.text), at: item.at || '', n: said, pointed: item.pointed };
         patch.words = words;
         added.push({ kind: 'words', n: said, words, full: item.text });
       } else if (item.kind === 'picture' && typeof item.number === 'number') {

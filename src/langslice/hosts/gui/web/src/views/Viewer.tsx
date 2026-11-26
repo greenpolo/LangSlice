@@ -13,6 +13,8 @@ import { Review } from './Review';
 import type { Focus } from './focus';
 import { SimpleView } from './SimpleView';
 
+const NONE: string[] = [];
+
 export function Viewer() {
   const nav = useNav();
   const stage = useStageMode();
@@ -24,10 +26,19 @@ export function Viewer() {
   const [review, setReview] = useState<string | null | false>(false);
   const [pictures, setPictures] = useState<{ numbers: number[]; start: number } | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
+  // Sections the agent's words name come forward while no call is running: it is talking
+  // about them, not acting on others.
+  const named = useRun(s => s.words?.pointed?.sections ?? NONE);
+  const busy = useRun(s => s.calls.some(c => c.running));
+  const spoken = named.filter(id => rows.some(r => r.id === id));
   const agentIds = rows.length
-    ? done || !agentFocus?.length
+    ? done
       ? rows.map(r => r.id)
-      : [...new Set(agentFocus.filter(id => rows.some(r => r.id === id)))]
+      : !busy && spoken.length
+        ? spoken
+        : !agentFocus?.length
+          ? rows.map(r => r.id)
+          : [...new Set(agentFocus.filter(id => rows.some(r => r.id === id)))]
     : [];
   const pick = useCallback((id: string) => setPicked(id), []);
   const follow = useCallback(() => setPicked(null), []);
