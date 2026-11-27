@@ -103,6 +103,7 @@ def placed_layers(
     section: Section,
     edge: int,
     channels: tuple[str, ...],
+    highlight: tuple[str, ...] = (),
 ) -> PlacementLayers:
     """Draw a section's layers under its current registration.
 
@@ -118,6 +119,9 @@ def placed_layers(
         The picture's long edge in pixels.
     channels
         The raw channels drawn together (one is drawn in grey).
+    highlight
+        Atlas regions whose outlines the layers carry apart
+        (``PlacementLayers.highlighted``).
 
     Returns
     -------
@@ -126,7 +130,13 @@ def placed_layers(
         deformation, and the atlas borders' coverage: no borders, caption or
         scale bar in the pixels.
     """
-    request = LookRequest(mode="overlay", sections=(section.id,), images=channels, long_edge=edge)
+    request = LookRequest(
+        mode="overlay",
+        sections=(section.id,),
+        images=channels,
+        long_edge=edge,
+        highlight=highlight,
+    )
     placed = overlay_layers(opened.workspace, state, section, request, store=opened.store)
     return placed.canvas.layers
 

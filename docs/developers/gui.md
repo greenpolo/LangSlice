@@ -41,24 +41,28 @@ your home folder is written from `~`.
 The agent viewer has two views, chosen by **Simple | Extended** at the
 viewer's own top right corner, under the top bar (or `v`); the window remembers the choice.
 
-**Simple**, the view it starts in, shows three things: the agent speaking,
+**Simple**, the view it starts in, shows three things: the agent at work,
 the sections it is working on, and where they sit from front to back. The
-agent's latest words are in a speech bubble of a fixed height beside the
-LangSlice mark, with the model's name and its state (Working, Thinking,
-Done) under it; a summary of the agent's reasoning is its thinking, a
-message what it says. The words come in one after another. Under the bubble
-is the call running now, in plain words. Up to three sections are shown
-large with their name and position; more are dealt out as a grid of small
-pictures, and the finished run shows every section. These pictures are drawn
-quiet (`calm.py`): the main stain alone (a channel named for DAPI, Hoechst or
-Nissl, else an RGB file's blue), the tissue cut out of the scanner's tile
-floor (`core/sections/tissue.py`, the one place the tissue is found) and the
-atlas borders a soft light layer, drawn from the core's layers (the section
-and the borders' coverage), so no caption or scale bar is in them. In the light look (the
-Light | Dark button in the top bar) they are drawn on paper (`paper.py`): a
-brightfield section (ISH, Nissl, DAB) in its own colours with the slide
-balanced to the paper, a fluorescence section's main stain as ink, and the
-atlas borders as ink over either. A new focus is shown once
+agent has a margin of its own, a column left of the pictures: at its head
+the LangSlice mark, the model's name and its state (Working while a tool
+call runs, Thinking between calls, Done); under them the agent's latest
+words in a room of fixed height, a summary of its reasoning in italic, a
+message upright, coming in one word after another. Under the words, a quiet line for each
+tool call the agent has been waiting on for more than 4 s (fits, plane
+searches, making images; quick calls never show): the call in plain words,
+what it works on, a clock and a hairline bar. When the job has run the same
+tool before and it took at least 4 s, the bar fills towards its usual time
+in this run (the median) and sweeps once the call runs longer; otherwise it
+sweeps from the start. A call still open after 6 hours belongs to a run that
+stopped without closing it, and is not shown.
+Up to three sections are shown large with their name and position; more are
+dealt out as a grid of small pictures, and the finished run shows every
+section. A picture shows the section as its file holds it (no background is
+taken away or toned), clear where the slide was not scanned, with the atlas
+borders as a layer over it, drawn from the core's layers. The window takes
+the slides' own glass for its ground (the median of the middle section's
+edge) and turns light or dark to match it, as ABBA has a brightfield and a
+darkfield mode. A new focus is shown once
 its pictures are ready (at most 4 s); a section still shown glides to its
 new place, a new one fades in and a section's new drawing crossfades over
 the old one. Under the pictures is the cutting axis: a millimetre ruler
@@ -78,11 +82,13 @@ the registration look like, and how did it get here.
   (`~/.langslice/recent_jobs.jsonl`; `LANGSLICE_RECENT_JOBS` names another
   file, or `off`), newest first. The window shows the most recently changed
   job until you pick one; the address then names it (`#job=<n>`).
-- **What the agent is doing now.** The same speaker as Simple, and beside
-  it the progress meters: how many sections are placed in the atlas,
-  aligned to it and warped to fit. A step the job did not ask for has no
-  meter. A coding agent keeps its own words in its app, so for such a run
-  the speaker shows what the agent is doing in their place.
+- **What the agent is doing now.** The same margin as Simple, with the
+  whole log (below) in the place of the latest words and the line of any
+  slow call at its foot; over the pictures the progress meters: how many
+  sections are placed in the atlas, aligned to it and warped to fit. A step
+  the job did not ask for has no meter. A coding agent keeps its own words
+  in its app, so for such a run the margin shows what the agent is doing in
+  their place.
 - **Pictures.** The sections the agent's latest call worked on (a change,
   `look` or `zoom`; before the first, every section), four to a page (the
   arrows). Each shows its section under its current registration with the
@@ -90,7 +96,11 @@ the registration look like, and how did it get here.
   whenever that section's registration changes, with its name, position,
   how it was aligned, whether it is warped and whether it is damaged.
   **Follow the agent** (on to start with; `f`) keeps the pictures on the
-  agent's latest call. Clicking a section on the cutting axis, a picture or
+  agent's latest call. Looks and zooms the agent asked for in one turn (the
+  door runs them one after another, each starting within a second of the
+  last one's end) are shown together: their sections stay on the stage side
+  by side, and each zoom stays pushed in until the last of them has pushed
+  in too, then they let go together. Clicking a section on the cutting axis, a picture or
   a name in the journal shows it and stops following.
 - **3D.** **2D | 3D** at the top right (in both views, remembered) swaps
   the cutting axis for the atlas brain in three dimensions: the sections in
@@ -129,7 +139,7 @@ the registration look like, and how did it get here.
   reads them with `langslice job FOLDER review_comments`, which saves a
   picture of each commented section with its boxes, and briefs a
   registration agent on what to fix. Review works in both views.
-- **The run so far.** The journal, on the right: a timeline of the agent's
+- **The run so far.** The journal, in the margin: a timeline of the agent's
   own words, its messages and reasoning summaries, each at its minute of the
   run. The job statement asks every agent to write, before each step, one
   plain sentence saying what it is about to do and why. Between them, one
@@ -150,8 +160,7 @@ that call on. It reads those files and writes nothing;
 runs show their tool calls only.
 
 The window is neutral around the pictures, with one accent colour for what
-is happening now; **Light | Dark** in the top bar switches its look (dark to
-start with, remembered). The agent's own words are set in a serif face, the
+is happening now; it is light or dark as the slides' glass is (above). The agent's own words are set in a serif face, the
 window's own in a sans-serif face.
 
 The viewer changes nothing of the registration: it writes only the review

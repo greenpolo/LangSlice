@@ -1,70 +1,47 @@
-// Who is speaking, and what it says. The LangSlice mark, the model's name and its state
-// under it (Working, Thinking, Done); beside them a
-// speech bubble of a fixed height with the agent's latest words, said one by one; under
-// the bubble, the call it is making in plain words.
+// The agent's margin: a column beside the pictures. At its head the model and its state
+// (Working, Thinking, Done); under it the agent's latest words, said one by one in the
+// serif face, in italic while it is only thinking; in the Extended view the whole log
+// takes the words' place. Under them, any slow call the agent is waiting on and for how
+// long (Doing), so a still screen is never a mystery.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { DUR, EASE_OUT } from '../ui/motion';
 import type { Call, Words } from '../data/run';
+import { Doing } from './Doing';
 
 const STATE_WORDS: Record<string, string> = { Running: 'Working', Submitted: 'Done', Waiting: 'Waiting', Idle: 'Idle', Failed: 'Stopped' };
 
-export function Speaker({ model, status, words, call, focusCount }: {
-  model: string; status: string; words: Words | null; call: Call | null; focusCount: number;
+export function Speaker({ model, status, words, calls, children }: {
+  model: string; status: string; words: Words | null; calls: Call[]; children?: ReactNode;
 }) {
   const thinking = words?.kind === 'reasoning';
-  const working = Boolean(call?.running);
+  const working = calls.some(c => c.running);
   const speaking = useSpeaking(words);
   const done = status === 'Submitted';
-  const state = status === 'Running' && thinking ? 'Thinking' : STATE_WORDS[status] ?? status;
+  const state = status === 'Running' && !working ? 'Thinking' : STATE_WORDS[status] ?? status;
   return (
-    <header className={['speaker', working && 'working', thinking && 'thinking', speaking && 'speaking', done && 'done'].filter(Boolean).join(' ')}>
+    <aside className={['speaker', children ? 'with-log' : '', working && 'working', thinking && 'thinking', speaking && 'speaking', done && 'done'].filter(Boolean).join(' ')}>
       <div className="who">
         <img className="logo-mark" src="logomark.svg" alt="" />
         <p className="who-name">{model || 'The agent'}</p>
         <State word={state} status={status} />
       </div>
-      <div className="speaker-said">
-        {/* The old line and the new share one cell: the old fades over as the new is said. */}
-        <div className="bubble">
+      {children ?? (
+        <div className="voice">
           <AnimatePresence initial={false}>
             {words ? (
-              <Said
-                key={words.n}
-                className="words"
-                title={words.text}
-              >
-                {spoken(words.text)}
-              </Said>
+              <Said key={words.n} className="words" title={words.text}>{spoken(words.text)}</Said>
             ) : (
               <motion.p key="waiting" className="words waiting" exit={{ opacity: 0, transition: { duration: DUR.quick } }}>
-                {done ? 'The run is finished.' : call ? 'The agent is at work; its words will show here.' : 'Waiting for the agent to begin…'}
+                {done ? 'The run is finished.' : calls.length ? 'The agent is at work; its words will show here.' : 'Waiting for the agent to begin…'}
               </motion.p>
             )}
           </AnimatePresence>
         </div>
-        <div className="doing-cell">
-        <AnimatePresence initial={false}>
-          <motion.p
-            key={(call?.title ?? 'none') + (working ? ':now' : ':last')}
-            className={'doing' + (working ? ' running' : '')}
-            initial={{ opacity: 0, y: 3 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, transition: { duration: DUR.quick, ease: EASE_OUT } }}
-            transition={{ duration: DUR.quick, ease: EASE_OUT }}
-          >
-            {call && (
-              <>
-                <span className="doing-lead">{working ? 'Now:' : 'Last step:'}</span>{' '}
-                <span className="doing-what">{call.title}</span>
-                <span className="doing-on">{onWords(call.sections, focusCount)}</span>
-              </>
-            )}
-          </motion.p>
-        </AnimatePresence>
-        </div>
-      </div>
-    </header>
+      )}
+      <Doing calls={calls} />
+    </aside>
   );
 }
 
@@ -86,8 +63,8 @@ function State({ word, status }: { word: string; status: string }) {
   );
 }
 
-// The agent's words in the bubble, whole: a long message is set a little smaller until it
-// fits the bubble's three lines (never below MIN_VOICE px), so nothing is cut off.
+// The agent's words, whole: a long message is set a little smaller until it fits the
+// margin's room for words (never below MIN_VOICE px), so nothing is cut off.
 const MIN_VOICE = 15;
 function Said({ className, title, children }: { className: string; title: string; children: React.ReactNode }) {
   const ref = useRef<HTMLParagraphElement>(null);
@@ -139,9 +116,3 @@ function useSpeaking(words: Words | null) {
   }, [words?.n]);
   return on;
 }
-
-const onWords = (ids: string[], shown: number) => {
-  const n = ids.length || shown;
-  return !n ? '' : n === 1 ? ', on one section' : `, on ${n} sections`;
-};
-

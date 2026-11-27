@@ -1,8 +1,9 @@
-// The Extended view, for a person who wants the whole run: the speaker band with how far
-// the registration is (placed, aligned, warped); the sections in focus, four to a page,
-// each with its name, position and how it stands, and the front-to-back line under them
-// (2D), or the same sections in a column beside the atlas brain with every section where
-// it is placed (3D, which takes the line's place); and on the right the journal.
+// The Extended view, for a person who wants the whole run: on the left the agent's margin,
+// where the whole log takes the place of its latest words, with what is running now at
+// its foot; on the right how far the registration is (placed, aligned, warped), the
+// sections in focus, four to a page, each with its name, position and how it stands, and
+// the front-to-back line under them (2D), or the same sections in a column beside the
+// atlas brain with every section where it is placed (3D, which takes the line's place).
 import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
@@ -29,16 +30,13 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
   const onPage = focus.ids.slice(Math.min(page, pages - 1) * PAGE, Math.min(page, pages - 1) * PAGE + PAGE);
   const shown = useDirector(run.job, onPage, run.rows, box);
   const done = run.status === 'Submitted';
-  const running = [...run.calls].reverse().find(c => c.running);
-  const call = running ?? run.calls.at(-1) ?? null;
   return (
     <main className={'extended' + (space ? ' space' : '')}>
-      <div className="extended-head">
-        <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />
+      <Speaker model={run.model} status={run.status} words={run.words} calls={run.calls}>
+        <Journal onPictures={onPictures} onSection={focus.pick} />
+      </Speaker>
+      <section className="extended-main">
         <Progress rows={run.rows} tasks={run.header.tasks} done={done} />
-      </div>
-      <div className="extended-body">
-        <section className="extended-main">
           <div className="extended-tools">
             <span className="extended-count">
               {!focus.following ? 'You are looking at ' : done ? 'Registered: ' : 'The agent is working on '}
@@ -65,9 +63,7 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
             <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : focus.ids}
               shown={ring ? [ring] : shown} done={done} onPick={focus.pick} atlas />
           )}
-        </section>
-        <Journal onPictures={onPictures} onSection={focus.pick} />
-      </div>
+      </section>
     </main>
   );
 }

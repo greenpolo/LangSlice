@@ -6,7 +6,7 @@
 // for again.
 
 const MAX = 3;
-const KEPT = 96;
+const KEPT = 240;
 const TRIES = 12;
 const AGAIN_MS = 700;
 
@@ -110,9 +110,12 @@ function finish(item: Waiting, img: HTMLImageElement | null) {
   for (const done of item.done) done(img);
 }
 
+// The section a whole overlay or its tissue is of; null for a thumbnail or another part,
+// which never stands in for a section's picture.
 function sectionOf(url: string): string | null {
   const m = url.match(/render\/overlay\/([^?]+)/);
-  return m ? decodeURIComponent(m[1]) : null;
+  if (!m || /[?&]part=(borders|marks)/.test(url)) return null;
+  return decodeURIComponent(m[1]);
 }
 
 // How the window's look draws a section: quiet on the dark stage, or on paper in the
@@ -125,4 +128,21 @@ export function pictureStyle(): 'calm' | 'paper' {
 // The address of a section's picture under its current registration, in the window's look.
 export function overlayUrl(job: number, id: string, edge: number, key: string | null | undefined) {
   return `jobs/${job}/render/overlay/${encodeURIComponent(id)}?edge=${edge}&key=${encodeURIComponent(String(key ?? ''))}&style=${pictureStyle()}`;
+}
+
+// A section's overlay as the three parts the stage lays over one another (hosts/gui/
+// pictures/parts.py): the tissue, the atlas borders and what the job marked on it, so the
+// stage can move one without the others. `image` draws the tissue from a made image.
+export type Part = 'tissue' | 'borders' | 'marks';
+export type PartUrls = Record<Part, string>;
+export function partUrls(job: number, id: string, edge: number, key: string | null | undefined, image = ''): PartUrls {
+  const base = overlayUrl(job, id, edge, key);
+  const made = image ? `&image=${encodeURIComponent(image)}` : '';
+  return { tissue: `${base}&part=tissue${made}`, borders: `${base}&part=borders${made}`, marks: `${base}&part=marks${made}` };
+}
+
+// The outlines of the atlas regions the agent's words name, over a section's picture (the
+// same grid as its parts).
+export function regionUrl(job: number, id: string, edge: number, key: string | null | undefined, regions: string[]): string {
+  return `${overlayUrl(job, id, edge, key)}&part=regions&regions=${encodeURIComponent(regions.join(','))}`;
 }

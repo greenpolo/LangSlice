@@ -41,6 +41,7 @@ from functools import partial
 from pathlib import Path
 from typing import TypeVar
 
+import numpy as np
 from PIL import Image
 
 from langslice.core.fits.deformation import RecordStore
@@ -65,6 +66,7 @@ from langslice.hosts.gui.pictures.paper import (
     draw_paper_overlay,
     draw_paper_thumb,
 )
+from langslice.hosts.gui.pictures.parts import Part, Parts, draw_parts, draw_regions, slide_ground
 from langslice.hosts.gui.pictures.space import (
     AtlasShell,
     ShellError,
@@ -96,6 +98,8 @@ KEPT_SOURCES = 8
 KEPT_PLANES = 16
 KEPT_RENDERS = 64
 KEPT_JOBS = 3
+KEPT_PARTS = 24
+GROUND_EDGE_PX = 256
 NO_STATE = "This job has no state this LangSlice reads yet, so there is nothing to draw."
 ATLAS_FAILED = "The atlas {atlas} could not be loaded: {reason}"
 DRAWING_FAILED = "The picture could not be drawn: {reason}"
@@ -160,6 +164,7 @@ class Strip:
     atlas: tuple[AtlasThumb, ...]
     angles: str
     sections: tuple[StripSection, ...]
+    ground: tuple[int, int, int] = (0, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -358,6 +363,14 @@ class JobRenderer:
         self._pictures: OrderedDict[_Key, bytes] = OrderedDict()
         self._flying: dict[_Key, Future[bytes]] = {}
         self._shell: tuple[_Opened, AtlasShell] | None = None
+        self._parts: OrderedDict[_Key, Parts] = OrderedDict()
+        self._slide: tuple[_Opened, tuple[int, int, int]] | None = None
+
+    def opened_atlas(self) -> object | None:
+        """The job's atlas when the job has been read for drawing already;
+        None before, so a caller that only wants it never waits for it."""
+        opened = self._opened
+        return None if opened is None else opened.workspace.atlas
 
     def strip(self) -> Strip:
         """Describe the positioning strip of the job as it stands.
@@ -392,7 +405,26 @@ class JobRenderer:
         )
         angles = state.view_angles
         words = view_angles_label(angles, median=state.drawn_at_median(angles))
-        return Strip(opened.axis, opened.step_mm, thumbs, words.strip(), sections)
+        ground = self._ground(opened, state)
+        return Strip(opened.axis, opened.step_mm, thumbs, words.strip(), sections, ground)
+
+    def _ground(self, opened: _Opened, state: Stack) -> tuple[int, int, int]:
+        """The job's slide ground (:func:`.parts.slide_ground`), read once from
+        its middle section's raw thumbnail; black when it cannot be read."""
+        held = self._slide
+        if held is not None and held[0] is opened:
+            return held[1]
+        sections = list(state.in_order())
+        ground = (0, 0, 0)
+        if sections:
+            try:
+                with self._drawing:
+                    thumb = _thumb_picture(opened, sections[len(sections) // 2], GROUND_EDGE_PX)
+                ground = slide_ground(np.asarray(thumb.convert("RGB")))
+            except (OSError, ValueError, Refused):
+                logger.warning("No slide ground for %s", self.folder, exc_info=True)
+        self._slide = (opened, ground)
+        return ground
 
     def overlay(self, section_id: str, edge: int, *, style: Style = Style.RAW) -> bytes:
         """Draw a section under its current registration.
@@ -437,6 +469,88 @@ class JobRenderer:
         draw = partial(drawer, opened, state, section, edge)
         still = self._still(render_key, section_id, key[3])
         return self._picture(key, opened, draw, current=still)
+
+    def part(
+        self,
+        section_id: str,
+        edge: int,
+        *,
+        style: Style = Style.CALM,
+        part: Part = Part.TISSUE,
+        image: str = "",
+        regions: tuple[str, ...] = (),
+    ) -> bytes:
+        """Draw one part of a section's overlay in the window's look (:mod:`.parts`).
+
+        Parameters
+        ----------
+        section_id
+            The section's filename.
+        edge
+            The picture's long edge in pixels (:func:`edge_px`).
+        style
+            ``paper`` for the light look, else the dark one.
+        part
+            ``tissue``, ``borders``, ``marks`` or ``regions``, each a WebP
+            with alpha (:data:`CUTOUT_TYPE`).
+        image
+            A made image to draw the tissue from (:func:`.parts.draw_parts`);
+            blank for the raw channels.
+        regions
+            For ``regions``: the atlas regions outlined
+            (:func:`.parts.draw_regions`).
+
+        Returns
+        -------
+        bytes
+            The part; the three parts of one registration are drawn together
+            and kept, so asking for the others draws nothing again.
+
+        Raises
+        ------
+        UnknownSection
+            When the job holds no section *section_id*.
+        RenderError
+            When the picture cannot be drawn, with the reason.
+        RenderBusy
+            When it was not drawn within :data:`WAIT_S`.
+        """
+        state = self._state()
+        section = _section(state, section_id)
+        opened = self._open()
+        look = Style.PAPER if style == Style.PAPER else Style.CALM
+        digest = render_key(state, section_id)
+        if part == Part.REGIONS:
+            key = (f"regions-{','.join(regions)}", section_id, edge, digest)
+            outline = partial(draw_regions, opened, state, section, edge, regions)
+            still = self._still(render_key, section_id, digest)
+            return self._picture(key, opened, outline, current=still, encode=encode_cutout)
+        whole = (f"{look}-parts-{image}", section_id, edge, digest)
+        key = (f"{look}-{part}-{image}", section_id, edge, digest)
+        draw = partial(self._part_of, whole, part, opened, state, section, edge, look, image)
+        still = self._still(render_key, section_id, digest)
+        return self._picture(key, opened, draw, current=still, encode=encode_cutout)
+
+    def _part_of(
+        self,
+        whole: _Key,
+        part: Part,
+        opened: _Opened,
+        state: Stack,
+        section: Section,
+        edge: int,
+        look: Style,
+        image: str,
+    ) -> Image.Image:
+        """One part of the parts kept under *whole*, drawing them first when none are."""
+        parts = self._parts.get(whole)
+        if parts is None:
+            parts = draw_parts(opened, state, section, edge, look, image)
+            self._parts[whole] = parts
+            while len(self._parts) > KEPT_PARTS:
+                self._parts.popitem(last=False)
+        self._parts.move_to_end(whole)
+        return parts.part(part)
 
     def thumb(self, section_id: str, edge: int, *, style: Style = Style.RAW) -> bytes:
         """Draw a section's thumbnail: its raw channels, oriented.

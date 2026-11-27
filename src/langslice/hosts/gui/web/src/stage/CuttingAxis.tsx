@@ -12,13 +12,14 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT } from '../ui/motion';
-import { cached, newestOf, picture, pictureStyle } from '../data/pictures';
-import { short, type Axis, type Row, type Strip } from '../data/run';
+import { useActs, useStageAct } from '../data/acts';
+import { cached, newestOf, picture } from '../data/pictures';
+import { short, useRun, type Axis, type Row, type Strip } from '../data/run';
 import { justSwitched, STAGE_IN, STAGE_SHOWN } from './space/mode';
 
 const PAD = 72;               // side margins, px: the ends' names sit in them
 const ATLAS_H = 40;           // the atlas row's pictures (Extended)
-const TOP = 16;               // room for the millimetre labels above the ruler
+const TOP = 32;               // room for the angle readout, then the millimetre labels above the ruler
 const RULER_H = 22;           // the ruler band
 const FAN = 20;               // the lines from the ruler down to the row
 const ASPECT = 1.4;           // a coronal section's width to height
@@ -103,6 +104,20 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
   };
 
   const [tip, setTip] = useState<{ id: string; x: number } | null>(null);
+  // The acts the ruler shows: a search for the stack's plane sweeps it while it runs; a
+  // look at the atlas or a region lookup marks the places it asked for (the line under the
+  // bubble names the regions).
+  const acts = useActs();
+  const stageAct = useStageAct();
+  const searching = [...acts.values()].find(a => a.family === 'place' && a.running) ?? (stageAct?.family === 'place' && stageAct.running ? stageAct : null);
+  const asked = stageAct && (stageAct.family === 'look' || stageAct.family === 'lookup') && Array.isArray(stageAct.args.positions_mm)
+    ? (stageAct.args.positions_mm as unknown[]).map(Number).filter(Number.isFinite) : [];
+  // What the agent's words point at on the axis: the places they name, the cutting angles
+  // they give, the sections they name.
+  const said = useRun(s => s.words?.pointed);
+  const saidMm = view ? (said?.positions_mm ?? []).filter(mm => mm >= view.lo && mm <= view.hi) : [];
+  const saidIds = new Set(said?.sections ?? []);
+  const angles = said && (said.pitch !== null || said.yaw !== null) ? said : null;
   const ticks = view ? tickMarks(view, inner) : [];
   const glide = { duration: DUR.glide, ease: EASE_IN_OUT };
   return (
@@ -131,6 +146,40 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
         );
       })}
       <div className="cut-ruler" style={{ top: axisY, left: PAD, right: PAD }} />
+      {searching && <i key={searching.key} className="cut-sweep" style={{ top: axisY - 9, left: PAD, right: PAD }} aria-hidden="true" />}
+      <AnimatePresence>
+        {view && asked.filter(mm => mm >= view.lo && mm <= view.hi).map((mm, i) => (
+          <motion.i key={stageAct!.key + ':' + mm} className="cut-asked" aria-hidden="true"
+            style={{ top: axisY, left: toX(mm) }}
+            initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+            transition={{ duration: DUR.quick, ease: EASE_OUT, delay: Math.min(0.4, i * 0.03) }} />
+        ))}
+      </AnimatePresence>
+      <AnimatePresence>
+        {saidMm.map(mm => (
+          <motion.i key={'said:' + mm} className="cut-said" aria-hidden="true" title={`${fmt(mm)} mm`}
+            style={{ top: axisY, left: toX(mm) }}
+            initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+            transition={{ duration: DUR.quick, ease: EASE_OUT }} />
+        ))}
+      </AnimatePresence>
+      <AnimatePresence>
+        {angles ? (
+          <motion.span key={`${angles.pitch}:${angles.yaw}`} className="cut-angles" style={{ top: (atlas ? ATLAS_H : 0) + 1, right: PAD }}
+            initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+            transition={{ duration: DUR.quick, ease: EASE_OUT }}>
+            {angles.pitch !== null && <>pitch <b>{angles.pitch.toFixed(1)}°</b></>}
+            {angles.pitch !== null && angles.yaw !== null && ' · '}
+            {angles.yaw !== null && <>yaw <b>{angles.yaw.toFixed(1)}°</b></>}
+          </motion.span>
+        ) : said?.angled && (
+          <motion.span key="stack-angles" className="cut-angles" style={{ top: (atlas ? ATLAS_H : 0) + 1, right: PAD }}
+            initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+            transition={{ duration: DUR.quick, ease: EASE_OUT }}>
+            cutting angles now: <b>{strip?.angles || 'none set'}</b>
+          </motion.span>
+        )}
+      </AnimatePresence>
       {ticks.map(t => (
         <span key={t.mm} className={'cut-tick' + (t.label ? ' major' : '')} style={{ transform: `translateX(${toX(t.mm)}px)`, top: axisY }}>
           {t.label && <span className="cut-tick-label">{fmt(t.mm)}</span>}
@@ -170,7 +219,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
             <motion.button
               type="button"
               key={p.id}
-              className={'cut-thumb' + (isTarget ? ' target' : '') + (isShown ? ' shown' : '')}
+              className={'cut-thumb' + (isTarget ? ' target' : '') + (isShown ? ' shown' : '') + (saidIds.has(p.id) ? ' named' : '')}
               style={{ zIndex: isShown ? 3 : isTarget ? 2 : 1 }}
               initial={{ opacity: 0, x: p.x - layout.w / 2, y: y + 6, width: layout.w, height: layout.h }}
               animate={{ opacity: 1, x: p.x - layout.w / 2, y, width: layout.w, height: layout.h }}
@@ -181,7 +230,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
               onPointerLeave={() => setTip(t => (t?.id === p.id ? null : t))}
               aria-label={short(p.id)}
             >
-              <Thumb url={`jobs/${job}/render/thumb/${encodeURIComponent(p.id)}?edge=128&key=${encodeURIComponent(thumbKey.get(p.id) ?? '')}&style=${pictureStyle()}`} rank={600} id={p.id} />
+              <Thumb url={`jobs/${job}/render/thumb/${encodeURIComponent(p.id)}?edge=128&key=${encodeURIComponent(thumbKey.get(p.id) ?? '')}&style=raw`} rank={600} id={p.id} />
             </motion.button>
           );
         })}

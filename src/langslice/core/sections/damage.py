@@ -198,6 +198,47 @@ def exclusions(
     return restrict, tuple(excluded)
 
 
+def marked_area(ws: Workspace, state: Stack, record: Section, panel: PanelFrame) -> np.ndarray:
+    """Find where a section's marked regions fall on one drawn panel.
+
+    Parameters
+    ----------
+    ws
+        The job's workspace.
+    state
+        The stack the section belongs to.
+    record
+        The section; its ``damaged_regions`` are the marks.
+    panel
+        The frame of a placement picture of the section (its layers' or a
+        drawn panel's).
+
+    Returns
+    -------
+    numpy.ndarray
+        Bool, the panel's pixels (rows by columns of its ``size``), True
+        inside the marked regions; all False without marks.
+    """
+    width, height = panel.size
+    entries = list(record.damaged_regions)
+    if not entries:
+        return np.zeros((height, width), dtype=bool)
+    resolved = resolve_entries(ws.atlas, entries)
+    regions = tuple(
+        (name, ids) for name, (_region, _side, ids) in zip(entries, resolved, strict=True)
+    )
+    native = _native_marks(
+        ws,
+        panel,
+        regions,
+        float(record.position_mm),
+        state.plane,
+        record.pitch_deg,
+        record.yaw_deg,
+    )
+    return _picture_mask(panel, native)
+
+
 def _picture_mask(panel: PanelFrame, native: np.ndarray) -> np.ndarray:
     """*native* (a mask on the atlas plane grid) on the panel's picture
     pixels, nearest neighbour, through the mapping its borders are drawn with

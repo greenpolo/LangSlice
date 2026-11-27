@@ -11,9 +11,12 @@
 import { AnimatePresence, motion, useIsPresent } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT, LAYOUT_SPRING } from '../ui/motion';
-import { overlayUrl, picture, snapEdge } from '../data/pictures';
-import { short, type Row } from '../data/run';
+import { useActs } from '../data/acts';
+import { partUrls, picture, regionUrl, snapEdge } from '../data/pictures';
+import { short, useRun, type Row } from '../data/run';
+import { Act, actClass } from './Act';
 import { Picture } from './Picture';
+import { Regions } from './Regions';
 
 const DWELL_MS = 2400;
 const DECK_DWELL_MS = 4000;
@@ -25,6 +28,8 @@ const NAME_H = 26;
 const ASPECT = 1.35;
 // From this many tiles an entrance is opacity and scale only (many blur filters cost).
 const MANY = 12;
+// The words' regions are outlined on this many tiles at most: on a grid they are too small.
+const REGION_TILES = 6;
 
 export type Box = { width: number; height: number };
 type Place = { x: number; y: number };
@@ -64,20 +69,25 @@ export function Stage({ job, shown, rows, box, onPick, detailed = false }: {
   job: number; shown: string[]; rows: Row[]; box: Box | null; onPick?: (id: string) => void; detailed?: boolean;
 }) {
   const byId = new Map(rows.map(r => [r.id, r]));
+  const acts = useActs();
+  const pointed = useRun(s => s.words?.pointed);
   if (!box) return null;
   const g = geometry(shown.length, box);
   const many = shown.length > MANY;
+  const named = new Set(pointed?.sections ?? []);
+  const regions = shown.length <= REGION_TILES ? pointed?.regions ?? [] : [];
   return (
     <div className="stage-grid">
       <AnimatePresence initial={false}>
         {shown.map((id, i) => {
           const row = byId.get(id);
           const at = g.places[i];
+          const act = acts.get(id);
           return (
             <motion.figure
               key={id}
               layout
-              className={'tile' + (onPick ? ' pickable' : '')}
+              className={'tile' + (onPick ? ' pickable' : '') + actClass(act) + (named.has(id) ? ' pointed' : '') + (regions.length ? ' has-regions' : '')}
               style={{ left: at.x, top: at.y, width: g.width }}
               onClick={onPick && shown.length > 1 ? () => onPick(id) : undefined}
               initial={many ? { opacity: 0, scale: 0.96 } : { opacity: 0, scale: 0.97, filter: 'blur(2px)' }}
@@ -93,7 +103,15 @@ export function Stage({ job, shown, rows, box, onPick, detailed = false }: {
               }}
             >
               <div className="tile-picture" style={{ height: g.height }}>
-                <Picture id={id} url={overlayUrl(job, id, g.edge, row?.render_key)} rank={i} label={'The section ' + short(id)} />
+                <Picture id={id} urls={partUrls(job, id, g.edge, row?.render_key)} rank={i} label={'The section ' + short(id)}
+                  reveal={act?.family === 'damage'} />
+                <AnimatePresence>
+                  {regions.length > 0 && (
+                    <Regions key={regions.join(',')} url={regionUrl(job, id, g.edge, row?.render_key, regions)} />
+                  )}
+                </AnimatePresence>
+                <Act act={act} job={job} id={id} edge={g.edge} renderKey={row?.render_key} tiles={shown.length}
+                  pointed={named.has(id)} />
               </div>
               {g.named && (
                 <Caption>
@@ -162,7 +180,7 @@ export function useDirector(job: number | null, wanted: string[], rows: Row[], b
       const edge = geometry(ids.length, b).edge;
       const urls = () => {
         const byId = new Map(latest.current.rows.map(r => [r.id, r]));
-        return ids.map(id => overlayUrl(job, id, edge, byId.get(id)?.render_key));
+        return ids.flatMap(id => Object.values(partUrls(job, id, edge, byId.get(id)?.render_key)));
       };
       const apply = () => {
         if (mine !== token.current) return;
