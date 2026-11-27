@@ -72,7 +72,7 @@ export function Act({ act, job, id, edge, renderKey, tiles, pointed = false }: {
           </AnimatePresence>
           <AnimatePresence>
             {act?.family === 'look' && !zoom && few && <Viewfinder key={act.key} />}
-            {zoom && <Zoom key={act!.key} box={zoom} frame={rect} hold={act!.hold} sharp={partUrls(job, id, SHARP_EDGE, renderKey)} />}
+            {zoom && <Zoom key={`${act!.key}:${Math.round(rect.w)}x${Math.round(rect.h)}`} held={`${act!.key}:${id}`} box={zoom} frame={rect} hold={act!.hold} sharp={partUrls(job, id, SHARP_EDGE, renderKey)} />}
           </AnimatePresence>
           <AnimatePresence>
             {act && act.family !== 'books' && few && <Chip key={act.key} act={act} />}
@@ -178,7 +178,11 @@ const PUSHED_UNTIL = 0.78;
 // sharp, not the small picture scaled up.
 const SHARP_EDGE = 2048;
 const ZOOM_EASE = 'cubic-bezier(0.77, 0, 0.175, 1)';
-function Zoom({ box, frame, sharp, hold }: { box: number[]; frame: Rect; sharp: PartUrls; hold: boolean }) {
+// The zooms that reached their pushed-in hold, by act and section: when the stage lays
+// its tiles out again while a batch is held (another section joins it), the zoom is drawn
+// again at the new size, already pushed in, not played from the start.
+const PUSHED = new Set<string>();
+function Zoom({ box, frame, sharp, hold, held }: { box: number[]; frame: Rect; sharp: PartUrls; hold: boolean; held: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const holding = useRef(hold);
   holding.current = hold;
@@ -241,9 +245,13 @@ function Zoom({ box, frame, sharp, hold }: { box: number[]; frame: Rect; sharp: 
       timeline.current.push(shown);
     });
     timeline.current = [closing, ...(push ? [push] : [])];
-    const pause = window.setTimeout(() => {
-      if (holding.current) for (const a of timeline.current) { a.currentTime = ZOOM_MS * HOLD_AT; a.pause(); }
-    }, ZOOM_MS * HOLD_AT);
+    const holdNow = () => {
+      if (!holding.current) return;
+      PUSHED.add(held);
+      for (const a of timeline.current) { a.currentTime = ZOOM_MS * HOLD_AT; a.pause(); }
+    };
+    if (PUSHED.has(held) && holding.current) holdNow();
+    const pause = window.setTimeout(holdNow, PUSHED.has(held) ? 0 : ZOOM_MS * HOLD_AT);
     return () => { alive = false; clearTimeout(pause); closing.cancel(); push?.cancel(); shown?.cancel(); };
   }, []);
   useEffect(() => {
