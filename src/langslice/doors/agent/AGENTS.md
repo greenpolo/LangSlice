@@ -72,7 +72,8 @@ new images are most of a run's cost. Therefore:
 - A tool's images ride inside its `function_call_output`; a separate user
   message would open a new turn.
 - Several tool calls per model turn: one call's history cost instead of one per
-  tool; the toolbox serializes them. One `prompt_cache_key` per session.
+  tool; they run together, the job held as each needs it (the tool pipeline's
+  `_hold_job`). One `prompt_cache_key` per session.
 - Rows are compact (`core.stack.status.compact_rows`): null and empty fields are
   absent from every payload.
 - Prefix caching is not content addressing: a byte-identical picture appended
