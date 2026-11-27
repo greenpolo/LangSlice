@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import sys
-import threading
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
@@ -121,7 +120,6 @@ class Session:
     trace: HostTrace | None
     notes: str = ""
     pages: list[list[ContentBlock]] = field(default_factory=list)
-    lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     image_model_off: bool = False
 
     @property
@@ -263,8 +261,10 @@ def host_tool(session: Session, tool: Callable[..., object]) -> Callable[..., An
     """Wrap one toolbox tool for MCP: same name, docstring and arguments.
 
     ``tool_context`` is ADK's and is dropped from the schema; the tools accept
-    ``None``. Tools run in a worker thread (the toolbox serializes them) so a
-    long fit does not stall the protocol.
+    ``None``. Each call runs in a worker thread of its own, so a long fit does
+    not stall the protocol and the calls the agent makes together run
+    together, the job held as each needs it (the tool pipeline's
+    ``_hold_job``).
     """
     signature = inspect.signature(tool, eval_str=True)
     parameters = [p for name, p in signature.parameters.items() if name != "tool_context"]
@@ -276,11 +276,7 @@ def host_tool(session: Session, tool: Callable[..., object]) -> Callable[..., An
                 finish(session)
             return result
 
-        def serialized() -> object:
-            with session.lock:
-                return invoke()
-
-        result = await to_thread.run_sync(serialized)
+        result = await to_thread.run_sync(invoke)
         blocks = result_blocks(result, job=session.job)
         if session.trace is not None:
             session.trace.write(

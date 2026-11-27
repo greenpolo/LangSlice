@@ -14,12 +14,13 @@ order.
     the exception's class name and text its message), where the box answers
     crashes (MCP's);
     elsewhere it is raised to the door.
-``_serialize``
-    One call at a time, the job held as the tool needs it: a write runs
-    whole under the job folder's write lock, the state first brought up to
-    date; a read sees the state as it stands, never waiting for another
-    process's writer; a long tool only syncs, computes outside the lock and
-    takes the lock itself to apply, re-checking its sections.
+``_hold_job``
+    The job held as the tool needs it, so calls the agent makes together run
+    together: a write runs whole under the job folder's write lock, the
+    state first brought up to date; reads run side by side and see the
+    state as it stands, never waiting for another process's writer; a long
+    tool (a fit) only syncs, computes outside the lock beside the other
+    calls and takes the lock itself to apply, re-checking its sections.
 ``_log_events``
     ``tool_start`` to the observers before; ``tool_end`` after, with the
     pictures the call saved and whether it failed. A crash is sent as the
@@ -63,7 +64,6 @@ import contextlib
 import functools
 import inspect
 import logging
-import threading
 import uuid
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
@@ -107,7 +107,7 @@ class ToolBox:
     The job holds the state, undo and redo, the checkpoint, the submit
     gates, the border traces and the background work; the toolbox
     holds the tools, the submission, the opening-read gate and what every
-    call's steps share (the lock, the observers, the verbs).
+    call's steps share (the observers, the verbs).
     """
 
     job: Job
@@ -122,7 +122,6 @@ class ToolBox:
     door: str = "agent"
     observers: tuple[LiveCallback, ...] = ()
     answers_crashes: bool = False
-    lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
     def names(self) -> list[str]:
@@ -245,12 +244,13 @@ def _answer_crashes(call: ToolCall) -> Generator[None]:
 
 
 @contextlib.contextmanager
-def _serialize(call: ToolCall) -> Generator[None]:
-    """Run one call at a time, the job held as the tool needs it."""
+def _hold_job(call: ToolCall) -> Generator[None]:
+    """Hold the job as the tool needs it, beside the other calls."""
     job = call.box.job
-    with call.box.lock, job.acting(call.name):
+    with job.acting(call.name):
         if call.verb.long:
-            job.sync()
+            with job.reading():
+                pass
             yield
         elif call.verb.kind == "read":
             with job.reading():
@@ -400,7 +400,7 @@ class Step:
 
 TOOL_STEPS: tuple[Step, ...] = (
     Step(_answer_crashes),
-    Step(_serialize),
+    Step(_hold_job),
     Step(_log_events),
     Step(_announce_work),
     Step(_save_pictures),

@@ -336,7 +336,11 @@ gives, else `ch1`, `ch2`, and so on), never edited. **Made** images are made
 here, by a script, or when the job opens, and saved as
 `sections/<stem>/images/<name>.png`. The sections of a call are made at once;
 `n4` runs in worker processes of eight threads each, as many as the
-processor's cores allow (`LANGSLICE_CPU_CORES` sets the core count).
+processor's cores allow (`LANGSLICE_CPU_CORES` sets the core count). The
+images are made beside the agent's other calls and saved together, one undo
+step; a section whose source images (the made images `weights` names) were
+remade meanwhile is left out and listed under `stale`, and the call is
+refused with `STALE_INPUT` when no section is left.
 
 `preprocessed` is the made image LangSlice writes for every section when the
 job is created, and the image every fit, the image model and `look` read by

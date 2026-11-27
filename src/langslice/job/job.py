@@ -519,17 +519,22 @@ class Job:
     @contextlib.contextmanager
     def reading(self) -> Iterator[None]:
         """For a read: the state brought up to date without waiting for
-        another process's writer. This process's other threads are kept out
-        (their writes are short); when another process holds the job folder's
-        lock (a long fit applying, a plugin tool that holds it while it
-        computes), the state is read as that process last saved it, and the
-        next locked :meth:`sync` puts the job's own back first."""
-        with self.lock.threads():
-            with self.lock.held_if_free() as free:
-                if free:
-                    self.sync()
-            if not free:
-                self._peek()
+        another writer, then read beside this process's other reads (looks
+        and zooms of one turn run side by side); only a thread that writes
+        is kept out. When no other thread holds the job, it is synced first:
+        when another process holds the job folder's lock (a long fit
+        applying, a plugin tool that holds it while it computes) the state is
+        read as that process last saved it, and the next locked :meth:`sync`
+        puts the job's own back first. When another thread of this process
+        reads or writes, the state held in memory is already its latest."""
+        with self.lock.alone_if_free() as alone:
+            if alone:
+                with self.lock.held_if_free() as free:
+                    if free:
+                        self.sync()
+                if not free:
+                    self._peek()
+        with self.lock.shared():
             yield
 
     def _peek(self) -> None:

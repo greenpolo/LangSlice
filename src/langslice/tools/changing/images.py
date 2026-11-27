@@ -13,6 +13,7 @@ its entry in
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
@@ -69,6 +70,7 @@ class ImagesMade:
     deleted: bool = False
     in_force: dict[str, Any] = field(default_factory=dict)
     images: list[str] = field(default_factory=list)
+    stale: list[str] = field(default_factory=list)
 
 
 def stack_images(workspace: Workspace, state: Stack) -> list[str]:
@@ -200,13 +202,19 @@ def make_image_tool(
     reply: dict[str, object] = {
         "status": "ok",
         "image": done.name,
-        "sections": ids or "every section",
+        "sections": done.sections if done.stale else ids or "every section",
     }
     if done.deleted:
         reply["deleted"] = True
     else:
         reply["recipe"] = done.in_force
     reply["section_images"] = done.images
+    if done.stale:
+        reply["stale"] = {
+            "sections": done.stale,
+            "message": "the images these sections' image is made from changed while it was "
+            "made; nothing was written for them. Make it again for them.",
+        }
     if done.deleted or not run.shows(view):
         return reply
     made = [job.state.by_id(section) for section in done.sections]
@@ -254,7 +262,10 @@ def make_section_image(
     coverage), CLAHE, *n4*, then *contrast* (fractions 0 to 1),
     *gamma*, *invert*. Each section's image is computed from its own images
     (:func:`langslice.core.sections.images.make`) and saved as a file before
-    the write. ``preprocessed`` made with every argument at its default is the
+    the write, outside the job's write lock, beside the other calls; the write
+    then applies it to each section whose source images did not change meanwhile
+    (the others are listed as ``stale``; ``STALE_INPUT`` when none is left).
+    ``preprocessed`` made with every argument at its default is the
     opening image again (the job's own, as it was made when the job opened).
     *delete* removes the entry from the sections (``preprocessed`` cannot be
     deleted: every fit reads it by default).
@@ -282,10 +293,13 @@ def make_section_image(
                 image=label,
                 message=f"no section named holds a made image {label!r}.",
             )
-        before = job.snapshot()
-        for record in holding:
-            del record.images[label]
-        job.commit(before)
+        with job.writing():
+            before = job.snapshot()
+            held_now = [job.state.by_id(record.id) for record in holding]
+            for record in held_now:
+                if record is not None:
+                    record.images.pop(label, None)
+            job.commit(before)
         return ImagesMade(
             name=label,
             sections=[record.id for record in holding],
@@ -325,20 +339,48 @@ def make_section_image(
                     images=images.image_names(workspace, record),
                 ) from exc
     reset = label == PREPROCESSED and recipe == images.OPENING_RECIPE
+    read = {record.id: _sources_of(record, recipe) for record in records}
     tasks = 2 * len(records) if recipe["n4"] and not reset else 0
     with process_pool(tasks, threads_each=ITK_THREADS) as pool:
         making = _Making(job, workspace, label, recipe, reset, _InProcesses(pool))
         made_all = map_sections(partial(_made, making), records, 1)
     entries = {record.id: entry for record, entry in zip(records, made_all, strict=True)}
-    before = job.snapshot()
-    for record in records:
-        record.images[label] = entries[record.id]
-    job.commit(before)
+    applied: list[str] = []
+    stale: list[str] = []
+    with job.writing():
+        before = job.snapshot()
+        for section, entry in entries.items():
+            record = job.state.by_id(section)
+            if record is None or _sources_of(record, recipe) != read[section]:
+                stale.append(section)
+                continue
+            record.images[label] = entry
+            applied.append(section)
+        if applied:
+            job.commit(before)
+    if not applied:
+        raise Refused(
+            RefusalCode.STALE_INPUT,
+            sections=stale,
+            message=f"the images {label!r} is made from changed on every section while it "
+            "was made; nothing was written. Make it again.",
+        )
     return ImagesMade(
         name=label,
-        sections=[record.id for record in records],
+        sections=applied,
+        stale=stale,
         in_force=_in_force(workspace, job, label),
         images=stack_images(workspace, job.state),
+    )
+
+
+def _sources_of(record: Section, recipe: Mapping[str, object]) -> str:
+    """The made images *recipe* reads on *record*, as they stand: remaking one
+    while this image is made makes the section stale (raw channels never change)."""
+    weights = recipe.get("weights")
+    names = sorted(weights) if isinstance(weights, Mapping) else []
+    return json.dumps(
+        {name: record.images.get(name) for name in names}, sort_keys=True, default=str
     )
 
 
