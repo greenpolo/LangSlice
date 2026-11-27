@@ -80,9 +80,10 @@ share a file lock and reload changed state before calls; a read never waits
 for the lock and reads the state as last saved. Each agent CLI
 call is a process of its own. Within one process the calls an agent makes
 together run together: reads side by side, each write alone
-(`job/folder/lock.py`); long operations (the fits) compute outside the lock
-beside the other calls, then validate their inputs before applying;
-conflicting section results are refused as `STALE_INPUT`.
+(`job/folder/lock.py`); long operations (the fits, the plane searches,
+`make_image`, the placement engines) compute outside the lock beside the
+other calls, then validate their inputs before applying; conflicting section
+results are refused as `STALE_INPUT`.
 
 `submit` validates the enabled tasks and writes the QuickNII and VisuAlign
 exports; the per-section maps are written only by `export_maps` (CLI and

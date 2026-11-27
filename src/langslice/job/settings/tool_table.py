@@ -184,7 +184,7 @@ TOOLS: dict[str, ToolDef] = {
     for tool in (
         ToolDef("look", "read", "Common", essential=True),
         ToolDef("zoom", "read", "Common"),
-        ToolDef("make_image", "write", "Common"),
+        ToolDef("make_image", "write", "Common", long=True),
         ToolDef("grep_atlas", "read", "Common"),
         ToolDef("grep_atlas_view", "read", "Common"),
         ToolDef("status", "read", "Common", essential=True),
@@ -277,6 +277,7 @@ TOOLS: dict[str, ToolDef] = {
             default_off=True,
             atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
             planes=("coronal",),
+            long=True,
         ),
         _engine_tool(
             "brainways_ap",
@@ -288,6 +289,7 @@ TOOLS: dict[str, ToolDef] = {
             default_off=True,
             atlases=("whs_sd_rat_39um",),
             planes=("coronal",),
+            long=True,
         ),
         _engine_tool(
             "stalign_lddmm",
@@ -306,6 +308,7 @@ TOOLS: dict[str, ToolDef] = {
             (ANGLES,),
             STALIGN,
             limits={"sections": 8},
+            long=True,
         ),
         _engine_tool(
             "spomialign",
@@ -334,6 +337,7 @@ TOOLS: dict[str, ToolDef] = {
             (ANGLES,),
             EMLDDMM,
             limits={"pictures": 4},
+            long=True,
         ),
     )
 }
