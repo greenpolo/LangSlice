@@ -66,11 +66,11 @@ from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from langslice.core.maps.abba import MAX_POINTS
-from langslice.hosts.gui import generator
-from langslice.hosts.gui.comments import CommentRow, CommentWatch
-from langslice.hosts.gui.drawing import Style
-from langslice.hosts.gui.export import ExportError, Exports, reveal
-from langslice.hosts.gui.render import (
+from langslice.hosts.gui.forms import generator, message
+from langslice.hosts.gui.forms.export import ExportError, Exports, export_menu, reveal
+from langslice.hosts.gui.forms.settings import POSTS, Settings, SettingsError
+from langslice.hosts.gui.pictures.drawing import Style
+from langslice.hosts.gui.pictures.render import (
     CUTOUT_TYPE,
     DEFAULT_EDGE_PX,
     JobRenderer,
@@ -80,8 +80,8 @@ from langslice.hosts.gui.render import (
     UnknownSection,
     edge_px,
 )
-from langslice.hosts.gui.settings import POSTS, Settings, SettingsError
-from langslice.hosts.gui.watch import JobList, JobWatcher
+from langslice.hosts.gui.watch.comments import CommentRow, CommentWatch
+from langslice.hosts.gui.watch.jobs import JobList, JobWatcher
 from langslice.job.folder.layout import JobLayout
 from langslice.job.review import ReviewError, add_comment, remove_comment
 
@@ -97,6 +97,7 @@ STATIC_TYPES = {
     "ico": "image/x-icon",
 }
 MAX_BODY = 16 * 1024
+MESSAGE = "generator/message"
 _SNAPSHOT = re.compile(r"jobs/(\d+)/snapshot")
 _COMMENTS = re.compile(r"jobs/(\d+)/comments")
 NO_SECTIONS = "This job has no sections to comment on yet."
@@ -261,6 +262,8 @@ class GuiServer:
                 return self._generator(query)
             if resource == "settings":
                 return self._json(self.settings.state())
+            if resource == "exports":
+                return self._json({"formats": export_menu()})
             return self._job_route(resource, query)
         except (ValueError, TypeError):
             return 400
@@ -404,18 +407,22 @@ class GuiServer:
             watcher = self.jobs.get(_int(query, "job", -1))
             if watcher is None:
                 return 404
-            form = generator.prefill(watcher.folder)
-            data["prefill"] = asdict(form) if form is not None else None
+            saved = generator.prefill(watcher.folder)
+            data["form"] = message.start_form(saved)
+        else:
+            data["form"] = message.start_form(None)
         return self._json(data)
 
     def post(
         self, raw_path: str, headers: Any, body: bytes | None
     ) -> int | tuple[bytes, str] | tuple[bytes, str, int]:
-        """A POST to a Settings or Export resource: the token, the ``Host``, an
-        ``Origin`` of this server (a page of another site cannot send one),
-        ``Sec-Fetch-Site`` same-origin when sent, a JSON body of at most
-        :data:`MAX_BODY` bytes. Every other path is GET only (405). A refused
-        request is answered ``{"error"}`` with 400."""
+        """A POST to a Settings, Export or review comment resource, or the
+        prompt generator's form (``generator/message``, which writes nothing):
+        the token, the ``Host``, an ``Origin`` of this server (a page of
+        another site cannot send one), ``Sec-Fetch-Site`` same-origin when
+        sent, a JSON body of at most :data:`MAX_BODY` bytes. Every other path
+        is GET only (405). A refused request is answered ``{"error"}`` with
+        400."""
         parsed = urlsplit(raw_path)
         prefix = f"/{self.token}/"
         origin = f"http://127.0.0.1:{self.port}"
@@ -425,7 +432,12 @@ class GuiServer:
             return 404
         resource = parsed.path[len(prefix) :]
         comments = _COMMENTS.fullmatch(resource)
-        if resource not in POSTS and comments is None and _EXPORT.fullmatch(resource) is None:
+        if (
+            resource not in POSTS
+            and resource != MESSAGE
+            and comments is None
+            and _EXPORT.fullmatch(resource) is None
+        ):
             return 405
         if (
             headers.get("Origin") != origin
@@ -440,6 +452,11 @@ class GuiServer:
             request = json.loads(body.decode("utf-8") or "null")
         except (UnicodeDecodeError, ValueError):
             return 400
+        if resource == MESSAGE:
+            try:
+                return self._json(message.answer(request))
+            except ValueError:
+                return 400
         if comments is not None:
             index = int(comments.group(1))
             return self._comment(index, cast("object", request))

@@ -3,13 +3,13 @@
 // while hidden, so what was typed in them survives a visit to another tab.
 import { MotionConfig, motion } from 'motion/react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Export } from './export/Export';
-import { DUR, EASE_IN_OUT } from './motion';
-import { go, useNav, type Tab } from './nav';
-import { Prompt } from './prompt/Prompt';
-import { chooseJob, start, useRun } from './run';
-import { landOnSettingsIfUnset, Settings } from './settings/Settings';
-import { Viewer } from './Viewer';
+import { Export } from './panels/export/Export';
+import { DUR, EASE_IN_OUT } from './ui/motion';
+import { go, useNav, type Tab } from './data/nav';
+import { Prompt } from './panels/prompt/Prompt';
+import { chooseJob, start, useRun } from './data/run';
+import { landOnSettingsIfUnset, Settings } from './panels/settings/Settings';
+import { Viewer } from './views/Viewer';
 
 
 export function App() {

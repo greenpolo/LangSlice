@@ -30,7 +30,7 @@ def serve(
     one sentence (``SystemExit``); the address is written at once, also
     when the output is a file."""
     from langslice.hosts.gui.server import GuiServer, port_in_use
-    from langslice.hosts.gui.watch import JobList
+    from langslice.hosts.gui.watch.jobs import JobList
     from langslice.hosts.gui.window import Opened, open_window, start_address
     from langslice.job.folder.recent import recent_file
 

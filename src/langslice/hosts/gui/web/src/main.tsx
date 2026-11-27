@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../../static/tokens.css';
-import './window.css';
+import './ui/window.css';
 import { App } from './App';
 
 try {

@@ -61,17 +61,24 @@ class ExportFormat:
         The format's name, as the page and :func:`write_export` give it.
     label
         What people read.
+    about
+        One sentence for people on what the file holds and where it opens.
     suffix
         The suffix of the file written.
     write
         Writes the format (given itself, a job, its workspace and the most
         landmark pairs per warp of a format that has warps).
+    slow
+        What people are told while it is written, for a format that takes
+        minutes; blank for one that does not.
     """
 
     name: str
     label: str
+    about: str
     suffix: str
     write: Writer
+    slow: str = ""
 
 
 def _abba(
@@ -108,16 +115,42 @@ def _dmc(_export: ExportFormat, job: Job, workspace: Workspace, _landmarks: int)
 EXPORT_FORMATS: dict[str, ExportFormat] = {
     export.name: export
     for export in (
-        ExportFormat("abba", "ABBA project (.abba)", ".abba", functools.partial(_abba, True)),
+        ExportFormat(
+            "abba",
+            "ABBA project (.abba)",
+            "Open in ABBA with File > Load State: each section with its affine and its warp.",
+            ".abba",
+            functools.partial(_abba, True),
+            slow="Each warp becomes landmark pairs; this can take a few minutes.",
+        ),
         ExportFormat(
             "abba_linear",
             "ABBA project, linear only (.abba)",
+            "Open in ABBA with File > Load State: each section with its affine, no warp.",
             ".abba",
             functools.partial(_abba, False),
         ),
-        ExportFormat("quicknii", "QuickNII (.json)", ".json", _quint),
-        ExportFormat("visualign", "VisuAlign (.json)", ".json", _quint),
-        ExportFormat("dmc_brainmap", "DMC-BrainMap (folder)", "", _dmc),
+        ExportFormat(
+            "quicknii",
+            "QuickNII (.json)",
+            "The linear placement of each section, with its image.",
+            ".json",
+            _quint,
+        ),
+        ExportFormat(
+            "visualign",
+            "VisuAlign (.json)",
+            "The placement and each warp as VisuAlign markers.",
+            ".json",
+            _quint,
+        ),
+        ExportFormat(
+            "dmc_brainmap",
+            "DMC-BrainMap (folder)",
+            "An animal folder DMC-BrainMap reads, each section with its registration.",
+            "",
+            _dmc,
+        ),
     )
 }
 

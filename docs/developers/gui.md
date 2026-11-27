@@ -173,19 +173,17 @@ another program, under the job's `exports/` folder:
   `exports/abba_export.json` lists the sections left out and why, the
   landmark count, and how far each warp's landmarks are from LangSlice's
   deformation; the finished note gives the median.
-- **ABBA project, editable (.abba)**: the same project with each warp as
-  100 landmarks, which you can move in BigWarp (ABBA's own splines hold
-  about 30 points: a grid of 6 to 14 control points across, those on the
-  tissue), about 45 µm from LangSlice's warp at the median.
 - **ABBA project, linear only (.abba)**: the same project without the warp
-  steps, for placing your own control points in ABBA. A warp cannot be
-  written in so few: on 331CTX the warps move tissue about 95 µm at the
-  median, and 100 landmarks miss them by about 45 µm, 50 by 83 µm, 16 to
-  36 by 120 to 140 µm (worse than no warp). The menu's last row writes the
-  warps with a count of your own from 100 to 1,089 (400: about 9 µm).
+  steps, for placing your own control points in ABBA.
 - **QuickNII (.json)** and **VisuAlign (.json)**: `exports/quicknii.json`
   and `exports/visualign.json` with the section images they name, the files
   `submit` writes (both are written together).
+- **DMC-BrainMap (folder)**: an animal folder DMC-BrainMap reads, each
+  section with its registration.
+
+The menu lists the formats of LangSlice's export registry
+(`tools/bookkeeping/export_formats.py`, `GET exports`), so a format added
+there appears in the menu.
 
 While a file is written the menu says so; then it gives the file's path,
 **Open folder** and **Copy path**, or why nothing was written. An ABBA
@@ -341,14 +339,16 @@ address, reachable only from this computer. The agent viewer watches the job fol
 `job.json`; see
 [file formats](../reference/file_formats.md)) four times a second while a page looks at the
 job, and serves only the folders it lists. The sections' pictures, the cutting axis's
-thumbnails, and the 3D view's sections (their thumbnails' corners in the
-atlas, `GET jobs/<n>/space`) and atlas brain (its BrainGlobe root mesh,
-`GET jobs/<n>/shell`), are drawn by the window itself, with LangSlice's own picture code,
+thumbnails, and the 3D view's sections (their thumbnails' corners,
+`GET jobs/<n>/space`) and atlas brain (its BrainGlobe root mesh and its
+cross-sections, `GET jobs/<n>/shell`), all in the 3D view's frame, are made by the window itself, with LangSlice's own picture code,
 from the job's settings, images, state and saved deformations, without
 opening the job: nothing is written to the folder. The pictures are kept in
 memory and drawn again only when a section's registration changes. The prompt generator's choices
 (the tools, the tasks, the atlases) come from the installed LangSlice, so a
-tool a newer version renames or removes is never offered. The viewer and the
+tool a newer version renames or removes is never offered, and its message is
+made by LangSlice too (`POST generator/message`, which writes nothing): the
+command is checked against the job settings `init` will build. The viewer and the
 prompt generator only read; the Settings tab's changes, the review comments
 (`review.json` in the job folder) and the Export menu are the only requests
 that write (Export only under the job's `exports/` folder and

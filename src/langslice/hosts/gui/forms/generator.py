@@ -1,0 +1,425 @@
+"""The prompt generator's data: what the form offers, read from the code.
+
+The prompt generator tab (``web/src/panels/prompt/``) is a form that runs in the
+page: it turns a person's choices into one message to paste into their agent
+app, a short request and the job's ``langslice job FOLDER init`` command,
+which the main agent's ``register-brain`` skill runs. This module gives the
+page what the choices are, so nothing in the form is written by hand twice:
+
+- the tools from
+  :func:`langslice.job.settings.tool_table.catalog` (the scripting verbs left
+  out: a script's, never the agent's to lose), each with its people's label
+  (:mod:`langslice.job.settings.labels`), so a renamed or removed tool can
+  never linger in the form;
+- the tasks, the default ones (the spec's) and the tools that write each task's answer
+  (``TASK_WRITERS``), so the page can say when a choice of tools cannot
+  work, as the spec would;
+- the atlases BrainGlobe describes
+  (:func:`langslice.core.atlas.details.descriptions`), the planes and the
+  default atlas;
+- the flag each setting the form fills is spelled with, from the job spec's
+  fields (:func:`langslice.doors.commands.flags.flag_names`), so the command
+  it writes is the one ``init`` reads;
+- the image models: every provider name a job spec accepts (the names the
+  job spec checks ``--nonlinear-provider`` against), each with the models
+  LangSlice's providers list for it;
+- the programs the person may use the results in (``INTEGRATIONS``), which
+  the message names for the main agent only, never in the command;
+- a job's own settings, to start the form from: a job prepared in ABBA, or
+  any job folder with a ``job.json``.
+
+Nothing here is model-facing: the labels are for people, and the message the
+page makes is the person's to send.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from itertools import combinations
+from pathlib import Path
+from typing import Any
+
+from langslice.core.atlas.details import descriptions
+from langslice.core.connections import CANONICAL_PROVIDERS
+from langslice.core.jsonable import JsonObject
+from langslice.core.space import PLANES
+from langslice.core.stack.json_reads import (
+    integer_at,
+    number_at,
+    object_at,
+    optional_at,
+    text_at,
+    text_map_at,
+    texts_at,
+)
+from langslice.doors.commands.flags import flag_names
+from langslice.doors.credentials import (
+    image_model_connected,
+    saved_image_provider,
+)
+from langslice.job.folder.layout import (
+    JobLayout,
+    held_image_folder,
+    read_job_file,
+)
+from langslice.job.settings import labels as tool_labels
+from langslice.job.settings import tool_table
+from langslice.job.settings.spec import ALL_TASKS, DEFAULT_ATLAS, JobSpec, NonlinearSpec, Task
+from langslice.providers import connections as image_registry
+from langslice.providers.table import find
+
+SPECIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Mouse", ("mouse",)),
+    ("Rat", ("_rat_",)),
+)
+
+
+KEEP: dict[str, str] = {"angles": "position", "orientation": "transform"}
+
+NO_IMAGE_MODEL = "None (no image model)"
+
+ABBA_HOST = "abba"
+
+
+@dataclass(frozen=True)
+class Integration:
+    """A program the form offers to prepare the results for."""
+
+    name: str
+    label: str
+    words: str
+
+
+INTEGRATIONS: tuple[Integration, ...] = (
+    Integration(
+        name="quint",
+        label="QUINT (PyNutil, QuickNII, VisuAlign)",
+        words="the QUINT tools (PyNutil, QuickNII, VisuAlign)",
+    ),
+    Integration(name="verso", label="VERSO", words="VERSO"),
+    Integration(name="dmc-brainmap", label="DMC-BrainMap", words="DMC-BrainMap"),
+)
+
+
+def species(name: str) -> str:
+    """The group *name* is listed under: Mouse, Rat or Other."""
+    for group, words in SPECIES:
+        if any(word in name for word in words):
+            return group
+    return "Other"
+
+
+TRACED_PROVIDER = "openai-oauth"
+
+
+def task_sets() -> list[list[Task]]:
+    """Every non-empty choice of tasks, each in :data:`ALL_TASKS` order."""
+    return [
+        list(chosen)
+        for size in range(1, len(ALL_TASKS) + 1)
+        for chosen in combinations(ALL_TASKS, size)
+    ]
+
+
+def tools() -> list[dict[str, Any]]:
+    """The form's tools, in table order: the catalog's (scripting verbs left
+    out), each with its label, whether it
+    calls the image model, whether it starts off (``ToolDef.default_off``:
+    the job's ``enabled`` switches it on), and ``runs_in``: the task choices
+    (comma-joined)
+    whose runs have it (``ToolDef.when``)."""
+    traced = NonlinearSpec(provider=TRACED_PROVIDER)
+    specs = [JobSpec(image_folder=".", tasks=tasks, nonlinear=traced) for tasks in task_sets()]
+    rows = []
+    for entry in tool_table.catalog():
+        held = tool_table.TOOLS.get(entry["name"])
+        if held is not None and held.scripting:
+            continue
+        rows.append(
+            {
+                "name": entry["name"],
+                "group": entry["group"],
+                "label": tool_labels.label(entry["name"]),
+                "disableable": entry["disableable"],
+                "needs": entry["needs"],
+                "image_model": held is not None and held.image_model,
+                "default_off": held is not None and held.default_off,
+                "runs_in": [
+                    ",".join(spec.tasks) for spec in specs if held is None or held.when(spec)
+                ],
+            }
+        )
+    return rows
+
+
+def frozen_off(*properties: str) -> list[str]:
+    """The tools a freeze of *properties* on every section
+    switches off in a run of every task
+    (:func:`langslice.job.settings.tool_table.off_names`)."""
+    plain = JobSpec(image_folder=".", tasks=list(ALL_TASKS)).switched_off
+    kept = JobSpec(
+        image_folder=".", tasks=list(ALL_TASKS), frozen={"*": list(properties)}
+    ).switched_off
+    return [name for name in kept if name not in plain]
+
+
+@dataclass(frozen=True)
+class ImageModelChoice:
+    """One image-model provider the form offers, as the page reads it."""
+
+    provider: str
+    label: str
+    default: bool
+    models: list[str]
+    default_model: str | None
+    connected: bool
+
+
+def _calls_no_model(provider: str) -> bool:
+    """Tell whether *provider* runs the warp with no image model at all."""
+    return not NonlinearSpec(provider=provider).uses_image_model
+
+
+def _provider_order(provider: str) -> tuple[bool, bool]:
+    """Sort a provider in the form: no model last, ChatGPT's sign-in first."""
+    return _calls_no_model(provider), provider != TRACED_PROVIDER
+
+
+def image_models() -> list[ImageModelChoice]:
+    """List the image-model providers the form offers.
+
+    Every provider name a job spec accepts by name (``custom`` is the
+    library's alone), the job's default first and the one with no image
+    model last, each with the models LangSlice lists for it. Whether a
+    provider is connected is the offline presence check of
+    :func:`image_model_connected`.
+
+    Returns
+    -------
+    list of ImageModelChoice
+        The providers, in the form's order.
+    """
+    default = saved_image_provider() or NonlinearSpec().provider
+    rows: list[ImageModelChoice] = []
+    for name in sorted(CANONICAL_PROVIDERS, key=_provider_order):
+        no_model = _calls_no_model(name)
+        known = find(name)
+        label = NO_IMAGE_MODEL if no_model else known.label if known else name
+        rows.append(
+            ImageModelChoice(
+                provider=name,
+                label=label,
+                default=name == default,
+                models=list(known.image_models) if known else [],
+                default_model=image_registry.default_image_model(name),
+                connected=no_model or image_model_connected(name),
+            )
+        )
+    return rows
+
+
+def payload() -> dict[str, Any]:
+    """Everything the generator page needs, as plain data (``GET generator``)."""
+    atlases = [
+        {"name": name, "about": about, "species": species(name)}
+        for name, about in sorted(descriptions().items())
+    ]
+    if not any(atlas["name"] == DEFAULT_ATLAS for atlas in atlases):
+        atlases.insert(0, {"name": DEFAULT_ATLAS, "about": "", "species": species(DEFAULT_ATLAS)})
+    groups = tool_table.GROUPS
+    writers = tool_table.TASK_WRITERS
+    default_tasks = JobSpec(image_folder=".").tasks
+    return {
+        "tasks": [
+            {
+                "name": task,
+                "label": tool_labels.TASK_LABELS[task],
+                "about": tool_labels.TASK_ABOUT[task],
+                "default": task in default_tasks,
+            }
+            for task in ALL_TASKS
+        ],
+        "groups": [
+            {
+                "name": group,
+                "label": tool_labels.GROUP_LABELS[group][0],
+                "task": tool_labels.GROUP_LABELS[group][1],
+            }
+            for group in groups
+        ],
+        "tools": tools(),
+        "task_writers": {task: list(names) for task, names in writers.items()},
+        "keep": KEEP,
+        "frozen_off": {prop: frozen_off(prop) for prop in KEEP},
+        "atlases": atlases,
+        "species": [group for group, _ in SPECIES] + ["Other"],
+        "default_atlas": DEFAULT_ATLAS,
+        "planes": list(PLANES),
+        "flags": flag_names(),
+        "image_models": [asdict(choice) for choice in image_models()],
+        "integrations": [asdict(program) for program in INTEGRATIONS],
+    }
+
+
+@dataclass(frozen=True)
+class AbbaBlock:
+    """What the form shows of a job prepared in ABBA (its ``host.abba``)."""
+
+    atlas: str
+    sections: dict[str, str]
+    registered: list[str]
+    existing_warp: list[str]
+    pixel_size_um: float
+    thickness_um: int
+    interval_um: int
+
+
+@dataclass(frozen=True)
+class Prefill:
+    """The form as a job's ``job.json`` holds it (``GET generator?job=n``).
+
+    The text fields are as the form's inputs hold them: a number as text,
+    blank for none.
+    """
+
+    folder: str
+    atlas: str
+    plane: str
+    pixel_size: str
+    thickness: str
+    interval: str
+    tasks: list[str]
+    off: list[str]
+    on: list[str]
+    keep: dict[str, bool]
+    damaged: str
+    notes: str
+    facts: list[str]
+    frozen: dict[str, list[str]]
+    abba: AbbaBlock | None
+
+
+@dataclass(frozen=True)
+class _SavedJob:
+    """What :func:`prefill` reads of a ``job.json``."""
+
+    spec: JobSpec
+    notes: str
+    abba: AbbaBlock | None
+
+
+def prefill(folder: Path) -> Prefill | None:
+    """Read the form a job folder's ``job.json`` holds.
+
+    Only ``job.json`` is read: its ``spec`` (through
+    :meth:`JobSpec.from_dict`, the image folder resolved from the job
+    folder), its ``notes`` and, for a job prepared in ABBA, its
+    ``host.abba``. A job prepared in ABBA has ABBA's thickness and
+    interval where its spec has none.
+
+    Parameters
+    ----------
+    folder
+        The job folder.
+
+    Returns
+    -------
+    Prefill or None
+        The form; None when the folder has no ``job.json`` this version
+        reads.
+    """
+    try:
+        saved = _read_saved(folder)
+    except (OSError, ValueError, TypeError):
+        return None
+    if saved is None:
+        return None
+
+    spec, abba = saved.spec, saved.abba
+    thickness = spec.position.thickness_um
+    interval = spec.position.interval_um
+    if abba is not None:
+        thickness = thickness or abba.thickness_um
+        interval = interval or abba.interval_um
+    pixel_size = ""
+    if isinstance(spec.inputs.get("pixel_size_um"), int | float):
+        pixel_size = _text(number_at(spec.inputs, "pixel_size_um"))
+    damaged = optional_at(spec.inputs, "damaged", text_map_at) or {}
+    everywhere = spec.frozen.get("*", [])
+    frozen = {name: list(props) for name, props in spec.frozen.items()}
+    frozen.pop("*", None)
+    return Prefill(
+        folder=spec.image_folder,
+        atlas=spec.atlas,
+        plane=spec.plane,
+        pixel_size=pixel_size,
+        thickness=_text(thickness),
+        interval=_text(interval),
+        tasks=list(spec.tasks),
+        off=list(spec.disabled),
+        on=list(spec.enabled),
+        keep={prop: prop in everywhere for prop in KEEP},
+        damaged="".join(f"{name}: {note}\n" for name, note in damaged.items()),
+        notes=saved.notes,
+        facts=list(spec.facts),
+        frozen=frozen,
+        abba=abba,
+    )
+
+
+def _read_saved(folder: Path) -> _SavedJob | None:
+    """Read a job folder's ``job.json``: None without one, ``ValueError``
+    for one this version cannot read.
+    """
+    record = read_job_file(JobLayout(folder))
+    if record is None or "spec" not in record:
+        return None
+
+    settings = dict(object_at(record, "spec"))
+    images = held_image_folder(folder, record)
+    settings["image_folder"] = str(images or "")
+    host = optional_at(record, "host", object_at)
+    abba = None
+    if host is not None:
+        abba = abba_block(host)
+    return _SavedJob(
+        spec=JobSpec.from_dict(settings),
+        notes=optional_at(record, "notes", text_at) or "",
+        abba=abba,
+    )
+
+
+def abba_block(host: JsonObject) -> AbbaBlock | None:
+    """Read what the form shows of a job prepared in ABBA.
+
+    Parameters
+    ----------
+    host
+        The ``host`` record of a ``job.json``.
+
+    Returns
+    -------
+    AbbaBlock or None
+        Its ``abba`` block when ``host.kind`` is ``abba``; None for any
+        other job. ``ValueError`` for a block without the fields
+        ``abba.prepare`` writes.
+    """
+    if host.get("kind") != ABBA_HOST:
+        return None
+    block = object_at(host, "abba")
+    return AbbaBlock(
+        atlas=text_at(block, "atlas"),
+        sections=text_map_at(block, "sections"),
+        registered=list(texts_at(block, "registered")),
+        existing_warp=list(texts_at(block, "existing_warp")),
+        pixel_size_um=number_at(block, "pixel_size_um"),
+        thickness_um=integer_at(block, "thickness_um"),
+        interval_um=integer_at(block, "interval_um"),
+    )
+
+
+def _text(value: float | None) -> str:
+    """Write a number as the form's text field holds it (none, 0: blank)."""
+    if not value:
+        return ""
+    return f"{value:g}"
